@@ -38,4 +38,14 @@ export default defineConfig({
       },
     },
   },
+  server: {
+    port: 5001, // Match the port previously used by Express
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000', // We'll run the serverless API on port 3000
+        changeOrigin: true,
+        secure: false
+      }
+    }
+  }
 });
