@@ -3,13 +3,17 @@ import { createClient } from '@supabase/supabase-js'
 // Log the environment variables for debugging (remove in production)
 console.log('VITE_SUPABASE_URL exists:', !!import.meta.env.VITE_SUPABASE_URL);
 console.log('VITE_SUPABASE_ANON_KEY exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+console.log('VITE_SUPABASE_URL value:', import.meta.env.VITE_SUPABASE_URL || 'undefined');
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Explicitly cast to string to ensure TypeScript is happy
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 // Check if values are missing and log a helpful error
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables');
+  console.error('VITE_SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
+  console.error('VITE_SUPABASE_ANON_KEY:', import.meta.env.VITE_SUPABASE_ANON_KEY);
 }
 
 // Get the current domain for auth redirects
@@ -20,44 +24,52 @@ console.log('Current domain for auth redirects:', domain);
 const isProduction = import.meta.env.PROD;
 console.log('Running in production mode:', isProduction);
 
+// Fallback values for development if environment variables are not set
+const fallbackUrl = 'https://mwrhaqghxatfwzsjjfrv.supabase.co';
+const fallbackKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13cmhhcWdoeGF0Znd6c2pqZnJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA1MTA3ODYsImV4cCI6MjA1NjA4Njc4Nn0.lFttNvmLpKXFRCq58bmn8OiVxnastEF7jWopx3CKa3M';
+
 // Create client with appropriate settings based on environment
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    // Use implicit flow for both environments to ensure consistency
-    flowType: 'implicit',
-    storage: {
-      getItem: (key) => {
-        try {
-          const storedSession = globalThis.localStorage?.getItem(key);
-          console.log(`Retrieved session from localStorage: ${key} ${storedSession ? '✓' : '✗'}`);
-          return storedSession;
-        } catch (error) {
-          console.error('Error accessing localStorage:', error);
-          return null;
-        }
+export const supabase = createClient(
+  supabaseUrl || fallbackUrl, 
+  supabaseAnonKey || fallbackKey, 
+  {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      // Use implicit flow for both environments to ensure consistency
+      flowType: 'implicit',
+      storage: {
+        getItem: (key) => {
+          try {
+            const storedSession = globalThis.localStorage?.getItem(key);
+            console.log(`Retrieved session from localStorage: ${key} ${storedSession ? '✓' : '✗'}`);
+            return storedSession;
+          } catch (error) {
+            console.error('Error accessing localStorage:', error);
+            return null;
+          }
+        },
+        setItem: (key, value) => {
+          try {
+            globalThis.localStorage?.setItem(key, value);
+            console.log(`Stored session in localStorage: ${key} ✓`);
+          } catch (error) {
+            console.error('Error setting localStorage:', error);
+          }
+        },
+        removeItem: (key) => {
+          try {
+            globalThis.localStorage?.removeItem(key);
+            console.log(`Removed session from localStorage: ${key} ✓`);
+          } catch (error) {
+            console.error('Error removing from localStorage:', error);
+          }
+        },
       },
-      setItem: (key, value) => {
-        try {
-          globalThis.localStorage?.setItem(key, value);
-          console.log(`Stored session in localStorage: ${key} ✓`);
-        } catch (error) {
-          console.error('Error setting localStorage:', error);
-        }
-      },
-      removeItem: (key) => {
-        try {
-          globalThis.localStorage?.removeItem(key);
-          console.log(`Removed session from localStorage: ${key} ✓`);
-        } catch (error) {
-          console.error('Error removing from localStorage:', error);
-        }
-      },
-    },
+    }
   }
-});
+);
 
 // Add event listener for auth state changes (debugging)
 supabase.auth.onAuthStateChange((event, session) => {

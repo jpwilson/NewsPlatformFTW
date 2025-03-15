@@ -1,11 +1,20 @@
+// Load environment variables first, before any other imports
+import "dotenv/config";
+
 import express from 'express';
 import { createServer } from 'http';
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import handler from '../api/index';
-import "dotenv/config";
 
 // Set environment variables for development
 process.env.NODE_ENV = 'development';
+
+// Debug logs for environment variables
+console.log("[dev-serverless] Environment variables loaded:");
+console.log("[dev-serverless] Has SUPABASE_URL:", !!process.env.SUPABASE_URL);
+console.log("[dev-serverless] Has SUPABASE_SERVICE_KEY:", !!process.env.SUPABASE_SERVICE_KEY);
+console.log("[dev-serverless] Has SUPABASE_ANON_KEY:", !!process.env.SUPABASE_ANON_KEY);
+console.log("[dev-serverless] Has VITE_SUPABASE_ANON_KEY:", !!process.env.VITE_SUPABASE_ANON_KEY);
 
 // Create Express app
 const app = express();
