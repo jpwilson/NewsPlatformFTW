@@ -11,7 +11,7 @@ export default function AuthCallback() {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        // Log the current URL and hash for debugging
+        // Log the current URL and hash for debugging (only to console, not displayed to user)
         console.log("Auth callback running at:", window.location.href);
         console.log("URL hash:", window.location.hash);
 
@@ -144,12 +144,12 @@ export default function AuthCallback() {
   }, []);
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center p-8 bg-white rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold mb-4">Authentication Callback</h1>
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-center p-8 bg-card rounded-lg shadow-md max-w-md w-full">
+        <h1 className="text-2xl font-bold mb-4">Authentication in Progress</h1>
         <p className="mb-4">{status}</p>
         {error && <p className="text-red-500 mb-4">{error}</p>}
-        <div className="mt-4 w-16 h-16 border-t-4 border-blue-500 border-solid rounded-full animate-spin mx-auto"></div>
+        <div className="mt-4 w-16 h-16 border-t-4 border-primary border-solid rounded-full animate-spin mx-auto"></div>
       </div>
     </div>
   );

@@ -9,7 +9,7 @@
     window.onload = function() {
       console.log("Auth callback page loaded");
       
-      // Get the full URL including hash fragments
+      // Get the full URL including hash fragments - only log to console, not display to user
       const fullUrl = window.location.href;
       console.log("Full callback URL:", fullUrl);
       
@@ -17,22 +17,12 @@
       const hashPart = window.location.hash;
       console.log("Hash part:", hashPart);
       
-      // Log to the document for debugging (visible on page)
-      const debugInfo = document.getElementById('debug-info');
-      if (debugInfo) {
-        debugInfo.innerHTML = `
-          <strong>URL:</strong> ${fullUrl}<br>
-          <strong>Hash:</strong> ${hashPart || 'No hash found'}<br>
-          <strong>Time:</strong> ${new Date().toISOString()}
-        `;
-      }
-      
       // Create the redirect URL - send to home page with the hash
       const redirectUrl = window.location.origin + "/" + hashPart;
       console.log("Redirecting to:", redirectUrl);
       
       // Redirect to the home page with the hash params
-      // Add a small delay to allow seeing debug info if needed
+      // Add a small delay to allow seeing loading indicator
       setTimeout(() => {
         window.location.href = redirectUrl;
       }, 500);
@@ -74,16 +64,6 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
-    #debug-info {
-      font-size: 12px;
-      margin-top: 20px;
-      text-align: left;
-      color: #666;
-      background: #f9f9f9;
-      padding: 8px;
-      border-radius: 4px;
-      word-break: break-all;
-    }
   </style>
 </head>
 <body>
@@ -91,7 +71,6 @@
     <h1>Authentication in Progress</h1>
     <p>Please wait while we complete your authentication...</p>
     <div class="spinner"></div>
-    <div id="debug-info">Loading...</div>
   </div>
 </body>
 </html> 

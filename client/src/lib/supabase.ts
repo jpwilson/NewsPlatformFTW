@@ -39,6 +39,8 @@ export const supabase = createClient(
       detectSessionInUrl: true,
       // Use implicit flow for both environments to ensure consistency
       flowType: 'implicit',
+      // This ensures the correct application name in the OAuth flow
+      // The proper site URL should be configured in Supabase Dashboard under Authentication > URL Configuration
       storage: {
         getItem: (key) => {
           try {

@@ -55,6 +55,9 @@ export function NavigationBar({
   const { selectedChannelId: contextChannelId, setSelectedChannelId } =
     useSelectedChannel();
 
+  // Check if we're on the auth page to hide login button when already on it
+  const isAuthPage = location === "/auth";
+
   // Get popular channels for mobile menu
   const { data: popularChannels } = useQuery<Channel[]>({
     queryKey: ["/api/channels"],
@@ -354,6 +357,7 @@ export function NavigationBar({
 
           <nav>
             {!hideAuthButtons &&
+              !isAuthPage &&
               (user ? (
                 <>
                   {/* Dark mode toggle - only shown for logged in users */}
