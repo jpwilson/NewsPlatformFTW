@@ -74,6 +74,11 @@ export default function ArticlePage() {
   const [editableCategory, setEditableCategory] = useState("");
   const [editableLocation, setEditableLocation] = useState("");
 
+  // Local override for view count in case API response is faster than query invalidation
+  const [viewCountOverride, setViewCountOverride] = useState<number | null>(
+    null
+  );
+
   const { data: article, isLoading } = useQuery<ArticleWithSnakeCase>({
     queryKey: [`/api/articles/${id}`],
   });
@@ -116,17 +121,48 @@ export default function ArticlePage() {
   // Increment view count when the article is loaded
   useEffect(() => {
     if (id && !isLoading && article) {
+      console.log("Recording view for article:", id);
       apiRequest("POST", `/api/articles/${id}/view`, {})
         .then((response) => response.json())
         .then((data) => {
-          if (data.counted) {
-            // Invalidate the article query to refresh the view count
+          console.log("View count response:", data);
+
+          // Update view count locally if returned from API
+          if (data.view_count !== undefined) {
+            console.log(`Setting view count override to ${data.view_count}`);
+            setViewCountOverride(data.view_count);
+          }
+
+          // If this is a new view, invalidate ALL relevant queries to update counts everywhere
+          if (data.counted || data.shouldInvalidateFeeds) {
+            console.log(
+              "Invalidating article queries to refresh view counts everywhere"
+            );
+
+            // Invalidate the specific article query
             queryClient.invalidateQueries({
               queryKey: [`/api/articles/${id}`],
             });
-          }
-          if (data.counted === false && data.message) {
-            console.log(data.message); // We could show this to the user in a more sophisticated UI
+
+            // Invalidate all article lists/feeds
+            queryClient.invalidateQueries({
+              queryKey: ["/api/articles"],
+            });
+
+            // Invalidate channel articles if we know the channel
+            if (article.channelId || article.channel_id) {
+              const channelId = article.channelId || article.channel_id;
+              console.log(
+                `Invalidating channel articles for channel ${channelId}`
+              );
+              queryClient.invalidateQueries({
+                queryKey: [`/api/channels/${channelId}/articles`],
+              });
+            }
+          } else {
+            console.log(
+              "View already counted previously, not invalidating queries"
+            );
           }
         })
         .catch((err) => console.error("Failed to increment view count:", err));
@@ -285,10 +321,13 @@ export default function ArticlePage() {
     );
   }
 
-  // Use 0 as default if metrics are undefined
+  // Extract counts from article and apply local override for views if available
   const likes = article.likes || 0;
   const dislikes = article.dislikes || 0;
-  const views = article.viewCount || 0;
+  const views =
+    viewCountOverride !== null
+      ? viewCountOverride
+      : article.viewCount || article.view_count || 0;
   const commentCount = article._count?.comments || 0;
 
   // Check if user has liked or disliked

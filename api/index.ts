@@ -656,6 +656,106 @@ app.get("/api/articles", async (req, res) => {
   }
 });
 
+// Create article endpoint
+app.post("/api/articles", async (req, res) => {
+  try {
+    console.log("Creating a new article");
+    
+    // Extract the Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log("No Authorization header found for article creation");
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    
+    // Verify the token with Supabase
+    const { data: userData, error: userError } = await supabaseAuth.auth.getUser(token);
+    
+    if (userError || !userData.user) {
+      console.error('Error verifying user token for article creation:', userError);
+      return res.status(401).json({ error: 'Invalid authentication' });
+    }
+    
+    // Look up the user in the database
+    const { data: dbUser, error: dbError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('supabase_uid', userData.user.id)
+      .single();
+    
+    if (dbError || !dbUser) {
+      console.error('Error finding user for article creation:', dbError);
+      return res.status(401).json({ error: 'User not found' });
+    }
+    
+    const userId = dbUser.id;
+    
+    // Extract article data from request
+    const { title, content, channelId, category, location, published = true } = req.body;
+    
+    if (!title || typeof title !== 'string' || title.trim() === '') {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    
+    if (!content || typeof content !== 'string' || content.trim() === '') {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+    
+    if (!channelId || isNaN(parseInt(channelId))) {
+      return res.status(400).json({ error: 'Valid channel ID is required' });
+    }
+    
+    // Verify the channel exists and belongs to this user
+    const channelIdNumber = parseInt(channelId);
+    const { data: channel, error: channelError } = await supabase
+      .from('channels')
+      .select('id, user_id')
+      .eq('id', channelIdNumber)
+      .single();
+      
+    if (channelError || !channel) {
+      console.error(`Channel ${channelIdNumber} not found:`, channelError);
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+    
+    if (channel.user_id !== userId) {
+      console.error(`User ${userId} is not authorized to create article in channel ${channelIdNumber}`);
+      return res.status(403).json({ error: 'Not authorized to create article in this channel' });
+    }
+    
+    // Create the article
+    const { data: article, error: createError } = await supabase
+      .from('articles')
+      .insert([{
+        title: title.trim(),
+        content: content,
+        channel_id: channelIdNumber,
+        user_id: userId,
+        category: category || '',
+        location: location || null,
+        published: published,
+        created_at: new Date().toISOString(),
+        status: published ? 'published' : 'draft',
+        view_count: 0
+      }])
+      .select()
+      .single();
+      
+    if (createError) {
+      console.error('Error creating article:', createError);
+      return res.status(500).json({ error: 'Failed to create article' });
+    }
+    
+    console.log(`Article created successfully with ID ${article.id}`);
+    return res.status(201).json(article);
+  } catch (error) {
+    console.error('Error in create article endpoint:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Single article route (needed for article detail page)
 app.get("/api/articles/:id", async (req, res) => {
   try {
@@ -2182,60 +2282,87 @@ app.post("/api/articles/:id/view", async (req, res) => {
     
     console.log(`Processing view: articleId=${articleId}, clientId=${clientIdentifier}`);
     
-    // Try to increment view count
-    try {
-      const { data, error } = await supabase.rpc('increment_article_view', {
-        article_id: articleId,
-        client_id: clientIdentifier
-      });
+    // Step 1: Check if this client has already viewed this article
+    const { data: existingView, error: checkError } = await supabase
+      .from('article_views')
+      .select('id')
+      .eq('article_id', articleId)
+      .eq('client_identifier', clientIdentifier)
+      .maybeSingle();
       
-      if (error) {
-        console.error('Error incrementing view with RPC:', error);
+    if (checkError) {
+      console.error('Error checking existing view:', checkError);
+    }
+    
+    let viewCounted = false;
+    
+    // Step 2: If this is a new view, record it and increment the count
+    if (!existingView) {
+      // Insert view record
+      const { error: insertError } = await supabase
+        .from('article_views')
+        .insert({
+          article_id: articleId,
+          user_id: userId,
+          client_identifier: clientIdentifier
+        });
         
-        // Fallback: Update the view count directly
-        try {
-          const { data: articleData, error: getError } = await supabase
-            .from('articles')
-            .select('view_count')
-            .eq('id', articleId)
-            .single();
-            
-          if (getError) {
-            console.error('Error fetching current view count:', getError);
-            return res.status(500).json({ error: 'Failed to get current view count' });
-          }
+      if (insertError) {
+        console.error('Error recording view:', insertError);
+      } else {
+        // Increment view count directly
+        const { data: article, error: getError } = await supabase
+          .from('articles')
+          .select('view_count')
+          .eq('id', articleId)
+          .single();
           
-          // Use the current view count + 1
-          const newViewCount = (articleData.view_count || 0) + 1;
+        if (getError) {
+          console.error('Error getting current view count:', getError);
+        } else {
+          // Calculate new count and update
+          const currentCount = article?.view_count || 0;
+          const newCount = currentCount + 1;
           
-          const { data: updateData, error: updateError } = await supabase
+          const { error: updateError } = await supabase
             .from('articles')
-            .update({ 
-              view_count: newViewCount
-            })
-            .eq('id', articleId)
-            .select('view_count')
-            .single();
+            .update({ view_count: newCount })
+            .eq('id', articleId);
             
           if (updateError) {
-            console.error('Fallback view count update failed:', updateError);
-            return res.status(500).json({ error: 'Failed to record view' });
+            console.error('Error updating view count:', updateError);
+          } else {
+            viewCounted = true;
+            console.log(`Updated view count for article ${articleId} to ${newCount}`);
           }
-          
-          console.log(`Updated view count for article ${articleId} to ${updateData?.view_count || 'unknown'}`);
-          return res.json({ success: true, view_count: updateData?.view_count });
-        } catch (updateError) {
-          console.error('Exception in view count update:', updateError);
-          return res.status(500).json({ error: 'Exception in view count update' });
         }
       }
-      
-      console.log(`Successfully recorded view for article ${articleId}, result:`, data);
-      return res.json({ success: true, view_count: data });
-    } catch (rpcError) {
-      console.error('Exception calling increment_article_view RPC:', rpcError);
-      return res.status(500).json({ error: 'Exception in view recording' });
     }
+    
+    // Step 3: Get the current view count to return to client
+    const { data: latestArticle, error: latestError } = await supabase
+      .from('articles')
+      .select('view_count')
+      .eq('id', articleId)
+      .single();
+      
+    if (latestError) {
+      console.error('Error getting latest view count:', latestError);
+      return res.json({ 
+        success: true,
+        counted: viewCounted,
+        message: viewCounted ? 'View counted' : 'View already recorded',
+        shouldInvalidateFeeds: viewCounted // Add this flag
+      });
+    }
+    
+    return res.json({
+      success: true,
+      counted: viewCounted, 
+      view_count: latestArticle.view_count,
+      message: viewCounted ? 'View counted' : 'View already recorded',
+      shouldInvalidateFeeds: viewCounted // Add this flag
+    });
   } catch (error) {
     console.error('Error in article view endpoint:', error);
     return res.status(500).json({ error: 'Server error' });

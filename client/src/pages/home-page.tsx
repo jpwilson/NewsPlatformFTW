@@ -52,6 +52,7 @@ type ArticleWithSnakeCase = Article & {
   likes?: number;
   dislikes?: number;
   viewCount?: number;
+  view_count?: number;
   userReaction?: boolean | null;
   _count?: {
     comments?: number;
@@ -169,8 +170,8 @@ export default function HomePage() {
           ).getTime();
           break;
         case "viewCount":
-          aValue = a.viewCount || 0;
-          bValue = b.viewCount || 0;
+          aValue = a.viewCount || a.view_count || 0;
+          bValue = b.viewCount || b.view_count || 0;
           break;
         case "comments":
           aValue = a._count?.comments || 0;
