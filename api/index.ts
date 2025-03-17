@@ -591,6 +591,110 @@ app.get("/api/channels", async (req, res) => {
   }
 });
 
+// Channel creation endpoint
+app.post("/api/channels", async (req, res) => {
+  try {
+    console.log("Channel creation request received:", req.body);
+    
+    // Properly extract the authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error("No authorization header found");
+      return res.status(401).json({ error: "Unauthorized", message: "You must be logged in to create a channel" });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    
+    // Verify the token using Supabase
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      console.error("Auth error or no user:", authError);
+      return res.status(401).json({ error: "Unauthorized", message: "You must be logged in to create a channel" });
+    }
+    
+    console.log("Supabase auth user:", user.id);
+    
+    // Validate required fields
+    const { name, description } = req.body;
+    if (!name || !description) {
+      return res.status(400).json({ 
+        error: "Bad Request", 
+        message: "Name and description are required" 
+      });
+    }
+    
+    // Extract the numeric user ID from the request body
+    const numericUserId = req.body.userId || 3; // Default to 3 if not provided
+    console.log("Using numeric user ID:", numericUserId);
+    
+    // Check if user has reached the maximum number of channels (10)
+    const { data: userChannels, error: countError } = await supabase
+      .from("channels")
+      .select("id")
+      .eq("user_id", numericUserId);
+    
+    if (countError) {
+      console.error("Error checking existing channels:", countError);
+      return res.status(500).json({ 
+        error: "Internal Server Error", 
+        message: "Failed to check existing channels" 
+      });
+    }
+    
+    const channelCount = userChannels ? userChannels.length : 0;
+    console.log(`User ${numericUserId} has ${channelCount} existing channels`);
+    
+    if (channelCount >= 10) {
+      console.log("User has reached channel limit:", channelCount);
+      return res.status(400).json({ 
+        error: "Limit Exceeded", 
+        message: "Maximum limit reached. You cannot create more than 10 channels." 
+      });
+    }
+    
+    // Create the channel with the correct field name
+    const { data: newChannel, error: insertError } = await supabase
+      .from("channels")
+      .insert({
+        name,
+        description,
+        user_id: numericUserId // Use the correct column name (user_id with underscore)
+      })
+      .select("*")
+      .single();
+    
+    if (insertError) {
+      console.error("Error creating channel:", insertError);
+      return res.status(500).json({ 
+        error: "Creation Failed", 
+        message: "Failed to create channel", 
+        details: insertError.message 
+      });
+    }
+    
+    // Convert snake_case to camelCase for front-end consistency
+    const formattedChannel = {
+      id: newChannel.id,
+      name: newChannel.name,
+      description: newChannel.description,
+      userId: newChannel.user_id,
+      createdAt: newChannel.created_at,
+      ...newChannel // Include other fields as well
+    };
+    
+    console.log("Channel created successfully:", formattedChannel);
+    res.status(201).json(formattedChannel);
+  } catch (error) {
+    console.error("Unexpected error in channel creation:", error);
+    res.status(500).json({ 
+      error: "Internal Server Error", 
+      message: "An unexpected error occurred", 
+      details: error.message 
+    });
+  }
+});
+
 // Articles route with channel data
 app.get("/api/articles", async (req, res) => {
   try {

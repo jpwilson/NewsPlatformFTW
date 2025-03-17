@@ -77,7 +77,7 @@ export default function ChannelPage() {
   const [editedName, setEditedName] = useState("");
   const [editedDescription, setEditedDescription] = useState("");
   const [editedCategory, setEditedCategory] = useState("");
-  const [authDialogOpen, setAuthDialogOpen] = useState(!user);
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
   // Redirect to home if auth dialog is closed without login
   useEffect(() => {
@@ -85,6 +85,18 @@ export default function ChannelPage() {
       setLocation("/");
     }
   }, [user, authDialogOpen, setLocation]);
+
+  // Only show auth dialog if explicitly needed
+  useEffect(() => {
+    // Only show the dialog if user is null after a short delay (to allow auth to load)
+    const timer = setTimeout(() => {
+      if (!user) {
+        setAuthDialogOpen(true);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [user]);
 
   // Fetch current channel
   const { data: channel, isLoading: loadingChannel } =

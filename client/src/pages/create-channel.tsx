@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Channel } from "@shared/schema";
+import { useEffect } from "react";
 
 export default function CreateChannel() {
   const { toast } = useToast();
@@ -25,11 +26,34 @@ export default function CreateChannel() {
   const { user } = useAuth();
 
   // Fetch user's existing channels to check against limit
-  const { data: userChannels } = useQuery<Channel[]>({
+  const { data: userChannels, refetch: refetchUserChannels } = useQuery<
+    Channel[]
+  >({
     queryKey: ["/api/channels"],
-    select: (channels) => channels.filter((c) => c.userId === user?.id),
+    select: (channels) => {
+      console.log("All channels:", channels);
+      const filteredChannels = channels.filter((c) => {
+        const matches = c.userId === user?.id || c.user_id === user?.id;
+        return matches;
+      });
+      console.log(
+        `Found ${filteredChannels.length} channels for user:`,
+        filteredChannels
+      );
+      return filteredChannels;
+    },
     enabled: !!user,
+    // Use shorter stale time to ensure we get fresh data
+    staleTime: 0,
   });
+
+  // Force refetch on component mount to ensure fresh data
+  useEffect(() => {
+    if (user) {
+      console.log("Refetching channels for user:", user.id);
+      refetchUserChannels();
+    }
+  }, [user, refetchUserChannels]);
 
   const remainingChannels = userChannels ? 10 - userChannels.length : 10;
   const isAtLimit = remainingChannels <= 0;
@@ -52,15 +76,20 @@ export default function CreateChannel() {
       }
       return await response.json();
     },
-    onSuccess: () => {
-      console.log("Channel created successfully");
+    onSuccess: (data) => {
+      console.log("Channel created successfully:", data);
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
       toast({
         title: "Channel created!",
         description: "Your channel has been created successfully.",
       });
-      // Immediate navigation after success
-      window.location.href = "/articles/new";
+      // Redirect to the newly created channel's profile page
+      if (data && data.id) {
+        window.location.href = `/channels/${data.id}`;
+      } else {
+        console.error("No channel ID received, falling back to channels page");
+        window.location.href = "/channels";
+      }
     },
     onError: (error: Error) => {
       console.error("Creation failed:", error);
@@ -102,25 +131,18 @@ export default function CreateChannel() {
       <div className="container mx-auto p-4 lg:p-8 max-w-2xl">
         <h1 className="text-4xl font-bold mb-8">Create Channel</h1>
 
-        {userChannels && (
-          <div
-            className={`mb-6 p-4 rounded-md ${
-              isAtLimit
-                ? "bg-destructive/15"
-                : remainingChannels <= 2
-                ? "bg-amber-500/15"
-                : ""
-            }`}
-          >
-            <p className="text-sm">
-              {isAtLimit
-                ? "You've reached the maximum limit of 10 channels. Please delete an existing channel before creating a new one."
-                : `You can create ${remainingChannels} more channel${
-                    remainingChannels === 1 ? "" : "s"
-                  } (limit: 10).`}
+        <div className="text-center text-muted-foreground">
+          {isAtLimit ? (
+            <p className="text-red-500">
+              You have reached the maximum limit of 10 channels.
             </p>
-          </div>
-        )}
+          ) : (
+            <p>
+              You can create {remainingChannels} more{" "}
+              {remainingChannels === 1 ? "channel" : "channels"} (limit: 10).
+            </p>
+          )}
+        </div>
 
         <Form {...form}>
           <form
