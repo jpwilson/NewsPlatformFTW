@@ -2639,6 +2639,92 @@ app.post("/api/articles/:id/toggle-status", async (req, res) => {
   }
 });
 
+// Add DELETE endpoint for articles
+app.delete("/api/articles/:id", async (req, res) => {
+  try {
+    console.log(`Article deletion request received for ID: ${req.params.id}`);
+    
+    // Properly extract the authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error("No authorization header found");
+      return res.status(401).json({ error: "Unauthorized", message: "You must be logged in to delete an article" });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    
+    // Verify the token using Supabase
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      console.error("Auth error or no user:", authError);
+      return res.status(401).json({ error: "Unauthorized", message: "You must be logged in to delete an article" });
+    }
+    
+    console.log("Supabase auth user:", user.id);
+    
+    // Get the database user ID associated with this Supabase ID
+    const { data: dbUser, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('supabase_uid', user.id)
+      .single();
+      
+    if (userError || !dbUser) {
+      console.error("Error finding database user:", userError);
+      return res.status(401).json({ error: "Unauthorized", message: "User account not found" });
+    }
+    
+    const userId = dbUser.id;
+    console.log(`Found database user ID: ${userId}`);
+    
+    // Get the article to check ownership
+    const articleId = parseInt(req.params.id);
+    const { data: article, error: articleError } = await supabase
+      .from("articles")
+      .select("*")
+      .eq("id", articleId)
+      .single();
+    
+    if (articleError) {
+      console.error("Error fetching article:", articleError);
+      return res.status(404).json({ error: "Not Found", message: "Article not found" });
+    }
+    
+    if (!article) {
+      return res.status(404).json({ error: "Not Found", message: "Article not found" });
+    }
+    
+    console.log(`Article user_id: ${article.user_id}, Current user ID: ${userId}`);
+    
+    // Check if the user is the owner of the article
+    if (article.user_id !== userId) {
+      return res.status(403).json({ error: "Forbidden", message: "You don't have permission to delete this article" });
+    }
+    
+    // Delete the article
+    const { error: deleteError } = await supabase
+      .from("articles")
+      .delete()
+      .eq("id", articleId);
+    
+    if (deleteError) {
+      console.error("Error deleting article:", deleteError);
+      return res.status(500).json({ error: "Deletion Failed", message: "Failed to delete article" });
+    }
+    
+    console.log(`Article ${articleId} deleted successfully`);
+    res.status(204).send(); // No content
+  } catch (error) {
+    console.error("Unexpected error in article deletion:", error);
+    res.status(500).json({ 
+      error: "Internal Server Error", 
+      message: "An unexpected error occurred", 
+      details: error.message 
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const status = err.status || err.statusCode || 500;
