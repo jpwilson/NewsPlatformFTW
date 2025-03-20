@@ -501,86 +501,6 @@ export default function ProfilePage() {
         </div>
 
         <div className="grid gap-6">
-          {/* Only show My Channels section if channels exist or just a create button */}
-          {showMyChannelsSection && (
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>My Channels</CardTitle>
-                  <CardDescription>
-                    Channels you have created{" "}
-                    <span className="font-medium">
-                      {combinedOwnedChannels.length} out of 10
-                    </span>{" "}
-                    <span className="text-xs text-muted-foreground">
-                      (max 10)
-                    </span>
-                  </CardDescription>
-                </div>
-                <Link href="/channels/new">
-                  <Button
-                    disabled={Boolean(
-                      combinedOwnedChannels &&
-                        combinedOwnedChannels.length >= 10
-                    )}
-                  >
-                    Create Another Channel
-                  </Button>
-                </Link>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Channel Name</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="w-[8%] text-center">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <div className="flex items-center justify-center">
-                                <Users className="h-4 w-4" />
-                              </div>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>Number of subscribers</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {combinedOwnedChannels.map((channel: Channel) => (
-                      <TableRow key={channel.id}>
-                        <TableCell className="font-medium">
-                          <Link href={`/channels/${channel.id}`}>
-                            {channel.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="truncate max-w-[200px]">
-                          {channel.description}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {(channel as any).subscriberCount || 0}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Link href={`/channels/${channel.id}/edit`}>
-                            <Button variant="ghost" size="icon">
-                              <Pencil className="h-4 w-4" />
-                              <span className="sr-only">Edit Channel</span>
-                            </Button>
-                          </Link>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Only show Subscriptions section on own profile */}
           {isOwnProfile && (
             <Card>
@@ -693,6 +613,110 @@ export default function ProfilePage() {
                         )}
                     </div>
                   </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Always show My Channels section for logged in users */}
+          {isOwnProfile && (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>My Channels</CardTitle>
+                  <CardDescription>
+                    {combinedOwnedChannels.length > 0 ? (
+                      <>
+                        Channels you have created{" "}
+                        <span className="font-medium">
+                          {combinedOwnedChannels.length} out of 10
+                        </span>{" "}
+                        <span className="text-xs text-muted-foreground">
+                          (max 10)
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        Want to become a journalist or share interesting news?
+                        Create your own channel!
+                      </>
+                    )}
+                  </CardDescription>
+                </div>
+                <div className="flex space-x-2">
+                  <Link href="/channels/new">
+                    <Button
+                      disabled={Boolean(
+                        combinedOwnedChannels &&
+                          combinedOwnedChannels.length >= 10
+                      )}
+                    >
+                      Create{combinedOwnedChannels.length > 0 ? " Another" : ""}{" "}
+                      Channel
+                    </Button>
+                  </Link>
+                  <Link href="/articles/new">
+                    <Button>Write Article</Button>
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {combinedOwnedChannels.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Channel Name</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="w-[8%] text-center">
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center justify-center">
+                                  <Users className="h-4 w-4" />
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Number of subscribers</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </TableHead>
+                        <TableHead></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {combinedOwnedChannels.map((channel: Channel) => (
+                        <TableRow key={channel.id}>
+                          <TableCell className="font-medium">
+                            <Link href={`/channels/${channel.id}`}>
+                              {channel.name}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="truncate max-w-[200px]">
+                            {channel.description}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {(channel as any).subscriberCount || 0}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Link href={`/channels/${channel.id}/edit`}>
+                              <Button variant="ghost" size="icon">
+                                <Pencil className="h-4 w-4" />
+                                <span className="sr-only">Edit Channel</span>
+                              </Button>
+                            </Link>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p className="mb-4">
+                      Create your first channel to start sharing news and
+                      stories that matter to you.
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
