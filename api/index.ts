@@ -21,6 +21,40 @@ if (!supabaseServiceKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
 
+// Helper function to authenticate user from request and return the userId
+async function authenticateUser(req: express.Request): Promise<{ userId?: number; error?: string }> {
+  // Extract the Authorization header
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log("No Authorization header found");
+    return { error: "Authentication required" };
+  }
+  
+  const token = authHeader.split(' ')[1];
+  
+  // Verify the token with Supabase
+  const { data: userData, error: userError } = await supabaseAuth.auth.getUser(token);
+  
+  if (userError || !userData.user) {
+    console.error('Error verifying user token:', userError);
+    return { error: "Invalid authentication" };
+  }
+  
+  // Look up the user in the database
+  const { data: dbUser, error: dbError } = await supabase
+    .from('users')
+    .select('id')
+    .eq('supabase_uid', userData.user.id)
+    .single();
+  
+  if (dbError || !dbUser) {
+    console.error('Error finding user:', dbError);
+    return { error: "User not found" };
+  }
+  
+  return { userId: dbUser.id };
+}
+
 // Create Express app
 const app = express();
 
@@ -1265,7 +1299,7 @@ app.get("/api/user/subscriptions", async (req, res) => {
             }
           }
           
-          // Continue with this user for subscriptions
+          // Continue with this user
           const userId = userByUsername.id;
           console.log(`Using user ID ${userId} found by username instead`);
           
@@ -1299,10 +1333,34 @@ async function handleUserSubscriptions(userId: number, res: any) {
   try {
     console.log(`Fetching subscriptions for user ID ${userId}...`);
     
+    // Check the available columns in the subscriptions table first
+    const { data: availableColumns, error: columnsError } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .limit(1);
+      
+    const createdAtColumn = 'created_at';
+    
+    if (columnsError) {
+      console.error('Error checking subscriptions schema:', columnsError);
+    }
+    
+    // Check if created_at exists in the table structure
+    const hasCreatedAt = availableColumns && 
+                        availableColumns.length > 0 && 
+                        createdAtColumn in availableColumns[0];
+    
+    console.log(`Subscriptions table ${hasCreatedAt ? 'has' : 'does not have'} created_at column`);
+    
     // First get just the subscription records
+    let selectColumns = 'id, channel_id';
+    if (hasCreatedAt) {
+      selectColumns += ', created_at';
+    }
+    
     const { data: subscriptions, error: subsError } = await supabase
       .from('subscriptions')
-      .select('id, channel_id, created_at')
+      .select(selectColumns)
       .eq('user_id', userId);
       
     if (subsError) {
@@ -1317,7 +1375,11 @@ async function handleUserSubscriptions(userId: number, res: any) {
     }
     
     console.log(`Found ${subscriptions.length} subscriptions for user ${userId}`);
-    const channelIds = subscriptions.map(sub => sub.channel_id);
+    
+    // Extract channel IDs using type assertion to avoid TypeScript errors
+    const subscriptionsArray = subscriptions as unknown as Array<{channel_id: number}>;
+    const channelIds = subscriptionsArray.map(sub => sub.channel_id);
+    
     console.log('Subscription channel IDs:', channelIds);
     
     // Now fetch the channel data separately
@@ -1333,57 +1395,30 @@ async function handleUserSubscriptions(userId: number, res: any) {
     
     console.log(`Found ${channels?.length || 0} channels for subscriptions`);
     
-    // If no channels found or fewer channels than subscriptions, log warning
-    if (!channels || channels.length < subscriptions.length) {
-      console.warn(`Warning: Found fewer channels (${channels?.length || 0}) than subscriptions (${subscriptions.length})`);
-    }
-    
-    // Create a map of channel id to channel data
-    const channelMap = {};
-    if (channels) {
-      channels.forEach(channel => {
-        channelMap[channel.id] = channel;
-      });
-    }
-    
-    // Enrich each channel with subscriber count
-    for (const channelId in channelMap) {
+    // Add subscriber count to each channel
+    const enhancedChannels = await Promise.all((channels || []).map(async (channel) => {
       try {
+        // Get subscriber count for this channel
         const { count, error: countError } = await supabase
-          .from("subscriptions")
-          .select("*", { count: 'exact', head: true })
-          .eq("channel_id", channelId);
+          .from('subscriptions')
+          .select('*', { count: 'exact', head: true })
+          .eq('channel_id', channel.id);
           
         if (!countError) {
-          channelMap[channelId].subscriberCount = count || 0;
+          return {
+            ...channel,
+            subscriberCount: count || 0
+          };
         }
+        return channel;
       } catch (error) {
-        console.error(`Error getting subscriber count for channel ${channelId}:`, error);
+        console.error(`Error getting subscriber count for channel ${channel.id}:`, error);
+        return channel;
       }
-    }
+    }));
     
-    // Format the response to match what the frontend expects
-    const formattedSubscriptions = subscriptions
-      .map(sub => {
-        const channel = channelMap[sub.channel_id];
-        if (!channel) {
-          console.warn(`Channel ${sub.channel_id} not found for subscription ${sub.id}`);
-          return null; // Skip this subscription if channel not found
-        }
-        
-        return {
-          id: sub.id,
-          channel,
-          subscriberCount: channel.subscriberCount || 0,
-          subscriptionDate: sub.created_at || new Date().toISOString()
-        };
-      })
-      .filter(Boolean); // Remove null entries (subscriptions without channels)
-    
-    console.log(`Returning ${formattedSubscriptions.length} formatted subscriptions`);
-    
-    // Return the subscriptions, ensuring we don't return null channels
-    return res.json(formattedSubscriptions);
+    // Return the channels with subscriber counts
+    return res.json(enhancedChannels || []);
   } catch (error) {
     console.error('Error handling user subscriptions:', error);
     return res.status(500).json({ 
@@ -1462,135 +1497,121 @@ app.get("/api/debug/channels", async (req, res) => {
 
 // 2. Debug endpoint for subscriptions with proper query parameters
 app.get("/api/debug/subscriptions", async (req, res) => {
+  // Add timestamp to response
+  const timestamp = new Date().toISOString();
+  
   try {
+    // Parse userId if provided
     const userId = req.query.userId ? parseInt(req.query.userId as string) : null;
+    
     console.log(`Debug endpoint: Fetching subscriptions${userId ? ` for user ID ${userId}` : ' (all subscriptions)'}`);
     
-    if (!userId) {
-      return res.status(400).json({
-        success: false,
-        message: "User ID is required for fetching subscriptions",
-        count: 0,
-        subscriptions: []
-      });
+    // Build overall response
+    const response = {
+      success: true,
+      message: "Debug subscriptions endpoint",
+      timestamp,
+      count: 0,
+      subscriptions: [] as any[],
+      diagnostic: null as any
+    };
+    
+    // First check if user exists
+    if (userId) {
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, username')
+        .eq('id', userId)
+        .single();
+        
+      if (userError) {
+        console.error('Error checking if user exists:', userError);
+        response.diagnostic = { userCheck: 'failed', error: userError };
+      } else if (!user) {
+        response.message = `User with ID ${userId} not found`;
+        return res.json(response);
+      }
     }
     
-    // First, log the user to verify it exists
-    const { data: userCheck, error: userCheckError } = await supabase
-      .from('users')
-      .select('id, username')
-      .eq('id', userId)
-      .single();
-      
-    if (userCheckError) {
-      console.error(`User check failed for ID ${userId}:`, userCheckError);
-    } else {
-      console.log(`Debug subscriptions: Found user ${userCheck.username} (ID: ${userCheck.id})`);
+    // Build query to get subscriptions
+    let query = supabase.from("subscriptions").select("id, user_id, channel_id");
+    
+    // Apply userId filter if provided
+    if (userId) {
+      query = query.eq("user_id", userId);
     }
     
-    // Get subscriptions for the specified user
-    const { data: subscriptions, error: subsError } = await supabase
-      .from('subscriptions')
-      .select('id, channel_id, created_at')
-      .eq('user_id', userId);
-      
-    if (subsError) {
-      console.error(`Debug endpoint error for subscriptions (user ID ${userId}):`, subsError);
+    // Execute query
+    const { data: subscriptions, error } = await query;
+    
+    if (error) {
+      console.error("Debug subscriptions endpoint error:", error);
       return res.status(500).json({ 
         success: false,
-        message: "Error fetching subscriptions", 
-        error: subsError.message,
-        count: 0,
-        subscriptions: [],
-        diagnostic: {
-          userExists: !!userCheck,
-          errorCode: subsError.code,
-          errorMessage: subsError.message,
-          hint: subsError.hint || null
-        }
+        message: "Error fetching subscriptions",
+        timestamp,
+        error: String(error)
       });
     }
     
-    // If no subscriptions, return empty array
     if (!subscriptions || subscriptions.length === 0) {
-      console.log(`No subscriptions found for user ID ${userId}`);
-      return res.json({ 
-        success: true,
-        message: `No subscriptions found for user ID ${userId}`, 
-        count: 0,
-        subscriptions: [],
-        diagnostic: {
-          userExists: !!userCheck,
-          checkedUserId: userId,
-          subscriptionsTable: "queried successfully but no results found"
-        }
-      });
+      response.message = userId 
+        ? `No subscriptions found for user ID ${userId}` 
+        : "No subscriptions found";
+      return res.json(response);
     }
     
-    // List the subscription IDs for debugging
-    console.log(`Found ${subscriptions.length} subscription records for user ${userId}`);
-    console.log(`Subscription IDs: ${subscriptions.map(s => s.id).join(', ')}`);
-    console.log(`Channel IDs: ${subscriptions.map(s => s.channel_id).join(', ')}`);
-    
-    // Get the channel IDs
+    // Get channel data for each subscription
     const channelIds = subscriptions.map(sub => sub.channel_id);
-    
-    // Now fetch the channel data separately
     const { data: channels, error: channelsError } = await supabase
-      .from('channels')
-      .select('*')
-      .in('id', channelIds);
+      .from("channels")
+      .select("*")
+      .in("id", channelIds);
       
     if (channelsError) {
-      console.error(`Error fetching channels for subscriptions (user ID ${userId}):`, channelsError);
-      return res.status(500).json({ 
-        success: false,
-        message: "Error fetching channels for subscriptions", 
-        error: channelsError.message,
-        subscriptionInfo: {
-          count: subscriptions.length,
-          ids: subscriptions.map(s => s.id),
-          channelIds: channelIds
-        },
-        subscriptions: subscriptions.map(sub => ({
-          id: sub.id,
-          channelId: sub.channel_id,
-          channel: null
-        }))
-      });
+      console.error("Error fetching channels for subscriptions:", channelsError);
+      response.diagnostic = { channelsQuery: 'failed', error: channelsError };
+      return res.json(response);
     }
     
-    // Create a map of channel id to channel data
+    // Create a map for quick lookup
     const channelMap = {};
     if (channels) {
-      channels.forEach(channel => {
-        channelMap[channel.id] = channel;
-      });
+      await Promise.all(channels.map(async (channel) => {
+        // Get subscriber count for each channel
+        const { count, error: countError } = await supabase
+          .from("subscriptions")
+          .select("*", { count: 'exact', head: true })
+          .eq("channel_id", channel.id);
+          
+        channelMap[channel.id] = {
+          ...channel,
+          subscriberCount: countError ? 0 : (count || 0)
+        };
+      }));
     }
     
-    // Format the response to match what the frontend expects
-    const formattedSubscriptions = subscriptions.map(sub => ({
-      id: sub.id,
-      channel: channelMap[sub.channel_id] || null,
-      channelId: sub.channel_id
-    }));
-    
-    console.log(`Debug endpoint: Found ${formattedSubscriptions.length} subscriptions for user ID ${userId}`);
-    
-    return res.status(200).json({ 
-      success: true,
-      message: `Subscriptions found for user ID ${userId}`, 
-      count: formattedSubscriptions.length,
-      subscriptions: formattedSubscriptions
+    // Format subscriptions with channel data
+    const formattedSubscriptions = subscriptions.map(sub => {
+      return {
+        id: sub.id,
+        userId: sub.user_id,
+        channelId: sub.channel_id,
+        channel: channelMap[sub.channel_id] || null
+      };
     });
+    
+    response.count = formattedSubscriptions.length;
+    response.subscriptions = formattedSubscriptions;
+    
+    return res.json(response);
   } catch (error) {
-    console.error("Debug endpoint unexpected error:", error);
+    console.error("Error in debug subscriptions endpoint:", error);
     return res.status(500).json({ 
       success: false,
-      message: "Unexpected error fetching subscriptions", 
-      error: error.message,
-      count: 0,
-      subscriptions: []
+      message: "Server error in debug subscriptions endpoint",
+      timestamp,
+      error: String(error)
     });
   }
 });
@@ -2476,115 +2497,147 @@ app.post("/api/articles/:id/view", async (req, res) => {
 // Article update endpoint
 app.patch("/api/articles/:id", async (req, res) => {
   try {
+    console.log("Update article endpoint called");
+    
+    // Get article ID from URL parameter
     const articleId = parseInt(req.params.id);
-    console.log(`Updating article ${articleId}`);
-    
-    // Extract the Authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log("No Authorization header found for article update");
-      return res.status(401).json({ error: 'Authentication required' });
+    if (isNaN(articleId)) {
+      return res.status(400).json({ message: "Invalid article ID" });
     }
     
-    const token = authHeader.split(' ')[1];
-    
-    // Verify the token with Supabase
-    const { data: userData, error: userError } = await supabaseAuth.auth.getUser(token);
-    
-    if (userError || !userData.user) {
-      console.error('Error verifying user token for article update:', userError);
-      return res.status(401).json({ error: 'Invalid authentication' });
+    // Authenticate user
+    const { userId, error: authError } = await authenticateUser(req);
+    if (authError) {
+      return res.status(401).json({ message: authError });
     }
     
-    // Look up the user in the database
-    const { data: dbUser, error: dbError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('supabase_uid', userData.user.id)
-      .single();
-    
-    if (dbError || !dbUser) {
-      console.error('Error finding user for article update:', dbError);
-      return res.status(401).json({ error: 'User not found' });
-    }
-    
-    const userId = dbUser.id;
-    
-    // Check if article exists and belongs to this user
-    const { data: article, error: articleError } = await supabase
+    // Fetch the article to check ownership
+    const { data: article, error: fetchError } = await supabase
       .from('articles')
       .select('*')
       .eq('id', articleId)
       .single();
       
-    if (articleError) {
-      console.error(`Article ${articleId} not found:`, articleError);
-      return res.status(404).json({ error: 'Article not found' });
+    if (fetchError) {
+      console.error("Error fetching article:", fetchError);
+      return res.status(404).json({ message: "Article not found" });
     }
     
+    // Check if user owns the article
     if (article.user_id !== userId) {
-      console.error(`User ${userId} not authorized to update article ${articleId}`);
-      return res.status(403).json({ error: 'Not authorized to update this article' });
+      return res.status(403).json({ message: "Not authorized to update this article" });
     }
     
-    // Extract update fields from request
-    const { title, content, summary, published, location, category } = req.body;
+    // Extract update fields from request body
+    const { title, content, categoryId, locationId } = req.body;
     
-    // Create update object with only fields that are provided
-    const updateObj: any = { last_edited: new Date().toISOString() };
+    // Construct update object with only provided fields
+    const updates: any = {};
+    if (title !== undefined) updates.title = title;
+    if (content !== undefined) updates.content = content;
+    if (categoryId !== undefined) updates.category_id = categoryId;
+    if (locationId !== undefined) updates.location_id = locationId;
     
-    if (title !== undefined) updateObj.title = title;
-    if (content !== undefined) updateObj.content = content;
-    if (summary !== undefined) updateObj.summary = summary;
-    if (published !== undefined) updateObj.published = published;
-    if (location !== undefined) updateObj.location = location;
-    if (category !== undefined) updateObj.category = category;
+    // Add updated_at timestamp
+    updates.updated_at = new Date().toISOString();
     
     // Update the article
     const { data: updatedArticle, error: updateError } = await supabase
       .from('articles')
-      .update(updateObj)
+      .update(updates)
       .eq('id', articleId)
       .select()
       .single();
       
     if (updateError) {
-      console.error(`Error updating article ${articleId}:`, updateError);
-      return res.status(500).json({ error: 'Failed to update article' });
+      console.error("Error updating article:", updateError);
+      return res.status(500).json({ message: "Failed to update article" });
     }
     
-    console.log(`Article ${articleId} updated successfully`);
     return res.json(updatedArticle);
   } catch (error) {
-    console.error('Error in article update endpoint:', error);
-    return res.status(500).json({ error: 'Server error' });
+    console.error("Error in update article endpoint:", error);
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
-// Toggle article publish status 
-app.post("/api/articles/:id/toggle-status", async (req, res) => {
+// Update user information by ID
+app.patch("/api/users/:id", async (req, res) => {
   try {
-    const articleId = parseInt(req.params.id);
-    console.log(`Toggling publish status for article ${articleId}`);
+    console.log("Update user endpoint called");
     
-    // Extract the Authorization header
+    // Get user ID from URL parameter
+    const userId = parseInt(req.params.id);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+    
+    // Authenticate the user
+    const { userId: authUserId, error: authError } = await authenticateUser(req);
+    if (authError) {
+      return res.status(401).json({ message: authError });
+    }
+    
+    // Check if the authenticated user is trying to update their own profile
+    if (authUserId !== userId) {
+      return res.status(403).json({ message: "Not authorized to update this user" });
+    }
+    
+    // Extract update fields from request body (only allow description for now)
+    const { description } = req.body;
+    
+    // Construct update object
+    const updates: any = {};
+    if (description !== undefined) updates.description = description;
+    
+    // Update the user
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
+      
+    if (updateError) {
+      console.error("Error updating user:", updateError);
+      return res.status(500).json({ message: "Failed to update user", details: updateError });
+    }
+    
+    return res.json(updatedUser);
+  } catch (error) {
+    console.error("Error in update user endpoint:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Add channel subscribers endpoint
+app.get("/api/channels/:id/subscribers", async (req, res) => {
+  try {
+    const channelId = parseInt(req.params.id);
+    console.log(`Fetching subscribers for channel ID: ${channelId}`);
+    
+    // Extract the Authorization header (if any)
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log("No Authorization header found for toggle status");
-      return res.status(401).json({ error: 'Authentication required' });
+      console.log("No Authorization header found for get subscribers");
+      return res.sendStatus(401);
     }
     
     const token = authHeader.split(' ')[1];
+    if (!token) {
+      console.log("No token found in Authorization header for get subscribers");
+      return res.sendStatus(401);
+    }
     
     // Verify the token with Supabase
     const { data: userData, error: userError } = await supabaseAuth.auth.getUser(token);
     
     if (userError || !userData.user) {
-      console.error('Error verifying user token for toggle status:', userError);
-      return res.status(401).json({ error: 'Invalid authentication' });
+      console.error('Error verifying user token for get subscribers:', userError);
+      return res.sendStatus(401);
     }
     
-    // Look up the user in the database
+    // Look up the user in our database
     const { data: dbUser, error: dbError } = await supabase
       .from('users')
       .select('id')
@@ -2592,148 +2645,107 @@ app.post("/api/articles/:id/toggle-status", async (req, res) => {
       .single();
     
     if (dbError || !dbUser) {
-      console.error('Error finding user for toggle status:', dbError);
+      console.error('Error finding user for get subscribers:', dbError);
       return res.status(401).json({ error: 'User not found' });
     }
     
-    const userId = dbUser.id;
-    
-    // Check if article exists and belongs to this user
-    const { data: article, error: articleError } = await supabase
-      .from('articles')
-      .select('*')
-      .eq('id', articleId)
+    // Check if the user is the channel owner (only channel owners can see subscribers)
+    const { data: channel, error: channelError } = await supabase
+      .from('channels')
+      .select('user_id, name')
+      .eq('id', channelId)
       .single();
       
-    if (articleError) {
-      console.error(`Article ${articleId} not found:`, articleError);
-      return res.status(404).json({ error: 'Article not found' });
+    if (channelError) {
+      console.error('Error fetching channel:', channelError);
+      return res.status(404).json({ error: 'Channel not found' });
     }
     
-    if (article.user_id !== userId) {
-      console.error(`User ${userId} not authorized to toggle article ${articleId}`);
-      return res.status(403).json({ error: 'Not authorized to toggle this article' });
+    if (channel.user_id !== dbUser.id) {
+      console.error(`User ${dbUser.id} is not the owner of channel ${channelId}`);
+      return res.status(403).json({ error: 'Not authorized to view subscribers' });
     }
     
-    // Toggle the published status
-    const { data: updatedArticle, error: updateError } = await supabase
-      .from('articles')
-      .update({ 
-        published: !article.published,
-        last_edited: new Date().toISOString()
+    // First, get all subscribers for this channel
+    const { data: subscriptionData, error: subscriptionsError } = await supabase
+      .from('subscriptions')
+      .select(`
+        id,
+        channel_id,
+        user_id,
+        created_at
+      `)
+      .eq('channel_id', channelId);
+      
+    if (subscriptionsError) {
+      console.error('Error fetching subscription data:', subscriptionsError);
+      return res.status(500).json({ error: 'Failed to fetch subscription data' });
+    }
+    
+    if (!subscriptionData || subscriptionData.length === 0) {
+      console.log(`No subscribers found for channel ${channelId}`);
+      return res.json([]);
+    }
+    
+    // Extract user IDs from subscriptions
+    const userIds = subscriptionData.map(sub => sub.user_id);
+    
+    // Fetch user details for each subscriber
+    const { data: subscriberUsers, error: usersError } = await supabase
+      .from('users')
+      .select(`
+        id,
+        username,
+        email
+      `)
+      .in('id', userIds);
+      
+    if (usersError) {
+      console.error('Error fetching subscriber user details:', usersError);
+      return res.status(500).json({ error: 'Failed to fetch subscriber details' });
+    }
+    
+    // Create a map of subscription dates by user ID
+    const subscriptionDates = {};
+    subscriptionData.forEach(sub => {
+      subscriptionDates[sub.user_id] = sub.created_at;
+    });
+    
+    // Count subscriptions for each user
+    const subscriberInfo = await Promise.all(
+      subscriberUsers.map(async (user) => {
+        // Count how many channels this user subscribes to
+        const { count, error: countError } = await supabase
+          .from('subscriptions')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+          
+        if (countError) {
+          console.error(`Error counting subscriptions for user ${user.id}:`, countError);
+          return {
+            ...user,
+            subscription_date: subscriptionDates[user.id],
+            channelCount: 0
+          };
+        }
+        
+        return {
+          ...user,
+          subscription_date: subscriptionDates[user.id],
+          channelCount: count || 0
+        };
       })
-      .eq('id', articleId)
-      .select()
-      .single();
-      
-    if (updateError) {
-      console.error(`Error toggling article ${articleId}:`, updateError);
-      return res.status(500).json({ error: 'Failed to toggle article status' });
-    }
+    );
     
-    console.log(`Article ${articleId} toggled to ${updatedArticle.published ? 'published' : 'draft'}`);
-    return res.json(updatedArticle);
+    console.log(`Found ${subscriberInfo.length} subscribers for channel ${channelId}`);
+    return res.json(subscriberInfo);
   } catch (error) {
-    console.error('Error in toggle article status endpoint:', error);
+    console.error('Error in get channel subscribers endpoint:', error);
     return res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Add DELETE endpoint for articles
-app.delete("/api/articles/:id", async (req, res) => {
-  try {
-    console.log(`Article deletion request received for ID: ${req.params.id}`);
-    
-    // Properly extract the authorization header
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.error("No authorization header found");
-      return res.status(401).json({ error: "Unauthorized", message: "You must be logged in to delete an article" });
-    }
-    
-    const token = authHeader.split(' ')[1];
-    
-    // Verify the token using Supabase
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      console.error("Auth error or no user:", authError);
-      return res.status(401).json({ error: "Unauthorized", message: "You must be logged in to delete an article" });
-    }
-    
-    console.log("Supabase auth user:", user.id);
-    
-    // Get the database user ID associated with this Supabase ID
-    const { data: dbUser, error: userError } = await supabase
-      .from('users')
-      .select('id')
-      .eq('supabase_uid', user.id)
-      .single();
-      
-    if (userError || !dbUser) {
-      console.error("Error finding database user:", userError);
-      return res.status(401).json({ error: "Unauthorized", message: "User account not found" });
-    }
-    
-    const userId = dbUser.id;
-    console.log(`Found database user ID: ${userId}`);
-    
-    // Get the article to check ownership
-    const articleId = parseInt(req.params.id);
-    const { data: article, error: articleError } = await supabase
-      .from("articles")
-      .select("*")
-      .eq("id", articleId)
-      .single();
-    
-    if (articleError) {
-      console.error("Error fetching article:", articleError);
-      return res.status(404).json({ error: "Not Found", message: "Article not found" });
-    }
-    
-    if (!article) {
-      return res.status(404).json({ error: "Not Found", message: "Article not found" });
-    }
-    
-    console.log(`Article user_id: ${article.user_id}, Current user ID: ${userId}`);
-    
-    // Check if the user is the owner of the article
-    if (article.user_id !== userId) {
-      return res.status(403).json({ error: "Forbidden", message: "You don't have permission to delete this article" });
-    }
-    
-    // Delete the article
-    const { error: deleteError } = await supabase
-      .from("articles")
-      .delete()
-      .eq("id", articleId);
-    
-    if (deleteError) {
-      console.error("Error deleting article:", deleteError);
-      return res.status(500).json({ error: "Deletion Failed", message: "Failed to delete article" });
-    }
-    
-    console.log(`Article ${articleId} deleted successfully`);
-    res.status(204).send(); // No content
-  } catch (error) {
-    console.error("Unexpected error in article deletion:", error);
-    res.status(500).json({ 
-      error: "Internal Server Error", 
-      message: "An unexpected error occurred", 
-      details: error.message 
-    });
-  }
-});
-
-// Error handling middleware
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || "Internal Server Error";
-  res.status(status).json({ message });
-  console.error(err);
-});
-
-// Handle all API routes
+// The handler function that routes requests to our Express app
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse

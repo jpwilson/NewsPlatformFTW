@@ -357,6 +357,39 @@ export default function ProfilePage() {
     checkSubscriptionsAndChannels();
   }, [user, isOwnProfile, subscribedChannels, loadingSubscriptions, toast]);
 
+  // Debug subscription data
+  useEffect(() => {
+    if (isOwnProfile && user) {
+      console.log("User subscriptions data:", subscribedChannels);
+      console.log("Debug subscriptions data:", debugSubscriptionsData);
+      console.log("Combined subscriptions data:", combinedSubscribedChannels);
+    }
+  }, [
+    isOwnProfile,
+    user,
+    subscribedChannels,
+    debugSubscriptionsData,
+    combinedSubscribedChannels,
+  ]);
+
+  // Add fallback for empty or missing subscribed channels
+  const effectiveSubscriptionCount = useMemo(() => {
+    if (combinedSubscribedChannels?.length) {
+      return combinedSubscribedChannels.length;
+    }
+
+    // Fallback to raw data structures if available
+    if (Array.isArray(subscribedChannels)) {
+      return subscribedChannels.length;
+    }
+
+    if (debugSubscriptionsData?.subscriptions?.length) {
+      return debugSubscriptionsData.subscriptions.length;
+    }
+
+    return 0;
+  }, [combinedSubscribedChannels, subscribedChannels, debugSubscriptionsData]);
+
   // Now the redirect - after all hooks are defined
   if (!user) {
     return <Redirect to="/auth" />;
@@ -507,17 +540,17 @@ export default function ProfilePage() {
               <CardHeader>
                 <CardTitle>Channel Subscriptions</CardTitle>
                 <CardDescription>
-                  You are currently subscribed to{" "}
-                  {combinedSubscribedChannels?.length || 0} channel
-                  {combinedSubscribedChannels?.length !== 1 ? "s" : ""}
+                  You are currently subscribed to {effectiveSubscriptionCount}{" "}
+                  channel
+                  {effectiveSubscriptionCount !== 1 ? "s" : ""}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {!combinedSubscribedChannels?.length ? (
+                {!effectiveSubscriptionCount ? (
                   <div className="text-center py-4 text-muted-foreground">
                     Not yet subscribed to any channels
                   </div>
-                ) : (
+                ) : combinedSubscribedChannels?.length ? (
                   <>
                     <div className="space-y-4">
                       <div className="flex items-center gap-2">
@@ -613,6 +646,26 @@ export default function ProfilePage() {
                         )}
                     </div>
                   </>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-muted-foreground mb-4">
+                      You have {effectiveSubscriptionCount} subscriptions, but
+                      we couldn't load the details.
+                    </p>
+                    <Button
+                      onClick={() => {
+                        queryClient.invalidateQueries({
+                          queryKey: ["/api/user/subscriptions"],
+                        });
+                        toast({
+                          title: "Refreshing data",
+                          description: "Trying to reload your subscriptions...",
+                        });
+                      }}
+                    >
+                      Refresh Subscriptions
+                    </Button>
+                  </div>
                 )}
               </CardContent>
             </Card>

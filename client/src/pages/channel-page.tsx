@@ -479,22 +479,33 @@ export default function ChannelPage() {
                       </Button>
                     ))}
 
-                  {!isOwner && user && !isEditing && (
-                    <Button
-                      variant={isSubscribed ? "outline" : "default"}
-                      onClick={() =>
-                        isSubscribed
-                          ? unsubscribeMutation.mutate()
-                          : subscribeMutation.mutate()
-                      }
-                      disabled={
-                        subscribeMutation.isPending ||
-                        unsubscribeMutation.isPending
-                      }
-                    >
-                      {isSubscribed ? "Unsubscribe" : "Subscribe"}
-                    </Button>
-                  )}
+                  {!isOwner &&
+                    user &&
+                    !isEditing &&
+                    (isSubscribed ? (
+                      <div className="flex gap-2">
+                        <Button variant="secondary" disabled={true}>
+                          Subscribed
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => unsubscribeMutation.mutate()}
+                          disabled={unsubscribeMutation.isPending}
+                          title="Unsubscribe"
+                        >
+                          &times;
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="default"
+                        onClick={() => subscribeMutation.mutate()}
+                        disabled={subscribeMutation.isPending}
+                      >
+                        Subscribe
+                      </Button>
+                    ))}
                 </div>
               </div>
 
@@ -898,11 +909,27 @@ export default function ChannelPage() {
                   <h2 className="text-xl font-semibold mb-4">
                     Channel Settings
                   </h2>
-                  <div className="space-y-2">
-                    <Button className="w-full" variant="outline">
+                  <div className="flex flex-col space-y-2">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setLocation(`/channels/${id}/subscribers`)}
+                    >
                       Manage Subscribers
                     </Button>
-                    <Button className="w-full" variant="outline">
+
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled
+                      onClick={() =>
+                        toast({
+                          title: "Coming soon",
+                          description:
+                            "Channel analytics feature is coming soon!",
+                        })
+                      }
+                    >
                       Channel Analytics
                     </Button>
                   </div>

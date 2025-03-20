@@ -17,6 +17,7 @@ import ChannelsPage from "@/pages/channels-page";
 import AuthCallback from "./pages/auth-callback";
 import ProfilePage from "./pages/profile-page";
 import EditArticle from "@/pages/edit-article";
+import ManageSubscribersPage from "@/pages/manage-subscribers";
 
 // Check if we're running in production (Vercel) or development
 const isProduction = process.env.NODE_ENV === "production";
@@ -31,6 +32,10 @@ function Router() {
         component={CreateArticle}
       />
       <ProtectedRoute path="/channels/new" component={CreateChannel} />
+      <ProtectedRoute
+        path="/channels/:id/subscribers"
+        component={ManageSubscribersPage}
+      />
       <Route path="/channels/:id" component={ChannelPage} />
       <Route path="/channels" component={ChannelsPage} />
       <ProtectedRoute path="/articles/new" component={CreateArticle} />

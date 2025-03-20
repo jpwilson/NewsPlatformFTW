@@ -197,12 +197,18 @@ export function ArticleEditor({
     form.setValue("published", !isDraft);
   }, [isDraft, form]);
 
-  // Set default channelId when channels are loaded
+  // Set default channelId when channels are loaded or defaultChannelId changes
   useEffect(() => {
-    if (channels && channels.length > 0 && !form.getValues("channelId")) {
+    if (defaultChannelId) {
+      form.setValue("channelId", defaultChannelId);
+    } else if (
+      channels &&
+      channels.length > 0 &&
+      !form.getValues("channelId")
+    ) {
       form.setValue("channelId", channels[0].id);
     }
-  }, [channels, form]);
+  }, [channels, form, defaultChannelId]);
 
   // Extract all categories into a flat list for search
   const flatCategories = useMemo(() => {
@@ -489,30 +495,45 @@ export function ArticleEditor({
             <FormItem>
               <FormLabel>Channel</FormLabel>
               {channels && channels.length > 0 ? (
-                <Select
-                  value={field.value?.toString() || ""}
-                  onValueChange={(value) => {
-                    if (value) {
-                      field.onChange(parseInt(value));
-                    }
-                  }}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a channel" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {channels.map((channel) => (
-                      <SelectItem
-                        key={channel.id}
-                        value={channel.id.toString()}
-                      >
-                        {channel.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                channels.length === 1 ? (
+                  // When there's only one channel, just show its name without a dropdown
+                  // Set the field value to the only channel's ID and show the name
+                  <div className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                    {(() => {
+                      // Update the field value to ensure it's set to the only channel
+                      if (field.value !== channels[0].id) {
+                        field.onChange(channels[0].id);
+                      }
+                      return channels[0].name;
+                    })()}
+                  </div>
+                ) : (
+                  // Multiple channels - show dropdown
+                  <Select
+                    value={field.value?.toString() || ""}
+                    onValueChange={(value) => {
+                      if (value) {
+                        field.onChange(parseInt(value));
+                      }
+                    }}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a channel" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {channels.map((channel) => (
+                        <SelectItem
+                          key={channel.id}
+                          value={channel.id.toString()}
+                        >
+                          {channel.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )
               ) : (
                 <div className="text-red-500 text-sm">
                   No channels available. Please create a channel first.
