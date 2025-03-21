@@ -29,6 +29,7 @@ import {
   ArrowUpDown,
   Users,
   Calendar,
+  PlusCircle,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { Textarea } from "@/components/ui/textarea";
@@ -140,10 +141,16 @@ export default function ProfilePage() {
     Channel[]
   >({
     queryKey: ["/api/channels"],
-    select: (channels) =>
-      channels?.filter(
-        (c) => c.userId === (isOwnProfile ? user?.id : parseInt(userId || "0"))
-      ) || [],
+    select: (channels) => {
+      const userChannels =
+        channels?.filter(
+          (c) =>
+            c.userId === (isOwnProfile ? user?.id : parseInt(userId || "0"))
+        ) || [];
+
+      // Fetch article counts for each channel
+      return userChannels;
+    },
     enabled: !!user && !!isOwnProfile, // Only fetch owned channels for own profile when user is logged in
   });
 
@@ -189,6 +196,44 @@ export default function ProfilePage() {
     }
     return [];
   }, [ownedChannels, debugChannelsData]);
+
+  // Fetch article counts for each channel
+  const [channelArticleCounts, setChannelArticleCounts] = useState<
+    Record<number, number>
+  >({});
+
+  useEffect(() => {
+    const fetchArticleCounts = async () => {
+      if (!combinedOwnedChannels?.length) return;
+
+      const counts: Record<number, number> = {};
+
+      await Promise.all(
+        combinedOwnedChannels.map(async (channel) => {
+          try {
+            const response = await fetch(
+              `/api/channels/${channel.id}/articles`
+            );
+            if (response.ok) {
+              const articles = await response.json();
+              counts[channel.id] = Array.isArray(articles)
+                ? articles.length
+                : 0;
+            }
+          } catch (error) {
+            console.error(
+              `Error fetching articles for channel ${channel.id}:`,
+              error
+            );
+          }
+        })
+      );
+
+      setChannelArticleCounts(counts);
+    };
+
+    fetchArticleCounts();
+  }, [combinedOwnedChannels]);
 
   // Combine subscriptions from both sources
   const combinedSubscribedChannels = useMemo(() => {
@@ -624,7 +669,7 @@ export default function ProfilePage() {
                                 {channel.description}
                               </TableCell>
                               <TableCell className="text-center">
-                                {channel.subscriberCount || 0}
+                                {(channel as any).subscriberCount || 0}
                               </TableCell>
                               <TableCell className="text-right">
                                 <Link href={`/channels/${channel.id}`}>
@@ -734,7 +779,9 @@ export default function ProfilePage() {
                             </Tooltip>
                           </TooltipProvider>
                         </TableHead>
-                        <TableHead></TableHead>
+                        <TableHead className="w-[8%] text-center">
+                          Articles
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -751,13 +798,8 @@ export default function ProfilePage() {
                           <TableCell className="text-center">
                             {(channel as any).subscriberCount || 0}
                           </TableCell>
-                          <TableCell className="text-right">
-                            <Link href={`/channels/${channel.id}/edit`}>
-                              <Button variant="ghost" size="icon">
-                                <Pencil className="h-4 w-4" />
-                                <span className="sr-only">Edit Channel</span>
-                              </Button>
-                            </Link>
+                          <TableCell className="text-center">
+                            {channelArticleCounts[channel.id] ?? 0}
                           </TableCell>
                         </TableRow>
                       ))}

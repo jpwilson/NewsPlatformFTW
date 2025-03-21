@@ -389,7 +389,7 @@ export default function ChannelPage() {
               <div className="flex justify-between items-start mb-8">
                 <div>
                   {isEditing ? (
-                    <div className="space-y-4">
+                    <div className="space-y-4 w-full max-w-[800px]">
                       <div>
                         <Label htmlFor="channel-name">Channel Name</Label>
                         <Input
@@ -397,7 +397,7 @@ export default function ChannelPage() {
                           type="text"
                           value={editedName}
                           onChange={(e) => setEditedName(e.target.value)}
-                          className="max-w-md"
+                          className="w-full"
                         />
                       </div>
                       <div>
@@ -406,9 +406,23 @@ export default function ChannelPage() {
                           id="channel-description"
                           value={editedDescription}
                           onChange={(e) => setEditedDescription(e.target.value)}
-                          className="max-w-md"
-                          rows={3}
+                          className="w-full"
+                          rows={12}
+                          maxLength={800}
                         />
+                        <div className="flex justify-end mt-1 text-xs">
+                          <span
+                            className={`${
+                              editedDescription.length > 750
+                                ? editedDescription.length >= 800
+                                  ? "text-red-500 font-bold"
+                                  : "text-amber-500"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            {editedDescription.length}/800 chars
+                          </span>
+                        </div>
                       </div>
                       <div>
                         <Label htmlFor="channel-category">
@@ -419,7 +433,7 @@ export default function ChannelPage() {
                           type="text"
                           value={editedCategory}
                           onChange={(e) => setEditedCategory(e.target.value)}
-                          className="max-w-md"
+                          className="w-full"
                           placeholder="e.g. Technology, Sports, News"
                         />
                       </div>
