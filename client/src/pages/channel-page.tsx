@@ -48,6 +48,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { createSlugUrl } from "@/lib/slug-utils";
+import { cn } from "@/lib/utils";
 
 type SortField =
   | "title"
@@ -221,7 +223,12 @@ export default function ChannelPage() {
   };
 
   const handleChannelChange = (channelId: string) => {
-    setLocation(`/channels/${channelId}`);
+    // Find the selected channel to get its slug
+    const selectedChannel = userChannels?.find(
+      (c) => c.id.toString() === channelId
+    );
+    const channelSlug = selectedChannel?.slug || "";
+    setLocation(createSlugUrl("/channels/", channelSlug, channelId));
   };
 
   // Sort published articles
@@ -341,6 +348,162 @@ export default function ChannelPage() {
       });
     },
   });
+
+  // Render published articles
+  const renderArticles = (
+    articles: ArticleWithSnakeCase[] | undefined,
+    isDrafts = false
+  ) => {
+    if (!articles || articles.length === 0) {
+      return (
+        <div className="text-center p-4 text-muted-foreground">
+          {isDrafts ? "No draft articles found." : "No articles published yet."}
+        </div>
+      );
+    }
+
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead
+              className="cursor-pointer"
+              onClick={() => handleSort("title")}
+            >
+              Title{" "}
+              <ArrowUpDown
+                className={cn(
+                  "ml-2 h-4 w-4 inline",
+                  sortField === "title" ? "opacity-100" : "opacity-50"
+                )}
+              />
+            </TableHead>
+            <TableHead
+              className="cursor-pointer"
+              onClick={() => handleSort("createdAt")}
+            >
+              Date{" "}
+              <ArrowUpDown
+                className={cn(
+                  "ml-2 h-4 w-4 inline",
+                  sortField === "createdAt" ? "opacity-100" : "opacity-50"
+                )}
+              />
+            </TableHead>
+            <TableHead
+              className="cursor-pointer"
+              onClick={() => handleSort("category")}
+            >
+              Category{" "}
+              <ArrowUpDown
+                className={cn(
+                  "ml-2 h-4 w-4 inline",
+                  sortField === "category" ? "opacity-100" : "opacity-50"
+                )}
+              />
+            </TableHead>
+            <TableHead
+              className="cursor-pointer text-right hidden md:table-cell"
+              onClick={() => handleSort("viewCount")}
+            >
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Eye
+                      className={cn(
+                        "ml-2 h-4 w-4 inline",
+                        sortField === "viewCount" ? "opacity-100" : "opacity-50"
+                      )}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>Views</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </TableHead>
+            <TableHead
+              className="cursor-pointer text-right hidden md:table-cell"
+              onClick={() => handleSort("commentCount")}
+            >
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <MessageSquare
+                      className={cn(
+                        "ml-2 h-4 w-4 inline",
+                        sortField === "commentCount"
+                          ? "opacity-100"
+                          : "opacity-50"
+                      )}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>Comments</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </TableHead>
+            <TableHead
+              className="cursor-pointer text-right hidden md:table-cell"
+              onClick={() => handleSort("likeCount")}
+            >
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <ThumbsUp
+                      className={cn(
+                        "ml-2 h-4 w-4 inline",
+                        sortField === "likeCount" ? "opacity-100" : "opacity-50"
+                      )}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>Likes</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(isDrafts ? drafts : sortedArticles)?.map((article) => (
+            <TableRow key={article.id}>
+              <TableCell>
+                <Link
+                  href={createSlugUrl(
+                    "/articles/",
+                    article.slug || "",
+                    article.id.toString()
+                  )}
+                  className="hover:underline text-primary"
+                >
+                  {article.title}
+                </Link>
+                {isDrafts && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    (Draft)
+                  </span>
+                )}
+              </TableCell>
+              <TableCell>
+                {formatDate(
+                  article.createdAt || article.created_at || new Date()
+                )}
+              </TableCell>
+              <TableCell>{capitalizeFirstLetter(article.category)}</TableCell>
+              <TableCell className="text-right hidden md:table-cell">
+                {article.viewCount || article.view_count || 0}
+              </TableCell>
+              <TableCell className="text-right hidden md:table-cell">
+                {article.commentCount ||
+                  article.comment_count ||
+                  article._count?.comments ||
+                  0}
+              </TableCell>
+              <TableCell className="text-right hidden md:table-cell">
+                {article.likes || 0}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    );
+  };
 
   if (
     loadingChannel ||
@@ -536,157 +699,7 @@ export default function ChannelPage() {
                   value="published"
                   className="rounded-lg border bg-card mt-2"
                 >
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>
-                          <Button
-                            variant="ghost"
-                            onClick={() => handleSort("title")}
-                          >
-                            Title
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                          </Button>
-                        </TableHead>
-                        <TableHead>
-                          <Button
-                            variant="ghost"
-                            onClick={() => handleSort("category")}
-                          >
-                            Category
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                          </Button>
-                        </TableHead>
-                        <TableHead>
-                          <Button
-                            variant="ghost"
-                            onClick={() => handleSort("createdAt")}
-                          >
-                            Date
-                            <ArrowUpDown className="ml-2 h-4 w-4" />
-                          </Button>
-                        </TableHead>
-                        <TableHead className="text-center">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="px-2"
-                                  onClick={() => handleSort("viewCount")}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                  {sortField === "viewCount" && (
-                                    <ArrowUpDown
-                                      className={`ml-2 h-3 w-3 ${
-                                        sortOrder === "asc" ? "rotate-180" : ""
-                                      }`}
-                                    />
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Views</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableHead>
-                        <TableHead className="text-center">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="px-2"
-                                  onClick={() => handleSort("commentCount")}
-                                >
-                                  <MessageSquare className="h-4 w-4" />
-                                  {sortField === "commentCount" && (
-                                    <ArrowUpDown
-                                      className={`ml-2 h-3 w-3 ${
-                                        sortOrder === "asc" ? "rotate-180" : ""
-                                      }`}
-                                    />
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Comments</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableHead>
-                        <TableHead className="text-center">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  className="px-2"
-                                  onClick={() => handleSort("likeCount")}
-                                >
-                                  <ThumbsUp className="h-4 w-4" />
-                                  {sortField === "likeCount" && (
-                                    <ArrowUpDown
-                                      className={`ml-2 h-3 w-3 ${
-                                        sortOrder === "asc" ? "rotate-180" : ""
-                                      }`}
-                                    />
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Likes</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedArticles?.map((article) => (
-                        <TableRow key={article.id}>
-                          <TableCell>
-                            <a
-                              href={`/articles/${article.id}`}
-                              className="hover:underline text-primary"
-                            >
-                              {article.title}
-                            </a>
-                          </TableCell>
-                          <TableCell>{article.category}</TableCell>
-                          <TableCell>
-                            {formatDate(
-                              article.createdAt || article.created_at
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {Number(
-                              article.viewCount || article.view_count || 0
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {Number(
-                              article.commentCount ||
-                                article.comment_count ||
-                                article._count?.comments ||
-                                0
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {Number(
-                              article.likeCount ||
-                                article.like_count ||
-                                article.likes ||
-                                article._count?.likes ||
-                                0
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {!sortedArticles?.length && (
-                        <TableRow>
-                          <TableCell colSpan={6} className="h-24 text-center">
-                            No articles published yet
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                  {renderArticles(articles)}
                 </TabsContent>
 
                 {isOwner && (
@@ -694,163 +707,7 @@ export default function ChannelPage() {
                     value="drafts"
                     className="rounded-lg border bg-card mt-2"
                   >
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>
-                            <Button
-                              variant="ghost"
-                              onClick={() => handleSort("title")}
-                            >
-                              Title
-                              <ArrowUpDown className="ml-2 h-4 w-4" />
-                            </Button>
-                          </TableHead>
-                          <TableHead>
-                            <Button
-                              variant="ghost"
-                              onClick={() => handleSort("category")}
-                            >
-                              Category
-                              <ArrowUpDown className="ml-2 h-4 w-4" />
-                            </Button>
-                          </TableHead>
-                          <TableHead>
-                            <Button
-                              variant="ghost"
-                              onClick={() => handleSort("createdAt")}
-                            >
-                              Date
-                              <ArrowUpDown className="ml-2 h-4 w-4" />
-                            </Button>
-                          </TableHead>
-                          <TableHead className="text-center">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    className="px-2"
-                                    onClick={() => handleSort("viewCount")}
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                    {sortField === "viewCount" && (
-                                      <ArrowUpDown
-                                        className={`ml-2 h-3 w-3 ${
-                                          sortOrder === "asc"
-                                            ? "rotate-180"
-                                            : ""
-                                        }`}
-                                      />
-                                    )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Views</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </TableHead>
-                          <TableHead className="text-center">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    className="px-2"
-                                    onClick={() => handleSort("commentCount")}
-                                  >
-                                    <MessageSquare className="h-4 w-4" />
-                                    {sortField === "commentCount" && (
-                                      <ArrowUpDown
-                                        className={`ml-2 h-3 w-3 ${
-                                          sortOrder === "asc"
-                                            ? "rotate-180"
-                                            : ""
-                                        }`}
-                                      />
-                                    )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Comments</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </TableHead>
-                          <TableHead className="text-center">
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    className="px-2"
-                                    onClick={() => handleSort("likeCount")}
-                                  >
-                                    <ThumbsUp className="h-4 w-4" />
-                                    {sortField === "likeCount" && (
-                                      <ArrowUpDown
-                                        className={`ml-2 h-3 w-3 ${
-                                          sortOrder === "asc"
-                                            ? "rotate-180"
-                                            : ""
-                                        }`}
-                                      />
-                                    )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Likes</TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sortedDrafts?.map((article) => (
-                          <TableRow key={article.id}>
-                            <TableCell>
-                              <a
-                                href={`/articles/${article.id}`}
-                                className="hover:underline text-primary"
-                              >
-                                {article.title}
-                              </a>
-                            </TableCell>
-                            <TableCell>{article.category}</TableCell>
-                            <TableCell>
-                              {formatDate(
-                                article.createdAt || article.created_at
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {Number(
-                                article.viewCount || article.view_count || 0
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {Number(
-                                article.commentCount ||
-                                  article.comment_count ||
-                                  article._count?.comments ||
-                                  0
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {Number(
-                                article.likeCount ||
-                                  article.like_count ||
-                                  article.likes ||
-                                  article._count?.likes ||
-                                  0
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        {!sortedDrafts?.length && (
-                          <TableRow>
-                            <TableCell colSpan={6} className="h-24 text-center">
-                              No draft articles
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
+                    {renderArticles(drafts, true)}
                   </TabsContent>
                 )}
               </Tabs>
@@ -950,4 +807,10 @@ export default function ChannelPage() {
       )}
     </div>
   );
+}
+
+// Helper function to capitalize the first letter of a string
+function capitalizeFirstLetter(string: string | undefined) {
+  if (!string) return "";
+  return string.charAt(0).toUpperCase() + string.slice(1);
 }

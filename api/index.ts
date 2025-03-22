@@ -961,68 +961,118 @@ app.post("/api/articles", async (req, res) => {
 // Single article route (needed for article detail page)
 app.get("/api/articles/:id", async (req, res) => {
   try {
-    const articleId = parseInt(req.params.id);
-    if (isNaN(articleId)) {
-      return res.status(400).json({ error: "Invalid article ID" });
-    }
+    const { id } = req.params;
+    console.log("====== ARTICLE LOOKUP DEBUG ======");
+    console.log("Article lookup request for:", id);
+    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
     
-    console.log(`Fetching article ${articleId} with channel data`);
+    let article;
+    let error;
     
-    // Fetch article with channel info
-    const { data: article, error } = await supabase
-      .from("articles")
-      .select(`
-        *,
-        channel:channel_id (
-          id,
-          name,
-          description,
-          category,
-          location,
-          bannerImage,
-          profileImage,
-          user_id,
-          created_at
-        )
-      `)
-      .eq("id", articleId)
-      .single();
-
-    if (error) {
-      console.error(`Error fetching article ${articleId}:`, error);
-      
-      // Fallback to just fetching the article
-      const { data: articleOnly, error: articleError } = await supabase
+    // Check if id is numeric (old format) or a slug (new format)
+    if (/^\d+$/.test(id)) {
+      // Numeric ID
+      console.log("Looking up article by numeric ID:", id);
+      const result = await supabase
         .from("articles")
-        .select("*")
-        .eq("id", articleId)
+        .select(`
+          *,
+          channel:channel_id (
+            id,
+            name,
+            description,
+            category,
+            location,
+            banner_image,
+            profile_image,
+            user_id,
+            created_at,
+            slug
+          )
+        `)
+        .eq("id", parseInt(id))
         .single();
         
-      if (articleError) {
-        console.error(`Error fetching article ${articleId}:`, articleError);
-        return res.status(404).json({ error: "Article not found" });
-      }
+      article = result.data;
+      error = result.error;
+      console.log("Numeric ID lookup result:", article ? "Found" : "Not found");
+      if (error) console.error("Numeric ID lookup error:", error);
+    } else {
+      // Slug lookup
+      console.log("Looking up article by slug:", id);
+      const result = await supabase
+        .from("articles")
+        .select(`
+          *,
+          channel:channel_id (
+            id,
+            name,
+            description,
+            category,
+            location,
+            banner_image,
+            profile_image,
+            user_id,
+            created_at,
+            slug
+          )
+        `)
+        .eq("slug", id)
+        .single();
+        
+      article = result.data;
+      error = result.error;
+      console.log("Slug lookup result:", article ? "Found" : "Not found");
+      if (error) console.error("Slug lookup error:", error);
       
-      // Get the channel separately
-      if (articleOnly && articleOnly.channel_id) {
-        const { data: channel, error: channelError } = await supabase
-          .from("channels")
-          .select("*")
-          .eq("id", articleOnly.channel_id)
-          .single();
+      // If not found by slug, try extracting ID from slug
+      if (!article && !error) {
+        const idMatch = id.match(/-(\d+)$/);
+        if (idMatch) {
+          const extractedId = idMatch[1];
+          console.log("Extracted ID from slug:", extractedId);
           
-        if (channelError) {
-          console.error(`Error fetching channel for article ${articleId}:`, channelError);
-        } else if (channel) {
-          articleOnly.channel = channel;
+          const idResult = await supabase
+            .from("articles")
+            .select(`
+              *,
+              channel:channel_id (
+                id,
+                name,
+                description,
+                category,
+                location,
+                banner_image,
+                profile_image,
+                user_id,
+                created_at,
+                slug
+              )
+            `)
+            .eq("id", parseInt(extractedId))
+            .single();
+            
+          article = idResult.data;
+          error = idResult.error;
+          console.log("Extracted ID lookup result:", article ? "Found" : "Not found");
+          if (error) console.error("Extracted ID lookup error:", error);
         }
       }
-      
-      // Add reaction data to the response
-      await enrichArticleWithReactions(articleOnly, req);
-      
-      return res.json(articleOnly);
     }
+    
+    if (error) {
+      console.error("Error fetching article:", error);
+      return res.status(404).json({ error: "Article not found" });
+    }
+    
+    if (!article) {
+      console.log("Article not found for slug or ID:", id);
+      return res.status(404).json({ error: "Article not found" });
+    }
+    
+    console.log("Retrieved article:", article.id, article.title);
+    console.log("Article slug:", article.slug);
+    console.log("====== END ARTICLE LOOKUP DEBUG ======");
 
     // Add reaction data to the response
     await enrichArticleWithReactions(article, req);
@@ -1990,56 +2040,106 @@ app.get("/api/debug/system", async (req, res) => {
 // Add single channel endpoint to fix channel not found issue
 app.get("/api/channels/:id", async (req, res) => {
   try {
-    console.log(`Fetching channel with ID: ${req.params.id}`);
+    const { id } = req.params;
+    console.log("Channel lookup request for:", id);
     
-    const { data: channel, error } = await supabase
-      .from("channels")
-      .select("*")
-      .eq("id", req.params.id)
-      .single();
+    let channel;
+    let error;
+    
+    // Check if id is numeric (old format) or a slug (new format)
+    if (/^\d+$/.test(id)) {
+      // Numeric ID
+      console.log("Looking up channel by numeric ID:", id);
+      const result = await supabase
+        .from("channels")
+        .select("*")
+        .eq("id", parseInt(id))
+        .single();
+        
+      channel = result.data;
+      error = result.error;
+    } else {
+      // Slug lookup
+      console.log("Looking up channel by slug:", id);
+      const result = await supabase
+        .from("channels")
+        .select("*")
+        .eq("slug", id)
+        .single();
+        
+      channel = result.data;
+      error = result.error;
+      
+      // If not found by slug, try extracting ID from slug
+      if (!channel && !error) {
+        const idMatch = id.match(/-(\d+)$/);
+        if (idMatch) {
+          const extractedId = idMatch[1];
+          console.log("Extracted ID from slug:", extractedId);
+          
+          const idResult = await supabase
+            .from("channels")
+            .select("*")
+            .eq("id", parseInt(extractedId))
+            .single();
+            
+          channel = idResult.data;
+          error = idResult.error;
+        }
+      }
+    }
     
     if (error) {
-      console.error(`Error fetching channel ID ${req.params.id}:`, error);
+      console.error("Error fetching channel:", error);
       return res.status(404).json({ error: "Channel not found" });
     }
     
     if (!channel) {
-      console.log(`Channel ID ${req.params.id} not found`);
+      console.log("Channel not found for slug or ID:", id);
       return res.status(404).json({ error: "Channel not found" });
     }
     
-    // Get subscriber count using a more direct approach that works in all environments
+    console.log("Retrieved channel:", channel.id, channel.name);
+    
+    // Get subscriber count
     try {
       const { count: subscriberCount, error: countError } = await supabase
         .from("subscriptions")
         .select("*", { count: 'exact', head: true })
-        .eq("channel_id", req.params.id);
+        .eq("channel_id", channel.id);
         
       if (countError) {
-        console.error(`Error fetching subscriber count for channel ${req.params.id}:`, countError);
+        console.error(`Error fetching subscriber count for channel ${channel.id}:`, countError);
       }
       
       // Add subscriber count to the channel data
-      const channelWithCount = {
-        ...channel,
-        subscriberCount: subscriberCount || 0
-      };
+      channel.subscriberCount = subscriberCount || 0;
       
-      console.log(`Successfully fetched channel ID ${req.params.id}:`, {
-        id: channelWithCount.id,
-        name: channelWithCount.name,
-        subscriberCount: channelWithCount.subscriberCount
-      });
-      
-      return res.json(channelWithCount);
+      console.log(`Channel ${channel.id} has ${channel.subscriberCount} subscribers`);
     } catch (countError) {
-      console.error(`Error calculating subscriber count for channel ${req.params.id}:`, countError);
-      // Still return the channel even if subscriber count fails
-      return res.json({
-        ...channel,
-        subscriberCount: 0
-      });
+      console.error(`Error calculating subscriber count for channel ${channel.id}:`, countError);
+      channel.subscriberCount = 0;
     }
+    
+    // Check if user is subscribed - use authenticateUser helper
+    const { userId } = await authenticateUser(req);
+    if (userId) {
+      try {
+        const { data: subscription, error: subError } = await supabase
+          .from("subscriptions")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("channel_id", channel.id)
+          .single();
+          
+        channel.isSubscribed = !!subscription;
+      } catch (subError) {
+        console.error(`Error checking subscription for user ${userId} to channel ${channel.id}:`, subError);
+        channel.isSubscribed = false;
+      }
+    }
+    
+    res.json(channel);
   } catch (error) {
     console.error(`Error fetching channel ID ${req.params.id}:`, error);
     return res.status(500).json({ error: "Failed to fetch channel details" });

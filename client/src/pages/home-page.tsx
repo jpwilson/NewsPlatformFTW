@@ -39,6 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useSelectedChannel } from "@/hooks/use-selected-channel";
+import { createSlugUrl } from "@/lib/slug-utils";
 
 // Define ordering options
 type OrderField = "createdAt" | "viewCount" | "comments" | "likes" | "dislikes";

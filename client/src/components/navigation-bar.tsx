@@ -34,6 +34,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { createSlugUrl } from "@/lib/slug-utils";
 
 // Define type for the debug endpoint response
 interface DebugChannelsResponse {
@@ -169,10 +170,13 @@ export function NavigationBar({
     setLocation("/");
   };
 
-  const navigateToChannel = (channelId: number) => {
+  const navigateToChannel = (channelId: number, channel?: any) => {
     console.log("NavigationBar - Navigating to channel:", channelId);
     setSelectedChannelId(channelId);
-    setLocation(`/channels/${channelId}`);
+
+    // Use slug if available (if the channel object has a slug property)
+    const channelSlug = channel?.slug || "";
+    setLocation(createSlugUrl("/channels/", channelSlug, channelId));
   };
 
   return (
@@ -243,7 +247,9 @@ export function NavigationBar({
                                     ? "font-medium"
                                     : ""
                                 }`}
-                                onClick={() => navigateToChannel(channel.id)}
+                                onClick={() =>
+                                  navigateToChannel(channel.id, channel)
+                                }
                               >
                                 {channel.name}
                               </div>
@@ -336,7 +342,7 @@ export function NavigationBar({
                   combinedUserChannels.map((channel) => (
                     <DropdownMenuItem
                       key={channel.id}
-                      onClick={() => navigateToChannel(channel.id)}
+                      onClick={() => navigateToChannel(channel.id, channel)}
                       className={
                         channel.id === effectiveChannelId ? "font-medium" : ""
                       }

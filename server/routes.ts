@@ -58,13 +58,19 @@ export async function registerRoutes(app: Express): Promise<void> {
         userId: req.user.id
       });
       
-      // Insert the channel with created_at timestamp
+      // Generate a slug from the channel name
+      let slug = channelData.name.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      
+      // Insert the channel with created_at timestamp and slug
       const { data: channel, error } = await supabase
         .from("channels")
         .insert([{
           ...channelData,
           user_id: req.user.id,
-          created_at: new Date().toISOString() // Add creation timestamp
+          created_at: new Date().toISOString(),
+          slug: slug
         }])
         .select()
         .single();
@@ -116,25 +122,69 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.get("/api/channels/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      console.log("Channel lookup request for:", id);
       
-      // Fetch the channel directly from Supabase to get all fields including created_at
-      const { data: channel, error } = await supabase
-        .from("channels")
-        .select("*")
-        .eq("id", id)
-        .single();
+      let channel;
+      let error;
       
-      if (error) throw error;
+      // Check if id is numeric (old format) or a slug (new format)
+      if (/^\d+$/.test(id)) {
+        console.log("Looking up channel by numeric ID:", id);
+        const result = await supabase
+          .from("channels")
+          .select("*")
+          .eq("id", id)
+          .single();
+          
+        channel = result.data;
+        error = result.error;
+      } else {
+        console.log("Looking up channel by slug:", id);
+        const result = await supabase
+          .from("channels")
+          .select("*")
+          .eq("slug", id)
+          .single();
+          
+        channel = result.data;
+        error = result.error;
+        
+        // If not found by slug, try extracting ID from slug
+        if (!channel && !error) {
+          const idMatch = id.match(/-(\d+)$/);
+          if (idMatch) {
+            const extractedId = idMatch[1];
+            console.log("Extracted ID from slug:", extractedId);
+            
+            const idResult = await supabase
+              .from("channels")
+              .select("*")
+              .eq("id", extractedId)
+              .single();
+              
+            channel = idResult.data;
+            error = idResult.error;
+          }
+        }
+      }
+      
+      if (error) {
+        console.error("Error fetching channel:", error);
+        throw error;
+      }
       
       if (!channel) {
+        console.log("Channel not found for slug or ID:", id);
         return res.status(404).json({ error: "Channel not found" });
       }
+      
+      console.log("Retrieved channel:", channel.id, channel.name);
       
       // Get subscriber count
       const { count: subscriberCount, error: countError } = await supabase
         .from("subscriptions")
         .select("*", { count: 'exact', head: true })
-        .eq("channel_id", id);
+        .eq("channel_id", channel.id);
         
       if (countError) {
         console.error("Error fetching subscriber count:", countError);
@@ -268,47 +318,46 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Parse and validate with the insertion schema
       const articleData = insertArticleSchema.parse(req.body);
       
-      console.log("Submitting article with data:", {
-        ...articleData,
-        userId: req.user.id
-      });
+      // Get the channel to check the user has permission
+      const { data: channel, error: channelError } = await supabase
+        .from("channels")
+        .select("user_id")
+        .eq("id", articleData.channelId)
+        .single();
+        
+      if (channelError) throw channelError;
       
-      // Create the article
-      const article = await storage.createArticle({
-        ...articleData,
-        userId: req.user.id
-      });
-      
-      // If a location was selected, update the article with the locationId
-      if (articleData.locationId) {
-        const { error: locationError } = await supabase
-          .from("articles")
-          .update({ location_id: articleData.locationId })
-          .eq("id", article.id);
-          
-        if (locationError) {
-          console.error("Error updating article location:", locationError);
-        }
+      // Ensure the user owns the channel
+      if (channel?.user_id !== req.user.id) {
+        return res.status(403).json({ message: "You can only post articles to your own channels" });
       }
       
-      // If categories were selected, add them to the article_categories junction table
-      if (articleData.categoryId) {
-        const { error: categoryError } = await supabase
-          .from("article_categories")
-          .insert({
-            article_id: article.id,
-            category_id: articleData.categoryId,
-            is_primary: true
-          });
-          
-        if (categoryError) {
-          console.error("Error adding article category:", categoryError);
-        }
-      }
+      // Generate a slug from the article title
+      let slug = articleData.title.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .substring(0, 100); // Limit to 100 characters
       
-      res.json(article);
+      // Add user ID and set defaults
+      const article = {
+        ...articleData,
+        user_id: req.user.id,
+        published_at: articleData.status === 'published' ? new Date().toISOString() : null,
+        slug: slug
+      };
+      
+      // Insert the article
+      const { data: createdArticle, error } = await supabase
+        .from("articles")
+        .insert([article])
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      res.status(201).json(createdArticle);
     } catch (error) {
-      console.error("Article creation error:", error);
+      console.error("Error creating article:", error);
       
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: JSON.stringify(error.errors, null, 2) });
@@ -405,78 +454,129 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.get("/api/articles/:id", async (req, res) => {
-    try {
-      const { id } = req.params;
+  // Comment out this endpoint since we're using the one in api/index.ts
+  // app.get("/api/articles/:id", async (req, res) => {
+  //   try {
+  //     const { id } = req.params;
+  //     console.log("Article lookup request for:", id);
       
-      // Fetch the article
-      const { data: article, error } = await supabase
-        .from("articles")
-        .select("*")
-        .eq("id", id)
-        .single();
+  //     let article;
+  //     let error;
       
-      if (error) throw error;
-      
-      // Fetch the related channel
-      if (article && article.channel_id) {
-        const { data: channel, error: channelError } = await supabase
-          .from("channels")
-          .select("id, name")
-          .eq("id", article.channel_id)
-          .single();
+  //     // Check if id is numeric (old format) or a slug (new format)
+  //     if (/^\d+$/.test(id)) {
+  //       // Numeric ID
+  //       console.log("Looking up article by numeric ID:", id);
+  //       const result = await supabase
+  //         .from("articles")
+  //         .select("*")
+  //         .eq("id", id)
+  //         .single();
           
-        if (!channelError && channel) {
-          article.channel = channel;
-        }
-      }
-      
-      // Fetch reaction counts
-      const { data: reactions, error: reactionsError } = await supabase
-        .from("reactions")
-        .select("is_like, user_id")
-        .eq("article_id", id);
-        
-      if (!reactionsError && reactions) {
-        const likes = reactions.filter(r => r.is_like).length;
-        const dislikes = reactions.filter(r => !r.is_like).length;
-        article.likes = likes;
-        article.dislikes = dislikes;
-      }
-      
-      // If user is authenticated, check if they have reacted
-      if (req.isAuthenticated()) {
-        const { data: userReaction, error: userReactionError } = await supabase
-          .from("reactions")
-          .select("is_like")
-          .eq("article_id", id)
-          .eq("user_id", req.user.id)
-          .maybeSingle();
+  //       article = result.data;
+  //       error = result.error;
+  //     } else {
+  //       // Slug lookup
+  //       console.log("Looking up article by slug:", id);
+  //       const result = await supabase
+  //         .from("articles")
+  //         .select("*")
+  //         .eq("slug", id)
+  //         .single();
           
-        if (!userReactionError && userReaction) {
-          article.userReaction = userReaction.is_like;
-        }
-      }
-      
-      // Get comment count
-      const { data: commentCountData, error: commentCountError } = await supabase
-        .from("comments")
-        .select("*", { count: "exact", head: true })
-        .eq("article_id", id);
+  //       article = result.data;
+  //       error = result.error;
         
-      if (!commentCountError) {
-        article._count = { comments: commentCountData?.length || 0 };
-      }
+  //       // If not found by slug, try extracting ID from slug
+  //       if (!article && !error) {
+  //         const idMatch = id.match(/-(\d+)$/);
+  //         if (idMatch) {
+  //           const extractedId = idMatch[1];
+  //           console.log("Extracted ID from slug:", extractedId);
+            
+  //           const idResult = await supabase
+  //             .from("articles")
+  //             .select("*")
+  //             .eq("id", extractedId)
+  //             .single();
+              
+  //           article = idResult.data;
+  //           error = idResult.error;
+  //         }
+  //       }
+  //     }
       
-      // Ensure viewCount is included in the response
-      article.viewCount = article.view_count || 0;
+  //     if (error) {
+  //       console.error("Error fetching article:", error);
+  //       throw error;
+  //     }
       
-      res.json(article);
-    } catch (error) {
-      console.error("Error fetching article:", error);
-      res.status(500).json({ error: "Failed to fetch article" });
-    }
-  });
+  //     if (!article) {
+  //       console.log("Article not found for slug or ID:", id);
+  //       return res.status(404).json({ error: "Article not found" });
+  //     }
+      
+  //     console.log("Retrieved article:", article.id, article.title);
+      
+  //     // Fetch the related channel
+  //     if (article && article.channel_id) {
+  //       const { data: channel, error: channelError } = await supabase
+  //         .from("channels")
+  //         .select("id, name, slug")
+  //         .eq("id", article.channel_id)
+  //         .single();
+          
+  //       if (!channelError && channel) {
+  //         article.channel = channel;
+  //       }
+  //     }
+      
+  //     // Fetch reaction counts
+  //     const { data: reactions, error: reactionsError } = await supabase
+  //       .from("reactions")
+  //       .select("is_like, user_id")
+  //       .eq("article_id", article.id);
+        
+  //     if (!reactionsError && reactions) {
+  //       const likes = reactions.filter(r => r.is_like).length;
+  //       const dislikes = reactions.filter(r => !r.is_like).length;
+  //       article.likes = likes;
+  //       article.dislikes = dislikes;
+  //     }
+      
+  //     // If user is authenticated, check if they have reacted
+  //     if (req.isAuthenticated()) {
+  //       const { data: userReaction, error: userReactionError } = await supabase
+  //         .from("reactions")
+  //         .select("is_like")
+  //         .eq("article_id", article.id)
+  //         .eq("user_id", req.user.id)
+  //         .maybeSingle();
+          
+  //       if (!userReactionError && userReaction) {
+  //         article.userReaction = userReaction.is_like;
+  //       }
+  //     }
+      
+  //     // Get comment count
+  //     const { data: commentCountData, error: commentCountError } = await supabase
+  //       .from("comments")
+  //       .select("*", { count: "exact", head: true })
+  //       .eq("article_id", article.id);
+        
+  //     if (!commentCountError) {
+  //       article._count = { comments: commentCountData?.length || 0 };
+  //     }
+      
+  //     // Ensure viewCount is included in the response
+  //     article.viewCount = article.view_count || 0;
+      
+  //     res.json(article);
+  //   } catch (error) {
+  //     console.error("Error fetching article:", error);
+  //     res.status(500).json({ error: "Failed to fetch article" });
+  //   }
+  // });
 
   app.patch("/api/articles/:id", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);

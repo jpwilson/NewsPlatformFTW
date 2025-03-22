@@ -26,6 +26,7 @@ export type ArticleWithSnakeCase = Article & {
   commentCount?: number;
   likeCount?: number;
   userReaction?: boolean | null;
+  slug?: string;
   _count?: {
     comments?: number;
     likes?: number;
@@ -35,5 +36,6 @@ export type ArticleWithSnakeCase = Article & {
     name: string;
     user_id?: number;
     userId?: number;
+    slug?: string;
   };
 }; 

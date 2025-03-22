@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
+import { createSlugUrl } from "@/lib/slug-utils";
 
 // Helper function to capitalize the first letter of a string
 function capitalizeFirstLetter(string: string) {
@@ -188,7 +189,8 @@ export default function ArticlePage() {
       const channelId = article?.channel_id || article?.channelId;
       // Only navigate if channelId exists
       if (channelId) {
-        setLocation(`/channels/${channelId}`);
+        const channelSlug = article?.channel?.slug || "";
+        setLocation(createSlugUrl("/channels/", channelSlug, channelId));
       } else {
         console.error("No channel ID found for this article");
       }

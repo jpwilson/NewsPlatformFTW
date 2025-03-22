@@ -22,17 +22,19 @@ import {
 import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { createSlugUrl } from "@/lib/slug-utils";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 type ArticleWithSnakeCase = Article & {
   created_at?: string | Date;
   channel_id?: number;
-  channel?: { id: number; name: string };
+  channel?: { id: number; name: string; slug?: string };
   likes?: number;
   dislikes?: number;
   viewCount?: number;
   view_count?: number;
   userReaction?: boolean | null;
+  slug?: string;
   _count?: {
     comments?: number;
   };
@@ -52,7 +54,10 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
       const channelId = article?.channel_id || article?.channelId;
       // Only navigate if channelId exists
       if (channelId) {
-        setLocation(`/channels/${channelId}`);
+        const channelSlug = article?.channel?.slug || "";
+        setLocation(
+          createSlugUrl("/channels/", channelSlug, channelId.toString())
+        );
       } else {
         console.error("No channel ID found for this article");
       }
@@ -88,12 +93,19 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
   const userLiked = article.userReaction === true;
   const userDisliked = article.userReaction === false;
 
+  // Create the article URL with slug
+  const articleUrl = createSlugUrl(
+    "/articles/",
+    article.slug || "",
+    article.id.toString()
+  );
+
   return (
     <>
       <Card>
         <CardHeader>
           <div className="space-y-2">
-            <Link href={`/articles/${article.id}`}>
+            <Link href={articleUrl}>
               <h3 className="text-xl font-semibold hover:underline cursor-pointer">
                 {article.title}
               </h3>
@@ -141,7 +153,7 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
               <span className="text-sm">{dislikes}</span>
             </div>
 
-            <Link href={`/articles/${article.id}#comments`}>
+            <Link href={`${articleUrl}#comments`}>
               <div className="flex items-center text-muted-foreground hover:text-primary hover:underline cursor-pointer">
                 <MessageSquare className="h-4 w-4 mr-1" />
                 <span className="text-sm">{commentCount}</span>
