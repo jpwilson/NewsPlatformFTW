@@ -2613,29 +2613,37 @@ app.patch("/api/users/:id", async (req, res) => {
 // Add channel subscribers endpoint
 app.get("/api/channels/:id/subscribers", async (req, res) => {
   try {
+    // Set content type to JSON explicitly
+    res.setHeader('Content-Type', 'application/json');
+    
     const channelId = parseInt(req.params.id);
-    console.log(`Fetching subscribers for channel ID: ${channelId}`);
+    console.log(`API: Fetching subscribers for channel ID: ${channelId}`);
+    
+    // Debug log to check all request headers
+    console.log('Request headers:', JSON.stringify(req.headers, null, 2));
     
     // Extract the Authorization header (if any)
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log("No Authorization header found for get subscribers");
-      return res.sendStatus(401);
+      console.log("API: No Authorization header found for get subscribers");
+      return res.status(401).json({ error: 'Authentication required' });
     }
     
     const token = authHeader.split(' ')[1];
     if (!token) {
-      console.log("No token found in Authorization header for get subscribers");
-      return res.sendStatus(401);
+      console.log("API: No token found in Authorization header for get subscribers");
+      return res.status(401).json({ error: 'Authentication token required' });
     }
     
     // Verify the token with Supabase
     const { data: userData, error: userError } = await supabaseAuth.auth.getUser(token);
     
     if (userError || !userData.user) {
-      console.error('Error verifying user token for get subscribers:', userError);
-      return res.sendStatus(401);
+      console.error('API: Error verifying user token for get subscribers:', userError);
+      return res.status(401).json({ error: 'Invalid authentication token' });
     }
+    
+    console.log(`API: Token verified for user: ${userData.user.id}`);
     
     // Look up the user in our database
     const { data: dbUser, error: dbError } = await supabase
@@ -2645,103 +2653,67 @@ app.get("/api/channels/:id/subscribers", async (req, res) => {
       .single();
     
     if (dbError || !dbUser) {
-      console.error('Error finding user for get subscribers:', dbError);
+      console.error('API: Error finding user for get subscribers:', dbError);
       return res.status(401).json({ error: 'User not found' });
     }
     
-    // Check if the user is the channel owner (only channel owners can see subscribers)
-    const { data: channel, error: channelError } = await supabase
-      .from('channels')
-      .select('user_id, name')
-      .eq('id', channelId)
-      .single();
+    console.log(`API: Found user ID: ${dbUser.id}`);
+
+    // Simplified query that just gets subscriptions and user info directly
+    try {
+      console.log(`API: Fetching subscriptions for channel ID: ${channelId}`);
       
-    if (channelError) {
-      console.error('Error fetching channel:', channelError);
-      return res.status(404).json({ error: 'Channel not found' });
-    }
-    
-    if (channel.user_id !== dbUser.id) {
-      console.error(`User ${dbUser.id} is not the owner of channel ${channelId}`);
-      return res.status(403).json({ error: 'Not authorized to view subscribers' });
-    }
-    
-    // First, get all subscribers for this channel
-    const { data: subscriptionData, error: subscriptionsError } = await supabase
-      .from('subscriptions')
-      .select(`
-        id,
-        channel_id,
-        user_id,
-        created_at
-      `)
-      .eq('channel_id', channelId);
+      // Get subscriptions for this channel
+      const { data: subscriptions, error: subError } = await supabase
+        .from('subscriptions')
+        .select('id, user_id')
+        .eq('channel_id', channelId);
       
-    if (subscriptionsError) {
-      console.error('Error fetching subscription data:', subscriptionsError);
-      return res.status(500).json({ error: 'Failed to fetch subscription data' });
-    }
-    
-    if (!subscriptionData || subscriptionData.length === 0) {
-      console.log(`No subscribers found for channel ${channelId}`);
-      return res.json([]);
-    }
-    
-    // Extract user IDs from subscriptions
-    const userIds = subscriptionData.map(sub => sub.user_id);
-    
-    // Fetch user details for each subscriber
-    const { data: subscriberUsers, error: usersError } = await supabase
-      .from('users')
-      .select(`
-        id,
-        username,
-        email
-      `)
-      .in('id', userIds);
+      if (subError) {
+        console.error('API: Subscription query error:', subError);
+        return res.status(500).json({ error: 'Error fetching subscriptions' });
+      }
       
-    if (usersError) {
-      console.error('Error fetching subscriber user details:', usersError);
-      return res.status(500).json({ error: 'Failed to fetch subscriber details' });
+      console.log(`API: Found ${subscriptions?.length || 0} subscriptions`);
+      
+      if (!subscriptions || subscriptions.length === 0) {
+        console.log(`API: No subscribers found for channel ${channelId}`);
+        return res.json([]);
+      }
+      
+      // Get user details for each subscriber
+      const userIds = subscriptions.map(sub => sub.user_id);
+      console.log(`API: Fetching details for user IDs:`, userIds);
+      
+      const { data: users, error: userQueryError } = await supabase
+        .from('users')
+        .select('id, username')
+        .in('id', userIds);
+      
+      if (userQueryError) {
+        console.error('API: User query error:', userQueryError);
+        return res.status(500).json({ error: 'Error fetching subscriber details' });
+      }
+      
+      console.log(`API: Found ${users?.length || 0} users`);
+      
+      // Just return the subscribers with their usernames, no dates
+      const subscribers = users.map(user => ({
+        id: user.id,
+        username: user.username
+      }));
+      
+      console.log(`API: Returning ${subscribers.length} subscribers for channel ${channelId}`);
+      console.log('API: Sample subscriber data:', subscribers.length > 0 ? subscribers[0] : 'No subscribers');
+      
+      return res.json(subscribers);
+    } catch (queryError) {
+      console.error('API: Error in simplified subscriber query:', queryError);
+      return res.status(500).json({ error: 'Database query error' });
     }
-    
-    // Create a map of subscription dates by user ID
-    const subscriptionDates = {};
-    subscriptionData.forEach(sub => {
-      subscriptionDates[sub.user_id] = sub.created_at;
-    });
-    
-    // Count subscriptions for each user
-    const subscriberInfo = await Promise.all(
-      subscriberUsers.map(async (user) => {
-        // Count how many channels this user subscribes to
-        const { count, error: countError } = await supabase
-          .from('subscriptions')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id);
-          
-        if (countError) {
-          console.error(`Error counting subscriptions for user ${user.id}:`, countError);
-          return {
-            ...user,
-            subscription_date: subscriptionDates[user.id],
-            channelCount: 0
-          };
-        }
-        
-        return {
-          ...user,
-          subscription_date: subscriptionDates[user.id],
-          channelCount: count || 0
-        };
-      })
-    );
-    
-    console.log(`Found ${subscriberInfo.length} subscribers for channel ${channelId}`);
-    return res.json(subscriberInfo);
   } catch (error) {
-    console.error('Error in get channel subscribers endpoint:', error);
-    return res.status(500).json({ error: 'Server error' });
+    console.error('API: Error in get channel subscribers endpoint:', error);
+    return res.status(500).json({ error: 'Server error', details: String(error) });
   }
 });
 
