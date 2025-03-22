@@ -769,18 +769,82 @@ app.get("/api/articles", async (req, res) => {
             return map;
           }, {});
           
-          // Attach channel to each article
-          const articlesWithChannels = articles.map(article => {
+          // Get all reactions for all articles in a single query
+          const articleIds = articles.map(article => article.id);
+          const { data: allReactions, error: reactionsError } = await supabase
+            .from("reactions")
+            .select("article_id, is_like, user_id")
+            .in("article_id", articleIds);
+            
+          if (reactionsError) {
+            console.error("Error fetching reactions for articles:", reactionsError);
+          }
+          
+          // Group reactions by article ID
+          const reactionsByArticle = {};
+          if (allReactions && allReactions.length > 0) {
+            allReactions.forEach(reaction => {
+              if (!reactionsByArticle[reaction.article_id]) {
+                reactionsByArticle[reaction.article_id] = [];
+              }
+              reactionsByArticle[reaction.article_id].push(reaction);
+            });
+          }
+          
+          // Get user ID if authenticated
+          let userId = null;
+          const authHeader = req.headers.authorization;
+          if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.split(' ')[1];
+            try {
+              const { data, error: authError } = await supabaseAuth.auth.getUser(token);
+              if (!authError && data.user) {
+                // Look up internal user ID
+                const { data: dbUser } = await supabase
+                  .from('users')
+                  .select('id')
+                  .eq('supabase_uid', data.user.id)
+                  .single();
+                  
+                if (dbUser) {
+                  userId = dbUser.id;
+                }
+              }
+            } catch (e) {
+              console.error("Error checking user for reactions:", e);
+            }
+          }
+          
+          // Attach channel and reaction data to each article
+          const articlesWithData = articles.map(article => {
             const channelId = article.channel_id;
             const channel = channelId ? channelMap[channelId] : null;
+            
+            // Add reaction data
+            const articleReactions = reactionsByArticle[article.id] || [];
+            const likes = articleReactions.filter(r => r.is_like).length;
+            const dislikes = articleReactions.filter(r => !r.is_like).length;
+            
+            // Check if the current user has reacted
+            let userReaction = null;
+            if (userId) {
+              const userReactionData = articleReactions.find(r => r.user_id === userId);
+              if (userReactionData) {
+                userReaction = userReactionData.is_like;
+              }
+            }
+            
             return {
               ...article,
-              channel: channel
+              channel,
+              likes,
+              dislikes,
+              userReaction
             };
           });
           
-          console.log(`Successfully enhanced ${articlesWithChannels.length} articles with channel data`);
-          return res.json(articlesWithChannels || []);
+          console.log(`Successfully enhanced ${articlesWithData.length} articles with channel and reaction data`);
+          return res.json(articlesWithData || []);
         }
       }
     }
@@ -954,8 +1018,14 @@ app.get("/api/articles/:id", async (req, res) => {
         }
       }
       
+      // Add reaction data to the response
+      await enrichArticleWithReactions(articleOnly, req);
+      
       return res.json(articleOnly);
     }
+
+    // Add reaction data to the response
+    await enrichArticleWithReactions(article, req);
 
     res.json(article);
   } catch (error) {
@@ -963,6 +1033,56 @@ app.get("/api/articles/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch article", details: String(error) });
   }
 });
+
+// Helper function to add reaction data to articles
+async function enrichArticleWithReactions(article, req) {
+  if (!article) return;
+  
+  try {
+    // Get all reactions for this article
+    const { data: reactions, error: reactionsError } = await supabase
+      .from("reactions")
+      .select("is_like, user_id")
+      .eq("article_id", article.id);
+      
+    if (!reactionsError && reactions) {
+      article.likes = reactions.filter(r => r.is_like).length;
+      article.dislikes = reactions.filter(r => !r.is_like).length;
+      
+      // If user is authenticated, check if they have reacted
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        
+        try {
+          const { data, error: authError } = await supabaseAuth.auth.getUser(token);
+          if (!authError && data.user) {
+            // Look up internal user ID
+            const { data: dbUser } = await supabase
+              .from('users')
+              .select('id')
+              .eq('supabase_uid', data.user.id)
+              .single();
+              
+            if (dbUser) {
+              const userId = dbUser.id;
+              
+              // Find user's reaction
+              const userReactionData = reactions.find(r => r.user_id === userId);
+              if (userReactionData) {
+                article.userReaction = userReactionData.is_like;
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Error checking user reaction:", e);
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error enriching article with reactions:", e);
+  }
+}
 
 // Add session-from-hash endpoint to help with authentication
 app.post('/api/auth/session-from-hash', async (req, res) => {
@@ -2080,6 +2200,81 @@ app.get("/api/channels/:id/articles", async (req, res) => {
     }
     
     console.log(`Found ${articles?.length || 0} articles for channel ${channelId}`);
+    
+    // If we have articles, enrich them with reaction data
+    if (articles && articles.length > 0) {
+      // Get all reactions for all articles in a single query
+      const articleIds = articles.map(article => article.id);
+      const { data: allReactions, error: reactionsError } = await supabase
+        .from("reactions")
+        .select("article_id, is_like, user_id")
+        .in("article_id", articleIds);
+        
+      if (reactionsError) {
+        console.error("Error fetching reactions for channel articles:", reactionsError);
+      } else if (allReactions && allReactions.length > 0) {
+        // Group reactions by article ID
+        const reactionsByArticle = {};
+        allReactions.forEach(reaction => {
+          if (!reactionsByArticle[reaction.article_id]) {
+            reactionsByArticle[reaction.article_id] = [];
+          }
+          reactionsByArticle[reaction.article_id].push(reaction);
+        });
+        
+        // Get user ID if authenticated
+        let userId = null;
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          const token = authHeader.split(' ')[1];
+          try {
+            const { data, error: authError } = await supabaseAuth.auth.getUser(token);
+            if (!authError && data.user) {
+              // Look up internal user ID
+              const { data: dbUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('supabase_uid', data.user.id)
+                .single();
+                
+              if (dbUser) {
+                userId = dbUser.id;
+              }
+            }
+          } catch (e) {
+            console.error("Error checking user for reactions:", e);
+          }
+        }
+        
+        // Add reaction data to each article
+        const articlesWithReactions = articles.map(article => {
+          // Add reaction data
+          const articleReactions = reactionsByArticle[article.id] || [];
+          const likes = articleReactions.filter(r => r.is_like).length;
+          const dislikes = articleReactions.filter(r => !r.is_like).length;
+          
+          // Check if the current user has reacted
+          let userReaction = null;
+          if (userId) {
+            const userReactionData = articleReactions.find(r => r.user_id === userId);
+            if (userReactionData) {
+              userReaction = userReactionData.is_like;
+            }
+          }
+          
+          return {
+            ...article,
+            likes,
+            dislikes,
+            userReaction
+          };
+        });
+        
+        console.log(`Added reaction data to ${articlesWithReactions.length} channel articles`);
+        return res.json(articlesWithReactions);
+      }
+    }
+    
     return res.json(articles || []);
   } catch (error) {
     console.error(`Error fetching articles for channel:`, error);
@@ -2714,6 +2909,171 @@ app.get("/api/channels/:id/subscribers", async (req, res) => {
   } catch (error) {
     console.error('API: Error in get channel subscribers endpoint:', error);
     return res.status(500).json({ error: 'Server error', details: String(error) });
+  }
+});
+
+// Article reactions endpoint
+app.post("/api/articles/:id/reactions", async (req, res) => {
+  try {
+    const articleId = parseInt(req.params.id);
+    let userId = null;
+    const isLike = req.body.isLike;
+    
+    // Get user ID if authenticated (required for reactions)
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    
+    // Verify the user
+    const { data, error } = await supabaseAuth.auth.getUser(token);
+    if (error || !data.user) {
+      console.error('Error checking auth for reaction:', error);
+      return res.status(401).json({ error: "Authentication required" });
+    }
+    
+    // Look up internal user ID
+    const { data: dbUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('supabase_uid', data.user.id)
+      .single();
+      
+    if (!dbUser) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    userId = dbUser.id;
+    console.log(`Processing reaction: articleId=${articleId}, userId=${userId}, isLike=${isLike}`);
+    
+    // Check if user has already reacted to this article
+    const { data: existingReaction, error: findError } = await supabase
+      .from("reactions")
+      .select("id, is_like")
+      .eq("article_id", articleId)
+      .eq("user_id", userId)
+      .maybeSingle();
+      
+    if (findError) {
+      console.error("Error finding existing reaction:", findError);
+      return res.status(500).json({ error: "Failed to check existing reaction" });
+    }
+    
+    // If reaction exists and is the same type, remove it (toggle off)
+    if (existingReaction && existingReaction.is_like === isLike) {
+      const { error: deleteError } = await supabase
+        .from("reactions")
+        .delete()
+        .eq("id", existingReaction.id);
+        
+      if (deleteError) {
+        console.error("Error deleting reaction:", deleteError);
+        return res.status(500).json({ error: "Failed to remove reaction" });
+      }
+      
+      return res.json({ removed: true, isLike });
+    }
+    
+    // If reaction exists but is different type, update it
+    if (existingReaction) {
+      const { data: updatedReaction, error: updateError } = await supabase
+        .from("reactions")
+        .update({ is_like: isLike })
+        .eq("id", existingReaction.id)
+        .select()
+        .single();
+        
+      if (updateError) {
+        console.error("Error updating reaction:", updateError);
+        return res.status(500).json({ error: "Failed to update reaction" });
+      }
+      
+      return res.json(updatedReaction);
+    }
+    
+    // Otherwise create a new reaction
+    const { data: newReaction, error: createError } = await supabase
+      .from("reactions")
+      .insert({
+        article_id: articleId,
+        user_id: userId,
+        is_like: isLike
+      })
+      .select()
+      .single();
+      
+    if (createError) {
+      console.error("Error creating reaction:", createError);
+      return res.status(500).json({ error: "Failed to create reaction" });
+    }
+    
+    return res.json(newReaction);
+  } catch (error) {
+    console.error("Error handling reaction:", error);
+    return res.status(500).json({ error: "Failed to process reaction", details: String(error) });
+  }
+});
+
+// Get reactions for an article
+app.get("/api/articles/:id/reactions", async (req, res) => {
+  try {
+    const articleId = parseInt(req.params.id);
+    
+    // Get all reactions for this article
+    const { data: reactions, error } = await supabase
+      .from("reactions")
+      .select("is_like, user_id")
+      .eq("article_id", articleId);
+      
+    if (error) {
+      console.error("Error fetching reactions:", error);
+      return res.status(500).json({ error: "Failed to fetch reactions" });
+    }
+    
+    // Calculate counts
+    const likes = reactions?.filter(r => r.is_like).length || 0;
+    const dislikes = reactions?.filter(r => !r.is_like).length || 0;
+    
+    // Get user's reaction if authenticated
+    let userReaction = null;
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      
+      try {
+        const { data, error: authError } = await supabaseAuth.auth.getUser(token);
+        if (!authError && data.user) {
+          // Look up internal user ID
+          const { data: dbUser } = await supabase
+            .from('users')
+            .select('id')
+            .eq('supabase_uid', data.user.id)
+            .single();
+            
+          if (dbUser) {
+            const userId = dbUser.id;
+            
+            // Find user's reaction
+            const userReactionData = reactions?.find(r => r.user_id === userId);
+            if (userReactionData) {
+              userReaction = userReactionData.is_like;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error checking user reaction:", e);
+        // Continue without user reaction info
+      }
+    }
+    
+    return res.json({ likes, dislikes, userReaction });
+  } catch (error) {
+    console.error("Error fetching reactions:", error);
+    return res.status(500).json({ error: "Failed to fetch reactions" });
   }
 });
 
