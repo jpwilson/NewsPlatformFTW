@@ -43,10 +43,13 @@ type OrderDirection = "asc" | "desc";
 
 // Define a more flexible type for channel that accommodates both camelCase and snake_case
 type ChannelWithStats = Channel & {
-  created_at?: string | Date;
+  created_at?: string;
+  createdAt?: string;
   subscriberCount?: number;
   subscriber_count?: number;
+  subscribers?: any[];
   article_count?: number;
+  user_id?: number; // Add snake_case version of userId
   _count?: {
     subscribers?: number;
     articles?: number;
@@ -95,6 +98,14 @@ export default function ChannelsPage() {
   useEffect(() => {
     if (channels) {
       let filtered = [...channels];
+
+      // Filter out user's own channels
+      if (user) {
+        filtered = filtered.filter((channel) => {
+          // Filter out channels owned by current user - check both camelCase and snake_case
+          return channel.userId !== user.id && channel.user_id !== user.id;
+        });
+      }
 
       // Apply search filter
       if (searchTerm) {
@@ -148,7 +159,14 @@ export default function ChannelsPage() {
 
       setFilteredChannels(filtered);
     }
-  }, [channels, searchTerm, filterCategories, orderField, orderDirection]);
+  }, [
+    channels,
+    searchTerm,
+    filterCategories,
+    orderField,
+    orderDirection,
+    user,
+  ]);
 
   const toggleCategory = (category: string) => {
     setFilterCategories((prev) =>

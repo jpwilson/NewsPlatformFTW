@@ -59,6 +59,16 @@ type ArticleWithSnakeCase = Article & {
   };
 };
 
+// Define a more flexible type for channel that accommodates both camelCase and snake_case
+type ChannelWithSnakeCase = Channel & {
+  user_id?: number;
+  created_at?: string;
+  createdAt?: string;
+  subscriber_count?: number;
+  subscriberCount?: number;
+  subscribers?: any[];
+};
+
 interface OrderOption {
   field: OrderField;
   label: string;
@@ -77,6 +87,9 @@ export default function HomePage() {
   const [filteredArticles, setFilteredArticles] = useState<
     ArticleWithSnakeCase[]
   >([]);
+  const [filteredChannels, setFilteredChannels] = useState<
+    ChannelWithSnakeCase[]
+  >([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [availableLocations, setAvailableLocations] = useState<string[]>([]);
 
@@ -88,9 +101,29 @@ export default function HomePage() {
   });
 
   // Get all channels
-  const { data: channels, isLoading: loadingChannels } = useQuery<Channel[]>({
+  const { data: channels, isLoading: loadingChannels } = useQuery<
+    ChannelWithSnakeCase[]
+  >({
     queryKey: ["/api/channels"],
   });
+
+  // Filter out user's own channels
+  useEffect(() => {
+    if (channels && user) {
+      // Filter channels to exclude user's own channels
+      const filtered = channels.filter((channel) => {
+        // Check both camelCase and snake_case versions of userId
+        if (channel.userId === user.id || channel.user_id === user.id) {
+          return false;
+        }
+        return true;
+      });
+
+      setFilteredChannels(filtered);
+    } else if (channels) {
+      setFilteredChannels(channels);
+    }
+  }, [channels, user]);
 
   // Extract available categories and locations from articles
   useEffect(() => {
@@ -634,12 +667,12 @@ export default function HomePage() {
               <div className="flex justify-center p-4">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : channels?.length === 0 ? (
+            ) : filteredChannels?.length === 0 ? (
               <div className="text-center p-4 text-muted-foreground">
                 No channels yet
               </div>
             ) : (
-              channels?.map((channel) => (
+              filteredChannels?.map((channel) => (
                 <ChannelCard key={channel.id} channel={channel} />
               ))
             )}

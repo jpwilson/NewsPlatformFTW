@@ -496,22 +496,7 @@ export default function ChannelPage() {
                   {!isOwner &&
                     user &&
                     !isEditing &&
-                    (isSubscribed ? (
-                      <div className="flex gap-2">
-                        <Button variant="secondary" disabled={true}>
-                          Subscribed
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => unsubscribeMutation.mutate()}
-                          disabled={unsubscribeMutation.isPending}
-                          title="Unsubscribe"
-                        >
-                          &times;
-                        </Button>
-                      </div>
-                    ) : (
+                    (!isSubscribed ? (
                       <Button
                         variant="default"
                         onClick={() => subscribeMutation.mutate()}
@@ -519,7 +504,7 @@ export default function ChannelPage() {
                       >
                         Subscribe
                       </Button>
-                    ))}
+                    ) : null)}
                 </div>
               </div>
 
@@ -914,6 +899,16 @@ export default function ChannelPage() {
                           : "Not available"}
                       </span>
                     </div>
+                    {isSubscribed && !isOwner && (
+                      <div className="text-sm mt-2">
+                        <span
+                          className="text-primary hover:underline cursor-pointer"
+                          onClick={() => unsubscribeMutation.mutate()}
+                        >
+                          Unsubscribe from channel
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

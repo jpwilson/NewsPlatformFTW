@@ -25,6 +25,7 @@ type ExtendedChannel = Channel & {
   subscribers?: any[];
   created_at?: string;
   createdAt?: string;
+  user_id?: number;
 };
 
 export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
@@ -158,42 +159,21 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
 
         <CardContent>
           {channel.description && (
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-sm text-muted-foreground mb-4 line-clamp-3 overflow-hidden">
               {channel.description}
             </p>
           )}
 
-          {user && user.id === channel.userId ? (
+          {user &&
+          (user.id === channel.userId || user.id === channel.user_id) ? (
             // Channel owner can't subscribe to their own channel
             <div className="text-xs text-muted-foreground text-center p-2">
               Your channel
             </div>
           ) : isSubscribed ? (
             // User is already subscribed - show subscribed state
-            <div className="flex justify-between gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full"
-                disabled={true}
-                onClick={(e) => {
-                  e.stopPropagation(); // Prevent card click event
-                }}
-              >
-                Subscribed
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="px-2"
-                onClick={(e) => {
-                  e.stopPropagation(); // Prevent card click event
-                  handleUnsubscribe();
-                }}
-                disabled={unsubscribeMutation.isPending}
-              >
-                Unsubscribe
-              </Button>
+            <div className="text-center text-sm text-muted-foreground">
+              Subscribed
             </div>
           ) : (
             // User is not subscribed - show subscribe button
