@@ -33,7 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { Loader2, ChevronRight, Search } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -57,65 +57,176 @@ interface LocationWithChildren {
   children?: LocationWithChildren[];
 }
 
-// Simple Autocomplete component for searching categories and locations
-function SimpleAutocomplete({
+// Enhanced Autocomplete component for categories and locations
+function EnhancedAutocomplete({
   items,
   placeholder,
   onSelect,
+  value,
+  isLoading,
+  showSelectedValueInSearch = false,
+  className,
 }: {
   items: { id: number; label: string }[];
   placeholder: string;
   onSelect: (id: number) => void;
+  value?: number | string;
+  isLoading?: boolean;
+  showSelectedValueInSearch?: boolean;
+  className?: string;
 }) {
   const [search, setSearch] = useState("");
   const [showResults, setShowResults] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<{
+    id: number;
+    label: string;
+  } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+
+  // Find selected item when value changes
+  useEffect(() => {
+    if (value && items.length > 0) {
+      const found = items.find(
+        (item) =>
+          item.id === (typeof value === "string" ? parseInt(value) : value)
+      );
+      if (found) {
+        setSelectedItem(found);
+        if (showSelectedValueInSearch) {
+          setSearch(found.label);
+        }
+      }
+    } else {
+      setSelectedItem(null);
+      if (!showResults) {
+        setSearch("");
+      }
+    }
+  }, [value, items, showSelectedValueInSearch]);
 
   // Filter items based on search
   const filteredItems = useMemo(() => {
-    if (!search) return [];
+    if (!search) {
+      // When no search term, show recent or top items
+      return items.slice(0, 10);
+    }
+
+    // Add fuzzy search for better matching
+    const searchLower = search.toLowerCase();
     return items
-      .filter((item) => item.label.toLowerCase().includes(search.toLowerCase()))
+      .filter((item) => {
+        const labelLower = item.label.toLowerCase();
+        return labelLower.includes(searchLower);
+      })
+      .sort((a, b) => {
+        // Sort with exact matches first, then by starts with, then contains
+        const aLower = a.label.toLowerCase();
+        const bLower = b.label.toLowerCase();
+
+        const aExact = aLower === searchLower;
+        const bExact = bLower === searchLower;
+
+        if (aExact && !bExact) return -1;
+        if (!aExact && bExact) return 1;
+
+        const aStarts = aLower.startsWith(searchLower);
+        const bStarts = bLower.startsWith(searchLower);
+
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+
+        return aLower.localeCompare(bLower);
+      })
       .slice(0, 10); // Limit to 10 results
   }, [items, search]);
 
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        resultsRef.current &&
+        !resultsRef.current.contains(event.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(event.target as Node)
+      ) {
+        setShowResults(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
   return (
-    <div className="relative mb-2">
+    <div className={`relative mb-2 ${className || ""}`}>
       <div className="relative">
         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
         <Input
+          ref={inputRef}
           placeholder={placeholder}
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
-            setShowResults(e.target.value.length > 0);
+            setShowResults(true);
           }}
-          onFocus={() => setShowResults(search.length > 0)}
-          onBlur={() => {
-            // Delay hiding results to allow for item selection
-            setTimeout(() => setShowResults(false), 200);
-          }}
+          onFocus={() => setShowResults(true)}
           className="pl-8"
         />
+        {!isLoading && selectedItem && (
+          <div className="absolute right-2 top-2 flex items-center text-xs text-muted-foreground">
+            <span className="mr-1">Selected:</span>
+            <span className="max-w-[150px] truncate">{selectedItem.label}</span>
+          </div>
+        )}
       </div>
 
-      {showResults && filteredItems.length > 0 && (
-        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-input bg-popover shadow-md">
-          <div className="p-1">
-            {filteredItems.map((item) => (
-              <div
-                key={item.id}
-                className="relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
-                onClick={() => {
-                  onSelect(item.id);
-                  setSearch("");
-                  setShowResults(false);
-                }}
-              >
-                {item.label}
-              </div>
-            ))}
-          </div>
+      {isLoading ? (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-input bg-popover p-2 text-center shadow-md">
+          <Loader2 className="inline-block h-4 w-4 animate-spin mr-2" />
+          Loading...
         </div>
+      ) : (
+        showResults && (
+          <div
+            ref={resultsRef}
+            className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-input bg-popover shadow-md"
+          >
+            {filteredItems.length > 0 ? (
+              <div className="p-1">
+                {filteredItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground ${
+                      selectedItem?.id === item.id ? "bg-accent/50" : ""
+                    }`}
+                    onClick={() => {
+                      onSelect(item.id);
+                      setSelectedItem(item);
+                      if (!showSelectedValueInSearch) {
+                        setSearch("");
+                      } else {
+                        setSearch(item.label);
+                      }
+                      setShowResults(false);
+                    }}
+                  >
+                    <div className="flex-grow truncate">{item.label}</div>
+                    {selectedItem?.id === item.id && (
+                      <div className="ml-2 text-primary">✓</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-2 text-center text-sm text-muted-foreground">
+                No results found
+              </div>
+            )}
+          </div>
+        )
       )}
     </div>
   );
@@ -552,9 +663,11 @@ export function ArticleEditor({
               <FormItem>
                 <FormLabel>Category</FormLabel>
                 {!isLoadingCategories && (
-                  <SimpleAutocomplete
+                  <EnhancedAutocomplete
                     items={flatCategories}
                     placeholder="Search for a category or select from dropdown..."
+                    value={field.value}
+                    isLoading={isLoadingCategories}
                     onSelect={(id) => {
                       field.onChange(id);
 
@@ -631,9 +744,11 @@ export function ArticleEditor({
               <FormItem>
                 <FormLabel>Location (optional)</FormLabel>
                 {!isLoadingLocations && (
-                  <SimpleAutocomplete
+                  <EnhancedAutocomplete
                     items={flatLocations}
                     placeholder="Search for a location or select from dropdown..."
+                    value={field.value}
+                    isLoading={isLoadingLocations}
                     onSelect={(id) => {
                       field.onChange(id);
 

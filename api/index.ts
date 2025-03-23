@@ -1276,10 +1276,7 @@ app.get("/api/user/channels", async (req, res) => {
           
         if (usernameError) {
           console.error('Fallback search also failed:', usernameError);
-          return res.status(401).json({ error: 'User not found in database', details: dbError });
-        }
-        
-        if (userByUsername) {
+        } else if (userByUsername) {
           console.log('Found user by username instead:', userByUsername);
           
           // Update this user's supabase_uid if it's missing
@@ -1295,27 +1292,12 @@ app.get("/api/user/channels", async (req, res) => {
             }
           }
           
-          // Continue with this user
-          const userId = userByUsername.id;
-          console.log(`Using user ID ${userId} found by username instead`);
-          
-          // Fetch channels for this user ID
-          const { data: channels, error: channelsError } = await supabase
-            .from('channels')
-            .select('*')
-            .eq('user_id', userId);
-            
-          if (channelsError) {
-            console.error('Error fetching user channels by username fallback:', channelsError);
-            return res.status(500).json({ error: 'Failed to fetch user channels', details: channelsError });
-          }
-          
-          console.log(`Found ${channels?.length || 0} channels for user ${username} via fallback method`);
-          return res.json(channels || []);
+          // Return this user
+          return res.json(userByUsername);
         }
       }
       
-      return res.status(401).json({ error: 'User not found in database', details: dbError });
+      return res.sendStatus(401);
     }
     
     if (!dbUser) {
@@ -2283,7 +2265,46 @@ app.delete("/api/channels/:id/subscribe", async (req, res) => {
 // Add channel articles endpoint
 app.get("/api/channels/:id/articles", async (req, res) => {
   try {
-    const channelId = parseInt(req.params.id);
+    const channelIdParam = req.params.id;
+    console.log(`Raw channel ID parameter: ${channelIdParam}`);
+    
+    // Handle both numeric IDs and slugs
+    let channelId: number;
+    
+    if (/^\d+$/.test(channelIdParam)) {
+      // It's a numeric ID
+      channelId = parseInt(channelIdParam);
+    } else {
+      // It's a slug, we need to fetch the channel first to get its ID
+      console.log(`Looking up channel by slug: ${channelIdParam}`);
+      const { data: channel, error: channelError } = await supabase
+        .from("channels")
+        .select("id")
+        .eq("slug", channelIdParam)
+        .single();
+        
+      if (channelError || !channel) {
+        // Try extracting ID from slug as fallback
+        const idMatch = channelIdParam.match(/-(\d+)$/);
+        if (idMatch) {
+          channelId = parseInt(idMatch[1]);
+          console.log(`Extracted ID from slug: ${channelId}`);
+        } else {
+          console.error(`Channel not found for slug: ${channelIdParam}`);
+          return res.status(404).json({ error: "Channel not found" });
+        }
+      } else {
+        channelId = channel.id;
+        console.log(`Found channel ID ${channelId} for slug ${channelIdParam}`);
+      }
+    }
+    
+    // Validate the channel ID
+    if (isNaN(channelId)) {
+      console.error(`Invalid channel ID: ${channelIdParam}, parsed as NaN`);
+      return res.status(400).json({ error: "Invalid channel ID" });
+    }
+    
     console.log(`Fetching articles for channel ID: ${channelId}`);
     
     // Fetch published articles for the channel
@@ -2419,7 +2440,45 @@ app.get("/api/channels/:id/drafts", async (req, res) => {
     }
     
     const userId = dbUser.id;
-    const channelId = parseInt(req.params.id);
+    const channelIdParam = req.params.id;
+    console.log(`Raw channel ID parameter for drafts: ${channelIdParam}`);
+    
+    // Handle both numeric IDs and slugs
+    let channelId: number;
+    
+    if (/^\d+$/.test(channelIdParam)) {
+      // It's a numeric ID
+      channelId = parseInt(channelIdParam);
+    } else {
+      // It's a slug, we need to fetch the channel first to get its ID
+      console.log(`Looking up channel by slug for drafts: ${channelIdParam}`);
+      const { data: channel, error: channelError } = await supabase
+        .from("channels")
+        .select("id")
+        .eq("slug", channelIdParam)
+        .single();
+        
+      if (channelError || !channel) {
+        // Try extracting ID from slug as fallback
+        const idMatch = channelIdParam.match(/-(\d+)$/);
+        if (idMatch) {
+          channelId = parseInt(idMatch[1]);
+          console.log(`Extracted ID from slug for drafts: ${channelId}`);
+        } else {
+          console.error(`Channel not found for slug: ${channelIdParam}`);
+          return res.status(404).json({ error: "Channel not found" });
+        }
+      } else {
+        channelId = channel.id;
+        console.log(`Found channel ID ${channelId} for slug ${channelIdParam}`);
+      }
+    }
+    
+    // Validate the channel ID
+    if (isNaN(channelId)) {
+      console.error(`Invalid channel ID for drafts: ${channelIdParam}, parsed as NaN`);
+      return res.status(400).json({ error: "Invalid channel ID" });
+    }
     
     // Verify user owns this channel
     const { data: channel, error: channelError } = await supabase
@@ -3174,6 +3233,106 @@ app.get("/api/articles/:id/reactions", async (req, res) => {
   } catch (error) {
     console.error("Error fetching reactions:", error);
     return res.status(500).json({ error: "Failed to fetch reactions" });
+  }
+});
+
+// Categories endpoint
+app.get("/api/categories", async (req, res) => {
+  try {
+    console.log("Fetching categories from Supabase");
+    
+    // Fetch all categories from the database
+    const { data: categories, error } = await supabase
+      .from("categories")
+      .select("*")
+      .order("name");
+    
+    if (error) {
+      console.error("Error fetching categories:", error);
+      return res.status(500).json({ error: "Failed to fetch categories" });
+    }
+    
+    console.log(`Successfully fetched ${categories?.length || 0} categories`);
+    
+    // Transform into a hierarchical structure
+    const categoryMap = new Map();
+    const rootCategories = [];
+    
+    // First pass: create all category objects and store in map
+    categories?.forEach(category => {
+      categoryMap.set(category.id, { ...category, children: [] });
+    });
+    
+    // Second pass: build the hierarchy
+    categories?.forEach(category => {
+      const categoryWithChildren = categoryMap.get(category.id);
+      
+      if (category.parent_id === null) {
+        // This is a root category
+        rootCategories.push(categoryWithChildren);
+      } else {
+        // This is a child category, add to its parent's children array
+        const parent = categoryMap.get(category.parent_id);
+        if (parent) {
+          parent.children.push(categoryWithChildren);
+        }
+      }
+    });
+    
+    res.json(rootCategories || []);
+  } catch (error) {
+    console.error("Error in categories endpoint:", error);
+    res.status(500).json({ error: "Failed to fetch categories" });
+  }
+});
+
+// Locations endpoint
+app.get("/api/locations", async (req, res) => {
+  try {
+    console.log("Fetching locations from Supabase");
+    
+    // Fetch all locations from the database
+    const { data: locations, error } = await supabase
+      .from("locations")
+      .select("*")
+      .order("name");
+    
+    if (error) {
+      console.error("Error fetching locations:", error);
+      return res.status(500).json({ error: "Failed to fetch locations" });
+    }
+    
+    console.log(`Successfully fetched ${locations?.length || 0} locations`);
+    
+    // Transform into a hierarchical structure
+    const locationMap = new Map();
+    const rootLocations = [];
+    
+    // First pass: create all location objects and store in map
+    locations?.forEach(location => {
+      locationMap.set(location.id, { ...location, children: [] });
+    });
+    
+    // Second pass: build the hierarchy
+    locations?.forEach(location => {
+      const locationWithChildren = locationMap.get(location.id);
+      
+      if (location.parent_id === null) {
+        // This is a root location
+        rootLocations.push(locationWithChildren);
+      } else {
+        // This is a child location, add to its parent's children array
+        const parent = locationMap.get(location.parent_id);
+        if (parent) {
+          parent.children.push(locationWithChildren);
+        }
+      }
+    });
+    
+    res.json(rootLocations || []);
+  } catch (error) {
+    console.error("Error in locations endpoint:", error);
+    res.status(500).json({ error: "Failed to fetch locations" });
   }
 });
 
