@@ -57,6 +57,345 @@ interface LocationWithChildren {
   children?: LocationWithChildren[];
 }
 
+// New component for hierarchical category selection
+function HierarchicalCategorySelect({
+  categories,
+  value,
+  onChange,
+  isLoading,
+  onSelectMultiple,
+  multipleSelections = [],
+}: {
+  categories: CategoryWithChildren[];
+  value?: number | string;
+  onChange: (value: number) => void;
+  isLoading?: boolean;
+  onSelectMultiple?: (selections: { id: number; path: string }[]) => void;
+  multipleSelections?: { id: number; path: string }[];
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [level, setLevel] = useState<number>(0);
+  const [selectedParent, setSelectedParent] =
+    useState<CategoryWithChildren | null>(null);
+  const [selectedSecondLevel, setSelectedSecondLevel] =
+    useState<CategoryWithChildren | null>(null);
+  const [selections, setSelections] = useState<{ id: number; path: string }[]>(
+    multipleSelections || []
+  );
+
+  // Update local selections when props change
+  useEffect(() => {
+    if (multipleSelections && multipleSelections.length > 0) {
+      setSelections(multipleSelections);
+    }
+  }, [multipleSelections]);
+
+  // Reset the selection when categories change
+  useEffect(() => {
+    if (value && categories.length > 0) {
+      // Find the category matching the selected value
+      const findCategory = (
+        cats: CategoryWithChildren[],
+        id: number
+      ):
+        | {
+            category: CategoryWithChildren;
+            level: number;
+            parent?: CategoryWithChildren;
+            secondLevel?: CategoryWithChildren;
+          }
+        | undefined => {
+        // Check top level
+        for (const cat of cats) {
+          if (cat.id === id) {
+            return { category: cat, level: 0 };
+          }
+
+          // Check second level
+          if (cat.children) {
+            for (const child of cat.children) {
+              if (child.id === id) {
+                return { category: child, level: 1, parent: cat };
+              }
+
+              // Check third level
+              if (child.children) {
+                for (const grandchild of child.children) {
+                  if (grandchild.id === id) {
+                    return {
+                      category: grandchild,
+                      level: 2,
+                      parent: cat,
+                      secondLevel: child,
+                    };
+                  }
+                }
+              }
+            }
+          }
+        }
+        return undefined;
+      };
+
+      const found = findCategory(
+        categories,
+        typeof value === "string" ? parseInt(value) : value
+      );
+
+      if (found) {
+        if (found.level === 0) {
+          setSelectedParent(found.category);
+          setSelectedSecondLevel(null);
+          setLevel(1); // Show second level
+        } else if (found.level === 1) {
+          setSelectedParent(found.parent || null);
+          setSelectedSecondLevel(found.category);
+          setLevel(2); // Show third level
+        } else if (found.level === 2) {
+          setSelectedParent(found.parent || null);
+          setSelectedSecondLevel(found.secondLevel || null);
+          setLevel(2); // Keeping at third level
+        }
+      }
+    }
+  }, [value, categories]);
+
+  const handleSelectCategory = (
+    category: CategoryWithChildren,
+    currentLevel: number
+  ) => {
+    // Always set the value to the selected category ID
+    onChange(category.id);
+
+    // Create a path string for this category selection
+    let path = "";
+    if (currentLevel === 0) {
+      path = category.name;
+    } else if (currentLevel === 1) {
+      path = `${selectedParent?.name} > ${category.name}`;
+    } else if (currentLevel === 2) {
+      path = `${selectedParent?.name} > ${selectedSecondLevel?.name} > ${category.name}`;
+    }
+
+    // Add to selections if this is a leaf node (level 2 or no children)
+    if (
+      currentLevel === 2 ||
+      !category.children ||
+      category.children.length === 0
+    ) {
+      // Check if we already have this category ID
+      if (!selections.some((s) => s.id === category.id)) {
+        // Limit to 3 selections
+        const newSelections = [...selections, { id: category.id, path }].slice(
+          -3
+        );
+        setSelections(newSelections);
+        if (onSelectMultiple) {
+          onSelectMultiple(newSelections);
+        }
+      }
+    }
+
+    if (currentLevel === 0) {
+      // Selected from top level
+      setSelectedParent(category);
+      setSelectedSecondLevel(null);
+      if (category.children && category.children.length > 0) {
+        setLevel(1); // Show second level
+      } else {
+        setLevel(0); // Stay at top level if no children
+        setIsExpanded(false); // Close dropdown after selection if no children
+      }
+    } else if (currentLevel === 1) {
+      // Selected from second level
+      setSelectedSecondLevel(category);
+      if (category.children && category.children.length > 0) {
+        setLevel(2); // Show third level
+      } else {
+        setLevel(1); // Stay at second level if no children
+        setIsExpanded(false); // Close dropdown after selection if no children
+      }
+    } else {
+      // Selected from third level
+      setIsExpanded(false); // Close dropdown after selection
+    }
+  };
+
+  const goBack = () => {
+    if (level === 2) {
+      setLevel(1);
+      setSelectedSecondLevel(null);
+    } else if (level === 1) {
+      setLevel(0);
+      setSelectedParent(null);
+    }
+  };
+
+  // Remove a selection by ID
+  const removeSelection = (id: number) => {
+    const newSelections = selections.filter((s) => s.id !== id);
+    setSelections(newSelections);
+    if (onSelectMultiple) {
+      onSelectMultiple(newSelections);
+    }
+  };
+
+  // Get the current list of categories to display based on level
+  const currentCategories = useMemo(() => {
+    if (level === 0) {
+      return categories;
+    } else if (level === 1 && selectedParent && selectedParent.children) {
+      return selectedParent.children;
+    } else if (
+      level === 2 &&
+      selectedSecondLevel &&
+      selectedSecondLevel.children
+    ) {
+      return selectedSecondLevel.children;
+    }
+    return [];
+  }, [categories, level, selectedParent, selectedSecondLevel]);
+
+  // Get the current path display
+  const categoryPath = useMemo(() => {
+    const path = [];
+    if (selectedParent) {
+      path.push(selectedParent.name);
+    }
+    if (selectedSecondLevel) {
+      path.push(selectedSecondLevel.name);
+    }
+    return path.join(" > ");
+  }, [selectedParent, selectedSecondLevel]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-4 border rounded-md">
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        Loading categories...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div
+        className="border rounded-md cursor-pointer p-2 flex justify-between items-center"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        {categoryPath ? (
+          <div className="text-sm">
+            <span className="font-medium">Browsing:</span>
+            <span className="ml-1">{categoryPath}</span>
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">Select a category</div>
+        )}
+        <ChevronRight
+          className={`h-4 w-4 transform transition-transform ${
+            isExpanded ? "rotate-90" : ""
+          }`}
+        />
+      </div>
+
+      {isExpanded && (
+        <div className="relative border rounded-md shadow-sm">
+          {level > 0 && (
+            <button
+              type="button"
+              className="absolute left-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-accent rounded-full bg-primary/10"
+              onClick={(e) => {
+                e.stopPropagation();
+                goBack();
+              }}
+            >
+              <ChevronRight className="h-4 w-4 transform rotate-180 text-primary" />
+            </button>
+          )}
+
+          <div className="py-2 px-2">
+            <div className="font-medium text-sm mb-2 pl-6">
+              {level === 0
+                ? "Select a category"
+                : level === 1
+                ? `Select subcategory for ${selectedParent?.name}`
+                : `Select option for ${selectedSecondLevel?.name}`}
+            </div>
+
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {currentCategories.length > 0 ? (
+                currentCategories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 rounded-md hover:bg-accent text-sm flex items-center justify-between ${
+                      selections.some((s) => s.id === category.id)
+                        ? "bg-primary/10"
+                        : ""
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectCategory(category, level);
+                    }}
+                  >
+                    <span>{category.name}</span>
+                    {category.children && category.children.length > 0 ? (
+                      <ChevronRight className="h-4 w-4 text-primary" />
+                    ) : selections.some((s) => s.id === category.id) ? (
+                      <div className="text-primary text-sm">✓</div>
+                    ) : null}
+                  </button>
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground px-3 py-2">
+                  No categories available at this level
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Display selected categories */}
+      {selections.length > 0 && (
+        <div className="mt-2 mb-3">
+          <div className="text-sm font-medium mb-1">
+            Selected Categories ({selections.length}/3):
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {selections.map((selection) => (
+              <div
+                key={selection.id}
+                className="inline-flex items-center bg-primary/10 text-primary text-xs rounded-full px-3 py-1"
+              >
+                <span className="mr-1">{selection.path}</span>
+                <button
+                  type="button"
+                  className="hover:bg-primary/20 rounded-full p-0.5"
+                  onClick={() => removeSelection(selection.id)}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-3 w-3"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Enhanced Autocomplete component for categories and locations
 function EnhancedAutocomplete({
   items,
@@ -64,7 +403,6 @@ function EnhancedAutocomplete({
   onSelect,
   value,
   isLoading,
-  showSelectedValueInSearch = false,
   className,
 }: {
   items: { id: number; label: string }[];
@@ -72,7 +410,6 @@ function EnhancedAutocomplete({
   onSelect: (id: number) => void;
   value?: number | string;
   isLoading?: boolean;
-  showSelectedValueInSearch?: boolean;
   className?: string;
 }) {
   const [search, setSearch] = useState("");
@@ -93,9 +430,6 @@ function EnhancedAutocomplete({
       );
       if (found) {
         setSelectedItem(found);
-        if (showSelectedValueInSearch) {
-          setSearch(found.label);
-        }
       }
     } else {
       setSelectedItem(null);
@@ -103,7 +437,7 @@ function EnhancedAutocomplete({
         setSearch("");
       }
     }
-  }, [value, items, showSelectedValueInSearch]);
+  }, [value, items]);
 
   // Filter items based on search
   const filteredItems = useMemo(() => {
@@ -175,12 +509,6 @@ function EnhancedAutocomplete({
           onFocus={() => setShowResults(true)}
           className="pl-8"
         />
-        {!isLoading && selectedItem && (
-          <div className="absolute right-2 top-2 flex items-center text-xs text-muted-foreground">
-            <span className="mr-1">Selected:</span>
-            <span className="max-w-[150px] truncate">{selectedItem.label}</span>
-          </div>
-        )}
       </div>
 
       {isLoading ? (
@@ -205,11 +533,7 @@ function EnhancedAutocomplete({
                     onClick={() => {
                       onSelect(item.id);
                       setSelectedItem(item);
-                      if (!showSelectedValueInSearch) {
-                        setSearch("");
-                      } else {
-                        setSearch(item.label);
-                      }
+                      setSearch("");
                       setShowResults(false);
                     }}
                   >
@@ -227,6 +551,274 @@ function EnhancedAutocomplete({
             )}
           </div>
         )
+      )}
+    </div>
+  );
+}
+
+// New component for hierarchical location selection
+function HierarchicalLocationSelect({
+  locations,
+  value,
+  onChange,
+  isLoading,
+}: {
+  locations: LocationWithChildren[];
+  value?: number | string;
+  onChange: (value: number) => void;
+  isLoading?: boolean;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [level, setLevel] = useState<number>(0);
+  const [selectedParent, setSelectedParent] =
+    useState<LocationWithChildren | null>(null);
+  const [selectedSecondLevel, setSelectedSecondLevel] =
+    useState<LocationWithChildren | null>(null);
+
+  // Reset the selection when locations change
+  useEffect(() => {
+    if (value && locations.length > 0) {
+      // Find the location matching the selected value
+      const findLocation = (
+        locs: LocationWithChildren[],
+        id: number
+      ):
+        | {
+            location: LocationWithChildren;
+            level: number;
+            parent?: LocationWithChildren;
+            secondLevel?: LocationWithChildren;
+          }
+        | undefined => {
+        // Check top level
+        for (const loc of locs) {
+          if (loc.id === id) {
+            return { location: loc, level: 0 };
+          }
+
+          // Check second level
+          if (loc.children) {
+            for (const child of loc.children) {
+              if (child.id === id) {
+                return { location: child, level: 1, parent: loc };
+              }
+
+              // Check third level
+              if (child.children) {
+                for (const grandchild of child.children) {
+                  if (grandchild.id === id) {
+                    return {
+                      location: grandchild,
+                      level: 2,
+                      parent: loc,
+                      secondLevel: child,
+                    };
+                  }
+                }
+              }
+            }
+          }
+        }
+        return undefined;
+      };
+
+      const found = findLocation(
+        locations,
+        typeof value === "string" ? parseInt(value) : value
+      );
+
+      if (found) {
+        if (found.level === 0) {
+          setSelectedParent(found.location);
+          setSelectedSecondLevel(null);
+          setLevel(1); // Show second level
+        } else if (found.level === 1) {
+          setSelectedParent(found.parent || null);
+          setSelectedSecondLevel(found.location);
+          setLevel(2); // Show third level
+        } else if (found.level === 2) {
+          setSelectedParent(found.parent || null);
+          setSelectedSecondLevel(found.secondLevel || null);
+          setLevel(2); // Keeping at third level
+        }
+      }
+    }
+  }, [value, locations]);
+
+  const handleSelectLocation = (
+    location: LocationWithChildren,
+    currentLevel: number
+  ) => {
+    // Always set the value to the selected location ID
+    onChange(location.id);
+
+    if (currentLevel === 0) {
+      // Selected from top level
+      setSelectedParent(location);
+      setSelectedSecondLevel(null);
+      if (location.children && location.children.length > 0) {
+        setLevel(1); // Show second level
+      } else {
+        setLevel(0); // Stay at top level if no children
+        setIsExpanded(false); // Close dropdown after selection if no children
+      }
+    } else if (currentLevel === 1) {
+      // Selected from second level
+      setSelectedSecondLevel(location);
+      if (location.children && location.children.length > 0) {
+        setLevel(2); // Show third level
+      } else {
+        setLevel(1); // Stay at second level if no children
+        setIsExpanded(false); // Close dropdown after selection if no children
+      }
+    } else {
+      // Selected from third level
+      setIsExpanded(false); // Close dropdown after selection
+    }
+  };
+
+  const goBack = () => {
+    if (level === 2) {
+      setLevel(1);
+      setSelectedSecondLevel(null);
+    } else if (level === 1) {
+      setLevel(0);
+      setSelectedParent(null);
+    }
+  };
+
+  // Get the current list of locations to display based on level
+  const currentLocations = useMemo(() => {
+    if (level === 0) {
+      return locations;
+    } else if (level === 1 && selectedParent && selectedParent.children) {
+      return selectedParent.children;
+    } else if (
+      level === 2 &&
+      selectedSecondLevel &&
+      selectedSecondLevel.children
+    ) {
+      return selectedSecondLevel.children;
+    }
+    return [];
+  }, [locations, level, selectedParent, selectedSecondLevel]);
+
+  // Get the current path display
+  const locationPath = useMemo(() => {
+    const path = [];
+    if (selectedParent) {
+      path.push(
+        selectedParent.name +
+          (selectedParent.type ? ` (${selectedParent.type})` : "")
+      );
+    }
+    if (selectedSecondLevel) {
+      path.push(
+        selectedSecondLevel.name +
+          (selectedSecondLevel.type ? ` (${selectedSecondLevel.type})` : "")
+      );
+    }
+    return path.join(" > ");
+  }, [selectedParent, selectedSecondLevel]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-4 border rounded-md">
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        Loading locations...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div
+        className="border rounded-md cursor-pointer p-2 flex justify-between items-center"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        {locationPath ? (
+          <div className="text-sm">
+            <span className="font-medium">Browsing:</span>
+            <span className="ml-1">{locationPath}</span>
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">Select a location</div>
+        )}
+        <ChevronRight
+          className={`h-4 w-4 transform transition-transform ${
+            isExpanded ? "rotate-90" : ""
+          }`}
+        />
+      </div>
+
+      {isExpanded && (
+        <div className="relative border rounded-md shadow-sm">
+          {level > 0 && (
+            <button
+              type="button"
+              className="absolute left-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-accent rounded-full bg-primary/10"
+              onClick={(e) => {
+                e.stopPropagation();
+                goBack();
+              }}
+            >
+              <ChevronRight className="h-4 w-4 transform rotate-180 text-primary" />
+            </button>
+          )}
+
+          <div className="py-2 px-2">
+            <div className="font-medium text-sm mb-2 pl-6">
+              {level === 0
+                ? "Select a location"
+                : level === 1
+                ? `Select location in ${selectedParent?.name}`
+                : `Select specific location in ${selectedSecondLevel?.name}`}
+            </div>
+
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {currentLocations.length > 0 ? (
+                currentLocations.map((location) => (
+                  <button
+                    key={location.id}
+                    type="button"
+                    className="w-full text-left px-3 py-2 rounded-md hover:bg-accent text-sm flex items-center justify-between"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectLocation(location, level);
+                    }}
+                  >
+                    <span>
+                      {location.name}
+                      {location.type && (
+                        <span className="text-muted-foreground ml-1">
+                          ({location.type})
+                        </span>
+                      )}
+                    </span>
+                    {location.children && location.children.length > 0 && (
+                      <ChevronRight className="h-4 w-4 text-primary" />
+                    )}
+                  </button>
+                ))
+              ) : (
+                <div className="text-sm text-muted-foreground px-3 py-2">
+                  No locations available at this level
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {value && (
+        <div className="mt-2 mb-3">
+          <div className="text-sm font-medium mb-1">Selected Location:</div>
+          <div className="flex flex-wrap gap-2">
+            <div className="inline-flex items-center bg-primary/10 text-primary text-xs rounded-full px-3 py-1">
+              {locationPath}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -250,6 +842,9 @@ export function ArticleEditor({
           existingArticle.published === false
       : false
   );
+  const [selectedCategories, setSelectedCategories] = useState<
+    { id: number; path: string }[]
+  >([]);
 
   // Fetch categories from API
   const { data: categories, isLoading: isLoadingCategories } = useQuery<
@@ -663,12 +1258,10 @@ export function ArticleEditor({
               <FormItem>
                 <FormLabel>Category</FormLabel>
                 {!isLoadingCategories && (
-                  <EnhancedAutocomplete
-                    items={flatCategories}
-                    placeholder="Search for a category or select from dropdown..."
+                  <HierarchicalCategorySelect
+                    categories={categories || []}
                     value={field.value}
-                    isLoading={isLoadingCategories}
-                    onSelect={(id) => {
+                    onChange={(id) => {
                       field.onChange(id);
 
                       // Also set the text category field for backwards compatibility
@@ -692,47 +1285,98 @@ export function ArticleEditor({
                         }
                       }
                     }}
+                    isLoading={isLoadingCategories}
+                    onSelectMultiple={(selections) => {
+                      setSelectedCategories(selections);
+
+                      // Set the primary categoryId to the first selection
+                      if (selections.length > 0) {
+                        field.onChange(selections[0].id);
+
+                        // Set category name from path
+                        const pathParts = selections[0].path.split(" > ");
+                        if (pathParts.length > 0) {
+                          form.setValue(
+                            "category",
+                            pathParts[pathParts.length - 1]
+                          );
+                        }
+                      }
+                    }}
+                    multipleSelections={selectedCategories}
                   />
                 )}
-                <Select
-                  value={field.value?.toString() || ""}
-                  onValueChange={(value) => {
-                    field.onChange(value ? parseInt(value) : undefined);
 
-                    // Also set the text category field for backwards compatibility
-                    if (value && categories) {
-                      const selectedCategory =
-                        categories.find((c) => c.id.toString() === value) ||
-                        categories
-                          .flatMap((c) => c.children || [])
-                          .find((c) => c.id.toString() === value);
+                <div className="mt-4">
+                  <FormLabel className="text-sm text-muted-foreground">
+                    Search Categories
+                  </FormLabel>
+                  <EnhancedAutocomplete
+                    items={flatCategories}
+                    placeholder="Search for a category..."
+                    value={field.value}
+                    isLoading={isLoadingCategories}
+                    onSelect={(id) => {
+                      field.onChange(id);
 
-                      if (selectedCategory) {
-                        form.setValue("category", selectedCategory.name);
+                      // Also set the text category field for backwards compatibility
+                      const findCategory = (
+                        cats: CategoryWithChildren[]
+                      ): CategoryWithChildren | undefined => {
+                        for (const cat of cats) {
+                          if (cat.id === id) return cat;
+                          if (cat.children) {
+                            const found = findCategory(cat.children);
+                            if (found) return found;
+                          }
+                        }
+                        return undefined;
+                      };
+
+                      if (categories) {
+                        const selectedCategory = findCategory(categories);
+                        if (selectedCategory) {
+                          form.setValue("category", selectedCategory.name);
+
+                          // Find the full path for the selected category
+                          const findPath = (
+                            cats: CategoryWithChildren[],
+                            id: number,
+                            currentPath: string[] = []
+                          ): string[] | null => {
+                            for (const cat of cats) {
+                              if (cat.id === id) {
+                                return [...currentPath, cat.name];
+                              }
+
+                              if (cat.children) {
+                                const path = findPath(cat.children, id, [
+                                  ...currentPath,
+                                  cat.name,
+                                ]);
+                                if (path) return path;
+                              }
+                            }
+                            return null;
+                          };
+
+                          const path = findPath(categories, id);
+                          if (path) {
+                            const pathString = path.join(" > ");
+                            // Add to selected categories if not already there
+                            if (!selectedCategories.some((s) => s.id === id)) {
+                              const newSelections = [
+                                ...selectedCategories,
+                                { id, path: pathString },
+                              ].slice(-3);
+                              setSelectedCategories(newSelections);
+                            }
+                          }
+                        }
                       }
-                    }
-                  }}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a category" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className="max-h-80">
-                    {isLoadingCategories ? (
-                      <div className="flex items-center justify-center p-4">
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Loading categories...
-                      </div>
-                    ) : categories ? (
-                      renderCategoryOptions(categories)
-                    ) : (
-                      <SelectItem value="no-categories">
-                        No categories available
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
+                    }}
+                  />
+                </div>
               </FormItem>
             )}
           />
@@ -744,9 +1388,44 @@ export function ArticleEditor({
               <FormItem>
                 <FormLabel>Location (optional)</FormLabel>
                 {!isLoadingLocations && (
+                  <HierarchicalLocationSelect
+                    locations={locations || []}
+                    value={field.value}
+                    onChange={(id) => {
+                      field.onChange(id);
+
+                      // Also set the text location field for backwards compatibility
+                      const findLocation = (
+                        locs: LocationWithChildren[]
+                      ): LocationWithChildren | undefined => {
+                        for (const loc of locs) {
+                          if (loc.id === id) return loc;
+                          if (loc.children) {
+                            const found = findLocation(loc.children);
+                            if (found) return found;
+                          }
+                        }
+                        return undefined;
+                      };
+
+                      if (locations) {
+                        const selectedLocation = findLocation(locations);
+                        if (selectedLocation) {
+                          form.setValue("location", selectedLocation.name);
+                        }
+                      }
+                    }}
+                    isLoading={isLoadingLocations}
+                  />
+                )}
+
+                <div className="mt-4">
+                  <FormLabel className="text-sm text-muted-foreground">
+                    Search Locations
+                  </FormLabel>
                   <EnhancedAutocomplete
                     items={flatLocations}
-                    placeholder="Search for a location or select from dropdown..."
+                    placeholder="Search for a location..."
                     value={field.value}
                     isLoading={isLoadingLocations}
                     onSelect={(id) => {
@@ -777,68 +1456,8 @@ export function ArticleEditor({
                       }
                     }}
                   />
-                )}
-                <Select
-                  value={field.value?.toString() || ""}
-                  onValueChange={(value) => {
-                    field.onChange(
-                      value === "no-location"
-                        ? undefined
-                        : value
-                        ? parseInt(value)
-                        : undefined
-                    );
+                </div>
 
-                    // Also set the text location field for backwards compatibility
-                    if (value && value !== "no-location" && locations) {
-                      const findLocation = (
-                        locs: LocationWithChildren[]
-                      ): LocationWithChildren | undefined => {
-                        for (const loc of locs) {
-                          if (loc.id.toString() === value) return loc;
-                          if (loc.children) {
-                            const found = findLocation(loc.children);
-                            if (found) return found;
-                          }
-                        }
-                        return undefined;
-                      };
-
-                      const selectedLocation = findLocation(locations);
-                      if (selectedLocation) {
-                        form.setValue("location", selectedLocation.name);
-                        console.log(
-                          `Set location name to: ${selectedLocation.name}`
-                        );
-                      }
-                    } else if (value === "no-location") {
-                      form.setValue("location", "");
-                    }
-                  }}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a location" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className="max-h-80">
-                    <SelectItem value="no-location">
-                      No specific location
-                    </SelectItem>
-                    {isLoadingLocations ? (
-                      <div className="flex items-center justify-center p-4">
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Loading locations...
-                      </div>
-                    ) : locations ? (
-                      renderLocationOptions(locations)
-                    ) : (
-                      <SelectItem value="no-locations">
-                        No locations available
-                      </SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
                 <FormDescription>
                   Select a location to help readers find geographically relevant
                   content
