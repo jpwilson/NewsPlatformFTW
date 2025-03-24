@@ -40,7 +40,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 // Define extended types for hierarchical structures
-interface CategoryWithChildren {
+export interface CategoryWithChildren {
   id: number;
   name: string;
   parent_id: number | null;
@@ -48,7 +48,7 @@ interface CategoryWithChildren {
   children?: CategoryWithChildren[];
 }
 
-interface LocationWithChildren {
+export interface LocationWithChildren {
   id: number;
   name: string;
   parent_id: number | null;
@@ -58,7 +58,7 @@ interface LocationWithChildren {
 }
 
 // New component for hierarchical category selection
-function HierarchicalCategorySelect({
+export function HierarchicalCategorySelect({
   categories,
   value,
   onChange,
@@ -399,7 +399,7 @@ function HierarchicalCategorySelect({
 }
 
 // Enhanced Autocomplete component for categories and locations
-function EnhancedAutocomplete({
+export function EnhancedAutocomplete({
   items,
   placeholder,
   onSelect,
@@ -559,7 +559,7 @@ function EnhancedAutocomplete({
 }
 
 // New component for hierarchical location selection
-function HierarchicalLocationSelect({
+export function HierarchicalLocationSelect({
   locations,
   value,
   onChange,

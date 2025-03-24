@@ -2883,19 +2883,23 @@ app.patch("/api/articles/:id", async (req, res) => {
     }
     
     // Extract update fields from request body
-    const { title, content, categoryId, locationId } = req.body;
+    const { title, content, categoryId, locationId, category, location } = req.body;
     
     // Construct update object with only provided fields
     const updates: any = {};
     if (title !== undefined) updates.title = title;
     if (content !== undefined) updates.content = content;
-    if (categoryId !== undefined) updates.category_id = categoryId;
-    if (locationId !== undefined) updates.location_id = locationId;
+    if (category !== undefined) updates.category = category;
+    if (location !== undefined) updates.location = location;
     
-    // Add updated_at timestamp
-    updates.updated_at = new Date().toISOString();
+    // Add last_edited timestamp
+    updates.last_edited = new Date().toISOString();
     
-    // Update the article
+    console.log("Updating article with:", updates);
+    
+    // Start a transaction for the update operations
+    // Use separate operations since Supabase doesn't support real transactions
+    // Step 1: Update the article in the articles table
     const { data: updatedArticle, error: updateError } = await supabase
       .from('articles')
       .update(updates)
@@ -2908,10 +2912,70 @@ app.patch("/api/articles/:id", async (req, res) => {
       return res.status(500).json({ message: "Failed to update article" });
     }
     
+    // Step 2: If categoryId is provided, handle the article_categories relationship
+    if (categoryId !== undefined) {
+      console.log(`Updating category for article ${articleId} to category ${categoryId}`);
+      
+      // First, check if the category relationship already exists
+      const { data: existingCategories, error: fetchCategoriesError } = await supabase
+        .from('article_categories')
+        .select('*')
+        .eq('article_id', articleId)
+        .eq('category_id', categoryId);
+      
+      if (fetchCategoriesError) {
+        console.error("Error fetching existing categories:", fetchCategoriesError);
+        // Continue with the operation even if this fails
+      }
+      
+      // If relationship doesn't exist yet, create it
+      if (!existingCategories || existingCategories.length === 0) {
+        // First, remove the existing primary category if any
+        const { error: deletePrimaryError } = await supabase
+          .from('article_categories')
+          .delete()
+          .eq('article_id', articleId)
+          .eq('is_primary', true);
+        
+        if (deletePrimaryError) {
+          console.error("Error removing existing primary category:", deletePrimaryError);
+          // Continue with the operation even if this fails
+        }
+        
+        // Insert the new category relationship as primary
+        const { error: insertCategoryError } = await supabase
+          .from('article_categories')
+          .insert([
+            { 
+              article_id: articleId, 
+              category_id: categoryId,
+              is_primary: true 
+            }
+          ]);
+        
+        if (insertCategoryError) {
+          console.error("Error inserting category relationship:", insertCategoryError);
+          // Continue with the operation even if this fails
+        }
+      } else {
+        // The relationship exists already, make sure it's marked as primary
+        const { error: updatePrimaryError } = await supabase
+          .from('article_categories')
+          .update({ is_primary: true })
+          .eq('article_id', articleId)
+          .eq('category_id', categoryId);
+        
+        if (updatePrimaryError) {
+          console.error("Error updating primary category flag:", updatePrimaryError);
+          // Continue with the operation even if this fails
+        }
+      }
+    }
+    
     return res.json(updatedArticle);
   } catch (error) {
     console.error("Error in update article endpoint:", error);
-    return res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Failed to update article" });
   }
 });
 

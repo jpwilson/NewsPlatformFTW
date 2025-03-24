@@ -19,7 +19,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { formatDate } from "@/lib/date-utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -36,6 +36,13 @@ import {
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 import { createSlugUrl } from "@/lib/slug-utils";
+import {
+  HierarchicalCategorySelect,
+  HierarchicalLocationSelect,
+  EnhancedAutocomplete,
+  type CategoryWithChildren,
+  type LocationWithChildren,
+} from "@/components/article-editor";
 
 // Helper function to capitalize the first letter of a string
 function capitalizeFirstLetter(string: string) {
@@ -74,6 +81,15 @@ export default function ArticlePage() {
   const [editableContent, setEditableContent] = useState("");
   const [editableCategory, setEditableCategory] = useState("");
   const [editableLocation, setEditableLocation] = useState("");
+  const [editableCategoryId, setEditableCategoryId] = useState<
+    number | undefined
+  >(undefined);
+  const [editableLocationId, setEditableLocationId] = useState<
+    number | undefined
+  >(undefined);
+  const [selectedCategories, setSelectedCategories] = useState<
+    { id: number; path: string }[]
+  >([]);
 
   // Local override for view count in case API response is faster than query invalidation
   const [viewCountOverride, setViewCountOverride] = useState<number | null>(
@@ -106,6 +122,69 @@ export default function ArticlePage() {
     }
   }, [article, user, isOwner]);
 
+  // Fetch categories and locations when in edit mode
+  const { data: categories, isLoading: isLoadingCategories } = useQuery<
+    CategoryWithChildren[]
+  >({
+    queryKey: ["/api/categories"],
+    enabled: isEditing,
+  });
+
+  // Deduplicate and process categories
+  const processedCategories = useMemo(() => {
+    if (!categories) return [];
+
+    // Create a map to track seen category names at each level
+    const seenCategories = new Map<string, Set<string>>();
+
+    // Process the categories to eliminate duplicates
+    const processCategories = (
+      cats: CategoryWithChildren[],
+      parentPath = ""
+    ): CategoryWithChildren[] => {
+      const result: CategoryWithChildren[] = [];
+      const seenNamesAtLevel = new Set<string>();
+
+      for (const cat of cats) {
+        // Create a path key to identify this category's position in the hierarchy
+        const pathKey = parentPath ? `${parentPath}/${cat.name}` : cat.name;
+
+        // Skip if we've already seen this category name at this level
+        if (seenNamesAtLevel.has(cat.name.toLowerCase())) {
+          continue;
+        }
+
+        // Mark this category name as seen at this level
+        seenNamesAtLevel.add(cat.name.toLowerCase());
+
+        // Process children if any
+        let processedChildren: CategoryWithChildren[] = [];
+        if (cat.children && cat.children.length > 0) {
+          processedChildren = processCategories(cat.children, pathKey);
+        }
+
+        // Add this category with processed children
+        result.push({
+          ...cat,
+          children:
+            processedChildren.length > 0 ? processedChildren : undefined,
+        });
+      }
+
+      return result;
+    };
+
+    return processCategories(categories);
+  }, [categories]);
+
+  // Fetch locations when in edit mode
+  const { data: locations, isLoading: isLoadingLocations } = useQuery<
+    LocationWithChildren[]
+  >({
+    queryKey: ["/api/locations"],
+    enabled: isEditing,
+  });
+
   // Initialize editable fields when article data is loaded
   useEffect(() => {
     if (article) {
@@ -113,8 +192,110 @@ export default function ArticlePage() {
       setEditableContent(article.content);
       setEditableCategory(article.category || "");
       setEditableLocation(article.location || "");
+
+      // We still use categoryId and locationId for the UI component display
+      // but don't send them to the API
+      if (article.category) {
+        // Find the category ID if possible by searching the categories
+        const findCategoryId = (
+          catName: string,
+          cats: CategoryWithChildren[] = []
+        ): number | undefined => {
+          for (const cat of cats) {
+            if (cat.name.toLowerCase() === catName.toLowerCase()) {
+              return cat.id;
+            }
+            if (cat.children) {
+              const childId: number | undefined = findCategoryId(
+                catName,
+                cat.children
+              );
+              if (childId) return childId;
+            }
+          }
+          return undefined;
+        };
+
+        if (processedCategories && processedCategories.length > 0) {
+          const foundId = findCategoryId(article.category, processedCategories);
+          if (foundId) {
+            setEditableCategoryId(foundId);
+            setSelectedCategories([
+              {
+                id: foundId,
+                path: article.category,
+              },
+            ]);
+          }
+        }
+      }
+
+      // Similar for locations
+      if (article.location && locations) {
+        const findLocationId = (
+          locName: string,
+          locs: LocationWithChildren[] = []
+        ): number | undefined => {
+          for (const loc of locs) {
+            if (loc.name.toLowerCase() === locName.toLowerCase()) {
+              return loc.id;
+            }
+            if (loc.children) {
+              const childId: number | undefined = findLocationId(
+                locName,
+                loc.children
+              );
+              if (childId) return childId;
+            }
+          }
+          return undefined;
+        };
+
+        const foundId = findLocationId(article.location, locations);
+        if (foundId) {
+          setEditableLocationId(foundId);
+        }
+      }
     }
-  }, [article]);
+  }, [article, processedCategories, locations]);
+
+  // Extract all categories into a flat list for search
+  const flatCategories = useMemo(() => {
+    const flattenCategories = (
+      items: CategoryWithChildren[] = [],
+      path = ""
+    ): { id: number; label: string }[] => {
+      return items.flatMap((item) => {
+        const label = path ? `${path} > ${item.name}` : item.name;
+        return [
+          { id: item.id, label },
+          ...(item.children ? flattenCategories(item.children, label) : []),
+        ];
+      });
+    };
+
+    return processedCategories ? flattenCategories(processedCategories) : [];
+  }, [processedCategories]);
+
+  // Extract all locations into a flat list for search
+  const flatLocations = useMemo(() => {
+    const flattenLocations = (
+      items: LocationWithChildren[] = [],
+      path = ""
+    ): { id: number; label: string }[] => {
+      return items.flatMap((item) => {
+        const label = path
+          ? `${path} > ${item.name}${item.type ? ` (${item.type})` : ""}`
+          : `${item.name}${item.type ? ` (${item.type})` : ""}`;
+        return [
+          { id: item.id, label },
+          ...(item.children ? flattenLocations(item.children, label) : []),
+        ];
+      });
+    };
+
+    return locations ? flattenLocations(locations) : [];
+  }, [locations]);
 
   // Check if article is in draft state
   const isDraft = article?.status === "draft" || article?.published === false;
@@ -233,6 +414,8 @@ export default function ArticlePage() {
         content: editableContent,
         category: editableCategory,
         location: editableLocation,
+        categoryId: editableCategoryId,
+        locationId: editableLocationId,
       });
       return await response.json();
     },
@@ -297,6 +480,70 @@ export default function ArticlePage() {
       setEditableContent(article.content);
       setEditableCategory(article.category || "");
       setEditableLocation(article.location || "");
+
+      // We still use categoryId and locationId for the UI component display
+      // but don't send them to the API
+      if (article.category) {
+        // Find the category ID if possible by searching the categories
+        const findCategoryId = (
+          catName: string,
+          cats: CategoryWithChildren[] = []
+        ): number | undefined => {
+          for (const cat of cats) {
+            if (cat.name.toLowerCase() === catName.toLowerCase()) {
+              return cat.id;
+            }
+            if (cat.children) {
+              const childId: number | undefined = findCategoryId(
+                catName,
+                cat.children
+              );
+              if (childId) return childId;
+            }
+          }
+          return undefined;
+        };
+
+        if (processedCategories && processedCategories.length > 0) {
+          const foundId = findCategoryId(article.category, processedCategories);
+          if (foundId) {
+            setEditableCategoryId(foundId);
+            setSelectedCategories([
+              {
+                id: foundId,
+                path: article.category,
+              },
+            ]);
+          }
+        }
+      }
+
+      // Similar for locations
+      if (article.location && locations) {
+        const findLocationId = (
+          locName: string,
+          locs: LocationWithChildren[] = []
+        ): number | undefined => {
+          for (const loc of locs) {
+            if (loc.name.toLowerCase() === locName.toLowerCase()) {
+              return loc.id;
+            }
+            if (loc.children) {
+              const childId: number | undefined = findLocationId(
+                locName,
+                loc.children
+              );
+              if (childId) return childId;
+            }
+          }
+          return undefined;
+        };
+
+        const foundId = findLocationId(article.location, locations);
+        if (foundId) {
+          setEditableLocationId(foundId);
+        }
+      }
     }
     setIsEditing(false);
   };
@@ -505,38 +752,191 @@ export default function ArticlePage() {
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 {/* Only show categories if they exist and are not empty strings */}
                 {article.category &&
-                  article.category.trim() !== "" &&
-                  article.category.toLowerCase() !== "uncategorized" && (
-                    <>
-                      <span className="font-medium">Categories:</span>{" "}
-                      {!isEditing ? (
-                        <span className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 px-3 py-1 rounded-md">
-                          {capitalizeFirstLetter(article.category)}
-                        </span>
-                      ) : (
-                        <select
-                          value={editableCategory}
-                          onChange={(e) => setEditableCategory(e.target.value)}
-                          className="px-2 py-1 rounded-md border border-input bg-background"
-                        >
-                          <option value="">Select category</option>
-                          <option value="politics">Politics</option>
-                          <option value="technology">Technology</option>
-                          <option value="sports">Sports</option>
-                          <option value="health">Health</option>
-                          <option value="entertainment">Entertainment</option>
-                          <option value="business">Business</option>
-                          <option value="science">Science</option>
-                          <option value="environment">Environment</option>
-                          <option value="education">Education</option>
-                          <option value="other">Other</option>
-                        </select>
-                      )}
-                    </>
-                  )}
+                article.category.trim() !== "" &&
+                article.category.toLowerCase() !== "uncategorized" ? (
+                  <>
+                    <span className="font-medium">Categories:</span>{" "}
+                    {!isEditing ? (
+                      <span className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 px-3 py-1 rounded-md">
+                        {capitalizeFirstLetter(article.category)}
+                      </span>
+                    ) : (
+                      <div className="flex-1 max-w-md">
+                        <HierarchicalCategorySelect
+                          categories={processedCategories || []}
+                          value={editableCategoryId}
+                          onChange={(id) => {
+                            setEditableCategoryId(id);
+
+                            // Find the category to set the text name for compatibility
+                            const findCategory = (
+                              cats: CategoryWithChildren[]
+                            ): CategoryWithChildren | undefined => {
+                              for (const cat of cats) {
+                                if (cat.id === id) return cat;
+                                if (cat.children) {
+                                  const found = findCategory(cat.children);
+                                  if (found) return found;
+                                }
+                              }
+                              return undefined;
+                            };
+
+                            if (processedCategories) {
+                              const selectedCategory =
+                                findCategory(processedCategories);
+                              if (selectedCategory) {
+                                setEditableCategory(selectedCategory.name);
+                              }
+                            }
+                          }}
+                          isLoading={isLoadingCategories}
+                          onSelectMultiple={(selections) => {
+                            setSelectedCategories(selections);
+
+                            // Set the primary categoryId to the first selection
+                            if (selections.length > 0) {
+                              setEditableCategoryId(selections[0].id);
+
+                              // Set category name from path
+                              const pathParts = selections[0].path.split(" > ");
+                              if (pathParts.length > 0) {
+                                setEditableCategory(
+                                  pathParts[pathParts.length - 1]
+                                );
+                              }
+                            }
+                          }}
+                          multipleSelections={selectedCategories}
+                        />
+
+                        <div className="mt-2">
+                          <EnhancedAutocomplete
+                            items={flatCategories}
+                            placeholder="Search for a category..."
+                            value={editableCategoryId}
+                            isLoading={isLoadingCategories}
+                            onSelect={(id) => {
+                              setEditableCategoryId(id);
+
+                              // Find the category
+                              const findCategory = (
+                                cats: CategoryWithChildren[]
+                              ): CategoryWithChildren | undefined => {
+                                for (const cat of cats) {
+                                  if (cat.id === id) return cat;
+                                  if (cat.children) {
+                                    const found = findCategory(cat.children);
+                                    if (found) return found;
+                                  }
+                                }
+                                return undefined;
+                              };
+
+                              if (processedCategories) {
+                                const selectedCategory =
+                                  findCategory(processedCategories);
+                                if (selectedCategory) {
+                                  setEditableCategory(selectedCategory.name);
+
+                                  // Find the full path for the selected category
+                                  const findPath = (
+                                    cats: CategoryWithChildren[],
+                                    id: number,
+                                    currentPath: string[] = []
+                                  ): string[] | null => {
+                                    for (const cat of cats) {
+                                      if (cat.id === id) {
+                                        return [...currentPath, cat.name];
+                                      }
+
+                                      if (cat.children) {
+                                        const path = findPath(
+                                          cat.children,
+                                          id,
+                                          [...currentPath, cat.name]
+                                        );
+                                        if (path) return path;
+                                      }
+                                    }
+                                    return null;
+                                  };
+
+                                  const path = findPath(
+                                    processedCategories,
+                                    id
+                                  );
+                                  if (path) {
+                                    const pathString = path.join(" > ");
+                                    // Add to selected categories if not already there
+                                    if (
+                                      !selectedCategories.some(
+                                        (s) => s.id === id
+                                      )
+                                    ) {
+                                      const newSelections = [
+                                        ...selectedCategories,
+                                        { id, path: pathString },
+                                      ].slice(-3);
+                                      setSelectedCategories(newSelections);
+                                    }
+                                  }
+                                }
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : isEditing ? (
+                  <div className="flex-1 max-w-md">
+                    <span className="font-medium">Categories:</span>
+                    <HierarchicalCategorySelect
+                      categories={processedCategories || []}
+                      value={editableCategoryId}
+                      onChange={(id) => {
+                        setEditableCategoryId(id);
+                        if (processedCategories) {
+                          const findCategory = (
+                            cats: CategoryWithChildren[]
+                          ): CategoryWithChildren | undefined => {
+                            for (const cat of cats) {
+                              if (cat.id === id) return cat;
+                              if (cat.children) {
+                                const found = findCategory(cat.children);
+                                if (found) return found;
+                              }
+                            }
+                            return undefined;
+                          };
+                          const selectedCategory =
+                            findCategory(processedCategories);
+                          if (selectedCategory) {
+                            setEditableCategory(selectedCategory.name);
+                          }
+                        }
+                      }}
+                      isLoading={isLoadingCategories}
+                      onSelectMultiple={(selections) => {
+                        setSelectedCategories(selections);
+                        if (selections.length > 0) {
+                          setEditableCategoryId(selections[0].id);
+                          const pathParts = selections[0].path.split(" > ");
+                          if (pathParts.length > 0) {
+                            setEditableCategory(
+                              pathParts[pathParts.length - 1]
+                            );
+                          }
+                        }
+                      }}
+                      multipleSelections={selectedCategories}
+                    />
+                  </div>
+                ) : null}
 
                 {/* Only show location if it exists and is not empty */}
-                {articleLocation && articleLocation.trim() !== "" && (
+                {articleLocation && articleLocation.trim() !== "" ? (
                   <>
                     {article.category &&
                       article.category.trim() !== "" &&
@@ -548,17 +948,69 @@ export default function ArticlePage() {
                       {articleLocation}
                     </span>
                   </>
-                )}
+                ) : null}
+
                 {isEditing && (
-                  <div className="flex items-center gap-2 ml-4">
-                    <span className="font-medium">Location:</span>
-                    <input
-                      type="text"
-                      value={editableLocation}
-                      onChange={(e) => setEditableLocation(e.target.value)}
-                      placeholder="Location (optional)"
-                      className="px-2 py-1 rounded-md border border-input bg-background w-36"
+                  <div className="flex-1 max-w-md mt-4">
+                    <span className="font-medium block mb-2">
+                      Location (optional):
+                    </span>
+                    <HierarchicalLocationSelect
+                      locations={locations || []}
+                      value={editableLocationId}
+                      onChange={(id) => {
+                        setEditableLocationId(id);
+                        if (locations) {
+                          const findLocation = (
+                            locs: LocationWithChildren[]
+                          ): LocationWithChildren | undefined => {
+                            for (const loc of locs) {
+                              if (loc.id === id) return loc;
+                              if (loc.children) {
+                                const found = findLocation(loc.children);
+                                if (found) return found;
+                              }
+                            }
+                            return undefined;
+                          };
+                          const selectedLocation = findLocation(locations);
+                          if (selectedLocation) {
+                            setEditableLocation(selectedLocation.name);
+                          }
+                        }
+                      }}
+                      isLoading={isLoadingLocations}
                     />
+
+                    <div className="mt-2">
+                      <EnhancedAutocomplete
+                        items={flatLocations}
+                        placeholder="Search for a location..."
+                        value={editableLocationId}
+                        isLoading={isLoadingLocations}
+                        onSelect={(id) => {
+                          setEditableLocationId(id);
+                          if (locations) {
+                            const findLocation = (
+                              locs: LocationWithChildren[]
+                            ): LocationWithChildren | undefined => {
+                              for (const loc of locs) {
+                                if (loc.id === id) return loc;
+                                if (loc.children) {
+                                  const found = findLocation(loc.children);
+                                  if (found) return found;
+                                }
+                              }
+                              return undefined;
+                            };
+                            const selectedLocation = findLocation(locations);
+                            if (selectedLocation) {
+                              setEditableLocation(selectedLocation.name);
+                            }
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
