@@ -303,13 +303,13 @@ function HierarchicalCategorySelect({
           {level > 0 && (
             <button
               type="button"
-              className="absolute left-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-accent rounded-full bg-primary/10"
+              className="absolute left-2 top-1/2 transform -translate-y-1/2 p-1.5 hover:bg-accent rounded-full bg-primary/20"
               onClick={(e) => {
                 e.stopPropagation();
                 goBack();
               }}
             >
-              <ChevronRight className="h-4 w-4 transform rotate-180 text-primary" />
+              <ChevronRight className="h-5 w-5 transform rotate-180 text-primary font-bold" />
             </button>
           )}
 
@@ -339,8 +339,10 @@ function HierarchicalCategorySelect({
                     }}
                   >
                     <span>{category.name}</span>
-                    {category.children && category.children.length > 0 ? (
-                      <ChevronRight className="h-4 w-4 text-primary" />
+                    {category.children &&
+                    category.children.length > 0 &&
+                    level < 2 ? (
+                      <ChevronRight className="h-5 w-5 text-primary font-bold" />
                     ) : selections.some((s) => s.id === category.id) ? (
                       <div className="text-primary text-sm">✓</div>
                     ) : null}
@@ -756,13 +758,13 @@ function HierarchicalLocationSelect({
           {level > 0 && (
             <button
               type="button"
-              className="absolute left-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-accent rounded-full bg-primary/10"
+              className="absolute left-2 top-1/2 transform -translate-y-1/2 p-1.5 hover:bg-accent rounded-full bg-primary/20"
               onClick={(e) => {
                 e.stopPropagation();
                 goBack();
               }}
             >
-              <ChevronRight className="h-4 w-4 transform rotate-180 text-primary" />
+              <ChevronRight className="h-5 w-5 transform rotate-180 text-primary font-bold" />
             </button>
           )}
 
@@ -796,7 +798,7 @@ function HierarchicalLocationSelect({
                       )}
                     </span>
                     {location.children && location.children.length > 0 && (
-                      <ChevronRight className="h-4 w-4 text-primary" />
+                      <ChevronRight className="h-5 w-5 text-primary font-bold" />
                     )}
                   </button>
                 ))
@@ -852,6 +854,53 @@ export function ArticleEditor({
   >({
     queryKey: ["/api/categories"],
   });
+
+  // Deduplicate and process categories
+  const processedCategories = useMemo(() => {
+    if (!categories) return [];
+
+    // Create a map to track seen category names at each level
+    const seenCategories = new Map<string, Set<string>>();
+
+    // Process the categories to eliminate duplicates
+    const processCategories = (
+      cats: CategoryWithChildren[],
+      parentPath = ""
+    ): CategoryWithChildren[] => {
+      const result: CategoryWithChildren[] = [];
+      const seenNamesAtLevel = new Set<string>();
+
+      for (const cat of cats) {
+        // Create a path key to identify this category's position in the hierarchy
+        const pathKey = parentPath ? `${parentPath}/${cat.name}` : cat.name;
+
+        // Skip if we've already seen this category name at this level
+        if (seenNamesAtLevel.has(cat.name.toLowerCase())) {
+          continue;
+        }
+
+        // Mark this category name as seen at this level
+        seenNamesAtLevel.add(cat.name.toLowerCase());
+
+        // Process children if any
+        let processedChildren: CategoryWithChildren[] = [];
+        if (cat.children && cat.children.length > 0) {
+          processedChildren = processCategories(cat.children, pathKey);
+        }
+
+        // Add this category with processed children
+        result.push({
+          ...cat,
+          children:
+            processedChildren.length > 0 ? processedChildren : undefined,
+        });
+      }
+
+      return result;
+    };
+
+    return processCategories(categories);
+  }, [categories]);
 
   // Fetch locations from API
   const { data: locations, isLoading: isLoadingLocations } = useQuery<
@@ -931,8 +980,8 @@ export function ArticleEditor({
       });
     };
 
-    return categories ? flattenCategories(categories) : [];
-  }, [categories]);
+    return processedCategories ? flattenCategories(processedCategories) : [];
+  }, [processedCategories]);
 
   // Extract all locations into a flat list for search
   const flatLocations = useMemo(() => {
@@ -1259,7 +1308,7 @@ export function ArticleEditor({
                 <FormLabel>Category</FormLabel>
                 {!isLoadingCategories && (
                   <HierarchicalCategorySelect
-                    categories={categories || []}
+                    categories={processedCategories || []}
                     value={field.value}
                     onChange={(id) => {
                       field.onChange(id);
@@ -1278,8 +1327,9 @@ export function ArticleEditor({
                         return undefined;
                       };
 
-                      if (categories) {
-                        const selectedCategory = findCategory(categories);
+                      if (processedCategories) {
+                        const selectedCategory =
+                          findCategory(processedCategories);
                         if (selectedCategory) {
                           form.setValue("category", selectedCategory.name);
                         }
@@ -1333,8 +1383,9 @@ export function ArticleEditor({
                         return undefined;
                       };
 
-                      if (categories) {
-                        const selectedCategory = findCategory(categories);
+                      if (processedCategories) {
+                        const selectedCategory =
+                          findCategory(processedCategories);
                         if (selectedCategory) {
                           form.setValue("category", selectedCategory.name);
 
@@ -1360,7 +1411,7 @@ export function ArticleEditor({
                             return null;
                           };
 
-                          const path = findPath(categories, id);
+                          const path = findPath(processedCategories, id);
                           if (path) {
                             const pathString = path.join(" > ");
                             // Add to selected categories if not already there
