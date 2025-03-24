@@ -35,6 +35,7 @@ type ArticleWithSnakeCase = Article & {
   view_count?: number;
   userReaction?: boolean | null;
   slug?: string;
+  categories?: Array<{ id: number; name: string; isPrimary?: boolean }>;
   _count?: {
     comments?: number;
   };
@@ -116,9 +117,6 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
                   {formatDate(article.created_at || article.createdAt)}
                 </span>
                 {article.location && <span>📍 {article.location}</span>}
-                {article.category && article.category.trim() !== "" && (
-                  <span>🏷️ {article.category}</span>
-                )}
               </div>
               <button
                 onClick={handleChannelClick}
@@ -126,6 +124,28 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
               >
                 By: {article.channel?.name || "Unknown Channel"}
               </button>
+              {/* Display all categories */}
+              {article.categories && article.categories.length > 0 ? (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {article.categories.map((cat, index) => (
+                    <span
+                      key={`${cat.id}-${index}`}
+                      className="px-2 py-0.5 bg-muted rounded-md text-xs"
+                    >
+                      🏷️ {cat.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                article.category &&
+                article.category.trim() !== "" && (
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    <span className="px-2 py-0.5 bg-muted rounded-md text-xs">
+                      🏷️ {article.category}
+                    </span>
+                  </div>
+                )
+              )}
             </div>
           </div>
         </CardHeader>

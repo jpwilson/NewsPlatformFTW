@@ -4,7 +4,6 @@ import { NavigationBar } from "@/components/navigation-bar";
 import { CommentSection } from "@/components/comment-section";
 import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { ArticleWithSnakeCase } from "@/types/article";
 import {
   ThumbsUp,
   ThumbsDown,
@@ -43,6 +42,33 @@ import {
   type CategoryWithChildren,
   type LocationWithChildren,
 } from "@/components/article-editor";
+
+// Define a more flexible type for article that accommodates both camelCase and snake_case
+type ArticleWithSnakeCase = Article & {
+  created_at?: string | Date;
+  channel_id?: number;
+  user_id?: number;
+  title?: string;
+  content?: string;
+  channel?: { id: number; name: string; slug?: string };
+  createdAt?: string | Date;
+  lastEdited?: string | Date;
+  last_edited?: string | Date;
+  status?: string;
+  published?: boolean;
+  view_count?: number;
+  viewCount?: number;
+  likes?: number;
+  dislikes?: number;
+  userReaction?: boolean | null;
+  category?: string;
+  location?: string;
+  slug?: string;
+  categories?: Array<{ id: number; name: string; isPrimary?: boolean }>;
+  _count?: {
+    comments?: number;
+  };
+};
 
 // Helper function to capitalize the first letter of a string
 function capitalizeFirstLetter(string: string) {
@@ -414,7 +440,7 @@ export default function ArticlePage() {
         content: editableContent,
         category: editableCategory,
         location: editableLocation,
-        categoryId: editableCategoryId,
+        categoryIds: selectedCategories.map((cat) => cat.id),
         locationId: editableLocationId,
       });
       return await response.json();
@@ -750,16 +776,39 @@ export default function ArticlePage() {
                 })()}
               </div>
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                {/* Only show categories if they exist and are not empty strings */}
-                {article.category &&
-                article.category.trim() !== "" &&
-                article.category.toLowerCase() !== "uncategorized" ? (
+                {/* Show categories from either the categories array or fallback to the legacy category field */}
+                {((article.categories && article.categories.length > 0) ||
+                  (article.category &&
+                    article.category.trim() !== "" &&
+                    article.category.toLowerCase() !== "uncategorized")) && (
                   <>
                     <span className="font-medium">Categories:</span>{" "}
                     {!isEditing ? (
-                      <span className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 px-3 py-1 rounded-md">
-                        {capitalizeFirstLetter(article.category)}
-                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {article.categories && article.categories.length > 0 ? (
+                          article.categories.map(
+                            (
+                              cat: {
+                                id: number;
+                                name: string;
+                                isPrimary?: boolean;
+                              },
+                              index: number
+                            ) => (
+                              <span
+                                key={`${cat.id}-${index}`}
+                                className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 px-3 py-1 rounded-md"
+                              >
+                                {capitalizeFirstLetter(cat.name)}
+                              </span>
+                            )
+                          )
+                        ) : (
+                          <span className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 px-3 py-1 rounded-md">
+                            {capitalizeFirstLetter(article.category)}
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <div className="flex-1 max-w-md">
                         <HierarchicalCategorySelect
@@ -889,51 +938,7 @@ export default function ArticlePage() {
                       </div>
                     )}
                   </>
-                ) : isEditing ? (
-                  <div className="flex-1 max-w-md">
-                    <span className="font-medium">Categories:</span>
-                    <HierarchicalCategorySelect
-                      categories={processedCategories || []}
-                      value={editableCategoryId}
-                      onChange={(id) => {
-                        setEditableCategoryId(id);
-                        if (processedCategories) {
-                          const findCategory = (
-                            cats: CategoryWithChildren[]
-                          ): CategoryWithChildren | undefined => {
-                            for (const cat of cats) {
-                              if (cat.id === id) return cat;
-                              if (cat.children) {
-                                const found = findCategory(cat.children);
-                                if (found) return found;
-                              }
-                            }
-                            return undefined;
-                          };
-                          const selectedCategory =
-                            findCategory(processedCategories);
-                          if (selectedCategory) {
-                            setEditableCategory(selectedCategory.name);
-                          }
-                        }
-                      }}
-                      isLoading={isLoadingCategories}
-                      onSelectMultiple={(selections) => {
-                        setSelectedCategories(selections);
-                        if (selections.length > 0) {
-                          setEditableCategoryId(selections[0].id);
-                          const pathParts = selections[0].path.split(" > ");
-                          if (pathParts.length > 0) {
-                            setEditableCategory(
-                              pathParts[pathParts.length - 1]
-                            );
-                          }
-                        }
-                      }}
-                      multipleSelections={selectedCategories}
-                    />
-                  </div>
-                ) : null}
+                )}
 
                 {/* Only show location if it exists and is not empty */}
                 {articleLocation && articleLocation.trim() !== "" ? (

@@ -752,6 +752,52 @@ app.get("/api/articles", async (req, res) => {
       const channelIds = [...new Set(articles.map(article => article.channel_id))].filter(Boolean);
       console.log(`Found ${channelIds.length} unique channel IDs:`, channelIds);
       
+      // Get all article IDs for fetching categories
+      const articleIds = articles.map(article => article.id);
+      
+      // Fetch all categories for all articles in one query
+      const { data: allCategories, error: categoriesError } = await supabase
+        .from("article_categories")
+        .select(`
+          article_id,
+          category_id,
+          is_primary,
+          categories:category_id (
+            id, 
+            name,
+            parent_id
+          )
+        `)
+        .in("article_id", articleIds);
+      
+      if (categoriesError) {
+        console.error("Error fetching categories for articles:", categoriesError);
+      }
+      
+      // Group categories by article ID
+      const categoriesByArticle = {};
+      if (allCategories && allCategories.length > 0) {
+        allCategories.forEach(categoryItem => {
+          if (!categoriesByArticle[categoryItem.article_id]) {
+            categoriesByArticle[categoryItem.article_id] = [];
+          }
+          categoriesByArticle[categoryItem.article_id].push({
+            id: categoryItem.category_id,
+            name: categoryItem.categories?.name || '',
+            isPrimary: categoryItem.is_primary
+          });
+        });
+        
+        // Sort categories for each article so primary is first
+        Object.keys(categoriesByArticle).forEach(articleId => {
+          categoriesByArticle[articleId].sort((a, b) => {
+            if (a.isPrimary && !b.isPrimary) return -1;
+            if (!a.isPrimary && b.isPrimary) return 1;
+            return 0;
+          });
+        });
+      }
+      
       if (channelIds.length > 0) {
         const { data: channels, error: channelsError } = await supabase
           .from("channels")
@@ -770,7 +816,6 @@ app.get("/api/articles", async (req, res) => {
           }, {});
           
           // Get all reactions for all articles in a single query
-          const articleIds = articles.map(article => article.id);
           const { data: allReactions, error: reactionsError } = await supabase
             .from("reactions")
             .select("article_id, is_like, user_id")
@@ -798,53 +843,45 @@ app.get("/api/articles", async (req, res) => {
             const token = authHeader.split(' ')[1];
             try {
               const { data, error: authError } = await supabaseAuth.auth.getUser(token);
-              if (!authError && data.user) {
-                // Look up internal user ID
-                const { data: dbUser } = await supabase
-                  .from('users')
-                  .select('id')
-                  .eq('supabase_uid', data.user.id)
+              
+              if (!authError && data?.user) {
+                // Look up the user in our users table
+                const { data: dbUser, error: dbUserError } = await supabase
+                  .from("users")
+                  .select("id")
+                  .eq("supabase_uid", data.user.id)
                   .single();
                   
-                if (dbUser) {
+                if (!dbUserError && dbUser) {
                   userId = dbUser.id;
                 }
               }
             } catch (e) {
-              console.error("Error checking user for reactions:", e);
+              console.error("Error verifying token:", e);
             }
           }
           
-          // Attach channel and reaction data to each article
-          const articlesWithData = articles.map(article => {
-            const channelId = article.channel_id;
-            const channel = channelId ? channelMap[channelId] : null;
+          // Enrich articles with related data
+          articles.forEach(article => {
+            // Add channel data
+            article.channel = channelMap[article.channel_id] || null;
             
-            // Add reaction data
+            // Add categories
+            article.categories = categoriesByArticle[article.id] || [];
+            
+            // Calculate likes and dislikes
             const articleReactions = reactionsByArticle[article.id] || [];
-            const likes = articleReactions.filter(r => r.is_like).length;
-            const dislikes = articleReactions.filter(r => !r.is_like).length;
+            article.likes = articleReactions.filter(r => r.is_like).length;
+            article.dislikes = articleReactions.filter(r => !r.is_like).length;
             
-            // Check if the current user has reacted
-            let userReaction = null;
+            // Add user's reaction if authenticated
             if (userId) {
-              const userReactionData = articleReactions.find(r => r.user_id === userId);
-              if (userReactionData) {
-                userReaction = userReactionData.is_like;
+              const userReaction = articleReactions.find(r => r.user_id === userId);
+              if (userReaction) {
+                article.userReaction = userReaction.is_like;
               }
             }
-            
-            return {
-              ...article,
-              channel,
-              likes,
-              dislikes,
-              userReaction
-            };
           });
-          
-          console.log(`Successfully enhanced ${articlesWithData.length} articles with channel and reaction data`);
-          return res.json(articlesWithData || []);
         }
       }
     }
@@ -895,7 +932,7 @@ app.post("/api/articles", async (req, res) => {
     const userId = dbUser.id;
     
     // Extract article data from request
-    const { title, content, channelId, category, location, published = true } = req.body;
+    const { title, content, channelId, categoryId, categoryIds, category, location, published = true } = req.body;
     
     if (!title || typeof title !== 'string' || title.trim() === '') {
       return res.status(400).json({ error: 'Title is required' });
@@ -951,6 +988,84 @@ app.post("/api/articles", async (req, res) => {
     }
     
     console.log(`Article created successfully with ID ${article.id}`);
+    
+    // Handle categories - support both single categoryId and multiple categoryIds
+    interface CategoryToAdd {
+      categoryId: number;
+      isPrimary: boolean;
+    }
+    
+    const categoriesToAdd: CategoryToAdd[] = [];
+    
+    // Add single categoryId if provided and valid
+    if (categoryId !== undefined) {
+      categoriesToAdd.push({
+        categoryId: parseInt(categoryId),
+        isPrimary: true
+      });
+    }
+    
+    // Add multiple categoryIds if provided
+    if (categoryIds && Array.isArray(categoryIds)) {
+      // If we already have a primary category from categoryId, mark others as non-primary
+      const startingIndex = categoriesToAdd.length;
+      
+      categoryIds.forEach((id, index) => {
+        // Skip if it's the same as the single categoryId that was already added
+        if (categoryId !== undefined && categoryId === id) {
+          return;
+        }
+        
+        categoriesToAdd.push({
+          categoryId: parseInt(id),
+          isPrimary: startingIndex === 0 && index === 0 // First one is primary if no categoryId was provided
+        });
+      });
+    }
+    
+    // Process all categories
+    if (categoriesToAdd.length > 0) {
+      console.log(`Creating ${categoriesToAdd.length} category relationships for article ${article.id}`);
+      
+      for (const catEntry of categoriesToAdd) {
+        const catId = catEntry.categoryId;
+        const isPrimary = catEntry.isPrimary;
+        
+        console.log(`Processing category ${catId}, isPrimary: ${isPrimary}`);
+        
+        // Check if the category relationship already exists
+        const { data: existingCategories, error: fetchCategoriesError } = await supabase
+          .from('article_categories')
+          .select('*')
+          .eq('article_id', article.id)
+          .eq('category_id', catId);
+        
+        if (fetchCategoriesError) {
+          console.error(`Error fetching existing category relationship for category ${catId}:`, fetchCategoriesError);
+          continue; // Skip to next category if this one fails
+        }
+        
+        // If relationship doesn't exist, create it
+        if (!existingCategories || existingCategories.length === 0) {
+          // Insert the new category relationship
+          const { error: insertCategoryError } = await supabase
+            .from('article_categories')
+            .insert([{ 
+              article_id: article.id, 
+              category_id: catId,
+              is_primary: isPrimary
+            }]);
+          
+          if (insertCategoryError) {
+            console.error(`Error inserting category relationship for category ${catId}:`, insertCategoryError);
+          } else {
+            console.log(`Successfully created category relationship for article ${article.id} with category ${catId}`);
+          }
+        }
+      }
+    }
+    
+    // Return the created article
     return res.status(201).json(article);
   } catch (error) {
     console.error('Error in create article endpoint:', error);
@@ -968,10 +1083,12 @@ app.get("/api/articles/:id", async (req, res) => {
     
     let article;
     let error;
+    let articleId: number | null = null;
     
     // Check if id is numeric (old format) or a slug (new format)
     if (/^\d+$/.test(id)) {
       // Numeric ID
+      articleId = parseInt(id);
       console.log("Looking up article by numeric ID:", id);
       const result = await supabase
         .from("articles")
@@ -990,7 +1107,7 @@ app.get("/api/articles/:id", async (req, res) => {
             slug
           )
         `)
-        .eq("id", parseInt(id))
+        .eq("id", articleId)
         .single();
         
       article = result.data;
@@ -1030,6 +1147,7 @@ app.get("/api/articles/:id", async (req, res) => {
         const idMatch = id.match(/-(\d+)$/);
         if (idMatch) {
           const extractedId = idMatch[1];
+          articleId = parseInt(extractedId);
           console.log("Extracted ID from slug:", extractedId);
           
           const idResult = await supabase
@@ -1049,7 +1167,7 @@ app.get("/api/articles/:id", async (req, res) => {
                 slug
               )
             `)
-            .eq("id", parseInt(extractedId))
+            .eq("id", articleId)
             .single();
             
           article = idResult.data;
@@ -1057,6 +1175,8 @@ app.get("/api/articles/:id", async (req, res) => {
           console.log("Extracted ID lookup result:", article ? "Found" : "Not found");
           if (error) console.error("Extracted ID lookup error:", error);
         }
+      } else if (article) {
+        articleId = article.id;
       }
     }
     
@@ -1072,6 +1192,53 @@ app.get("/api/articles/:id", async (req, res) => {
     
     console.log("Retrieved article:", article.id, article.title);
     console.log("Article slug:", article.slug);
+    
+    // Fetch categories for this article
+    if (articleId) {
+      const { data: categoryData, error: categoryError } = await supabase
+        .from("article_categories")
+        .select(`
+          category_id,
+          is_primary,
+          categories:category_id (
+            id, 
+            name,
+            parent_id
+          )
+        `)
+        .eq("article_id", articleId);
+      
+      if (!categoryError && categoryData && categoryData.length > 0) {
+        console.log(`Found ${categoryData.length} categories for article ${articleId}`);
+        
+        // Define interface for category items
+        interface ArticleCategory {
+          id: number;
+          name: string;
+          isPrimary: boolean;
+        }
+        
+        // Add categories to the article object 
+        article.categories = categoryData.map(item => ({
+          id: item.category_id,
+          name: item.categories?.name || '',
+          isPrimary: item.is_primary
+        })) as ArticleCategory[];
+        
+        // Sort so primary category is first
+        article.categories.sort((a, b) => {
+          if (a.isPrimary && !b.isPrimary) return -1;
+          if (!a.isPrimary && b.isPrimary) return 1;
+          return 0;
+        });
+        
+        console.log("Article categories:", article.categories);
+      } else {
+        console.log(`No categories found for article ${articleId}`);
+        article.categories = [];
+      }
+    }
+    
     console.log("====== END ARTICLE LOOKUP DEBUG ======");
 
     // Add reaction data to the response
@@ -2883,7 +3050,7 @@ app.patch("/api/articles/:id", async (req, res) => {
     }
     
     // Extract update fields from request body
-    const { title, content, categoryId, locationId, category, location } = req.body;
+    const { title, content, categoryId, categoryIds, locationId, category, location } = req.body;
     
     // Construct update object with only provided fields
     const updates: any = {};
@@ -2912,62 +3079,123 @@ app.patch("/api/articles/:id", async (req, res) => {
       return res.status(500).json({ message: "Failed to update article" });
     }
     
-    // Step 2: If categoryId is provided, handle the article_categories relationship
-    if (categoryId !== undefined) {
-      console.log(`Updating category for article ${articleId} to category ${categoryId}`);
+    // Step 2: Handle article categories if categoryIds or categoryId is provided
+    if (categoryIds !== undefined || categoryId !== undefined) {
+      console.log(`Updating categories for article ${articleId}`);
       
-      // First, check if the category relationship already exists
-      const { data: existingCategories, error: fetchCategoriesError } = await supabase
-        .from('article_categories')
-        .select('*')
-        .eq('article_id', articleId)
-        .eq('category_id', categoryId);
+      // Determine which category IDs to keep
+      let newCategoryIds: number[] = [];
       
-      if (fetchCategoriesError) {
-        console.error("Error fetching existing categories:", fetchCategoriesError);
-        // Continue with the operation even if this fails
+      if (Array.isArray(categoryIds)) {
+        // Use the categoryIds array if provided
+        // Limit to maximum of 3 categories
+        newCategoryIds = categoryIds.slice(0, 3).map(id => Number(id));
+      } else if (categoryId !== undefined) {
+        // Otherwise use the single categoryId if provided
+        newCategoryIds = [Number(categoryId)];
       }
       
-      // If relationship doesn't exist yet, create it
-      if (!existingCategories || existingCategories.length === 0) {
-        // First, remove the existing primary category if any
-        const { error: deletePrimaryError } = await supabase
+      if (newCategoryIds.length > 0) {
+        console.log(`Setting article ${articleId} to have categories:`, newCategoryIds);
+        
+        // Fetch current categories for this article
+        const { data: existingCategories, error: fetchCategoriesError } = await supabase
+          .from('article_categories')
+          .select('category_id')
+          .eq('article_id', articleId);
+          
+        if (fetchCategoriesError) {
+          console.error("Error fetching existing categories:", fetchCategoriesError);
+          // Continue with the operation even if this fails
+        }
+        
+        // Find which categories to remove and which to add
+        const existingCategoryIds = existingCategories?.map(ec => ec.category_id) || [];
+        const categoriesToRemove = existingCategoryIds.filter(id => !newCategoryIds.includes(id));
+        const categoriesToAdd = newCategoryIds.filter(id => !existingCategoryIds.includes(id));
+        
+        console.log("Categories to remove:", categoriesToRemove);
+        console.log("Categories to add:", categoriesToAdd);
+        
+        // Remove categories that aren't in the new list
+        if (categoriesToRemove.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('article_categories')
+            .delete()
+            .eq('article_id', articleId)
+            .in('category_id', categoriesToRemove);
+            
+          if (deleteError) {
+            console.error("Error removing categories:", deleteError);
+            // Continue anyway
+          } else {
+            console.log(`Successfully removed ${categoriesToRemove.length} categories`);
+          }
+        }
+        
+        // Add new categories
+        if (categoriesToAdd.length > 0) {
+          // Prepare the inserts with primary flag set appropriately
+          const inserts = categoriesToAdd.map((catId, index) => ({
+            article_id: articleId,
+            category_id: catId,
+            is_primary: newCategoryIds.indexOf(catId) === 0 // Mark first as primary
+          }));
+          
+          const { error: insertError } = await supabase
+            .from('article_categories')
+            .insert(inserts);
+            
+          if (insertError) {
+            console.error("Error adding new categories:", insertError);
+            // Continue anyway
+          } else {
+            console.log(`Successfully added ${categoriesToAdd.length} categories`);
+          }
+        }
+        
+        // Update primary status if needed
+        if (existingCategoryIds.length > 0 && newCategoryIds.length > 0) {
+          // Get the first category in the new list
+          const primaryCategoryId = newCategoryIds[0];
+          
+          // Update it to be primary if it already exists but isn't primary
+          if (existingCategoryIds.includes(primaryCategoryId)) {
+            const { error: updatePrimaryError } = await supabase
+              .from('article_categories')
+              .update({ is_primary: true })
+              .eq('article_id', articleId)
+              .eq('category_id', primaryCategoryId);
+              
+            if (updatePrimaryError) {
+              console.error("Error updating primary category:", updatePrimaryError);
+            } else {
+              console.log(`Set category ${primaryCategoryId} as primary`);
+            }
+            
+            // And make all others non-primary
+            const { error: updateNonPrimaryError } = await supabase
+              .from('article_categories')
+              .update({ is_primary: false })
+              .eq('article_id', articleId)
+              .neq('category_id', primaryCategoryId);
+              
+            if (updateNonPrimaryError) {
+              console.error("Error updating non-primary categories:", updateNonPrimaryError);
+            }
+          }
+        }
+      } else if (newCategoryIds.length === 0 && (categoryIds !== undefined)) {
+        // If categoryIds is explicitly provided as empty array, remove all categories
+        const { error: deleteAllError } = await supabase
           .from('article_categories')
           .delete()
-          .eq('article_id', articleId)
-          .eq('is_primary', true);
-        
-        if (deletePrimaryError) {
-          console.error("Error removing existing primary category:", deletePrimaryError);
-          // Continue with the operation even if this fails
-        }
-        
-        // Insert the new category relationship as primary
-        const { error: insertCategoryError } = await supabase
-          .from('article_categories')
-          .insert([
-            { 
-              article_id: articleId, 
-              category_id: categoryId,
-              is_primary: true 
-            }
-          ]);
-        
-        if (insertCategoryError) {
-          console.error("Error inserting category relationship:", insertCategoryError);
-          // Continue with the operation even if this fails
-        }
-      } else {
-        // The relationship exists already, make sure it's marked as primary
-        const { error: updatePrimaryError } = await supabase
-          .from('article_categories')
-          .update({ is_primary: true })
-          .eq('article_id', articleId)
-          .eq('category_id', categoryId);
-        
-        if (updatePrimaryError) {
-          console.error("Error updating primary category flag:", updatePrimaryError);
-          // Continue with the operation even if this fails
+          .eq('article_id', articleId);
+          
+        if (deleteAllError) {
+          console.error("Error removing all categories:", deleteAllError);
+        } else {
+          console.log(`Removed all categories for article ${articleId}`);
         }
       }
     }

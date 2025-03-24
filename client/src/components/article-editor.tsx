@@ -1070,6 +1070,11 @@ export function ArticleEditor({
           isNaN(parseInt(data.categoryId)))
           ? undefined
           : data.categoryId,
+      // Add the array of category IDs for multiple selection
+      categoryIds:
+        selectedCategories.length > 0
+          ? selectedCategories.map((cat) => cat.id)
+          : undefined,
       locationId:
         data.locationId &&
         typeof data.locationId === "string" &&
