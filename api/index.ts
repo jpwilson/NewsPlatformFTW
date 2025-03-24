@@ -3628,6 +3628,58 @@ app.get("/api/locations", async (req, res) => {
   }
 });
 
+// Delete an article
+app.delete("/api/articles/:id", async (req, res) => {
+  try {
+    console.log("Delete article endpoint called");
+    
+    // Get article ID from URL parameter
+    const articleId = parseInt(req.params.id);
+    if (isNaN(articleId)) {
+      return res.status(400).json({ message: "Invalid article ID" });
+    }
+    
+    // Authenticate the user
+    const { userId, error: authError } = await authenticateUser(req);
+    if (authError) {
+      return res.status(401).json({ message: authError });
+    }
+    
+    // Verify that article exists and belongs to this user
+    const { data: article, error: getError } = await supabase
+      .from('articles')
+      .select('*')
+      .eq('id', articleId)
+      .single();
+    
+    if (getError || !article) {
+      console.error("Error getting article to delete:", getError);
+      return res.status(404).json({ message: "Article not found" });
+    }
+    
+    if (article.user_id !== userId) {
+      return res.status(403).json({ message: "You don't have permission to delete this article" });
+    }
+    
+    // Delete the article (article_categories will cascade delete due to foreign key constraint)
+    const { error: deleteError } = await supabase
+      .from('articles')
+      .delete()
+      .eq('id', articleId);
+    
+    if (deleteError) {
+      console.error("Error deleting article:", deleteError);
+      return res.status(500).json({ message: "Failed to delete article" });
+    }
+    
+    // Return 204 No Content on successful deletion
+    return res.status(204).send();
+  } catch (error) {
+    console.error("Error in delete article endpoint:", error);
+    return res.status(500).json({ message: "Failed to delete article" });
+  }
+});
+
 // The handler function that routes requests to our Express app
 export default async function handler(
   req: VercelRequest,
