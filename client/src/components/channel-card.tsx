@@ -17,6 +17,7 @@ import { useLocation } from "wouter";
 import { AuthDialog } from "./auth-dialog";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
+import { createSlugUrl } from "@/lib/slug-utils";
 
 // Extended Channel type that includes subscriberCount
 type ExtendedChannel = Channel & {
@@ -87,7 +88,9 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
     }
 
     if (user) {
-      navigate(`/channels/${channel.id}`);
+      // Use slug if available, fallback to ID
+      const channelSlug = channel.slug || "";
+      navigate(createSlugUrl("/channels/", channelSlug, channel.id));
     } else {
       setAuthDialogOpen(true);
     }

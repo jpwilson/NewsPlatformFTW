@@ -71,6 +71,7 @@ export const articles = pgTable('articles', {
   category: text('category').notNull(),
   location: text('location'),
   locationId: integer('location_id').references(() => locations.id),
+  slug: text('slug').unique(),
   published: boolean('published').notNull().default(true),
   createdAt: timestamp('created_at').defaultNow(),
   status: text('status').notNull().default('published'),

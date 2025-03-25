@@ -174,6 +174,7 @@ export default function ChannelPage() {
   // Update channel mutation
   const updateChannelMutation = useMutation({
     mutationFn: async () => {
+      // Use the ID/slug directly from the URL
       const response = await apiRequest("PATCH", `/api/channels/${id}`, {
         name: editedName,
         description: editedDescription,
@@ -190,10 +191,10 @@ export default function ChannelPage() {
         description: "Your channel has been updated successfully.",
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to update the channel.",
+        description: error.message || "Failed to update the channel.",
         variant: "destructive",
       });
     },

@@ -311,62 +311,8 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // Articles
-  app.post("/api/articles", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    
-    try {
-      // Parse and validate with the insertion schema
-      const articleData = insertArticleSchema.parse(req.body);
-      
-      // Get the channel to check the user has permission
-      const { data: channel, error: channelError } = await supabase
-        .from("channels")
-        .select("user_id")
-        .eq("id", articleData.channelId)
-        .single();
-        
-      if (channelError) throw channelError;
-      
-      // Ensure the user owns the channel
-      if (channel?.user_id !== req.user.id) {
-        return res.status(403).json({ message: "You can only post articles to your own channels" });
-      }
-      
-      // Generate a slug from the article title
-      let slug = articleData.title.toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .substring(0, 100); // Limit to 100 characters
-      
-      // Add user ID and set defaults
-      const article = {
-        ...articleData,
-        user_id: req.user.id,
-        published_at: articleData.status === 'published' ? new Date().toISOString() : null,
-        slug: slug
-      };
-      
-      // Insert the article
-      const { data: createdArticle, error } = await supabase
-        .from("articles")
-        .insert([article])
-        .select()
-        .single();
-        
-      if (error) throw error;
-      
-      res.status(201).json(createdArticle);
-    } catch (error) {
-      console.error("Error creating article:", error);
-      
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: JSON.stringify(error.errors, null, 2) });
-      }
-      
-      res.status(500).json({ message: "Failed to create article" });
-    }
-  });
-
+  // Article creation endpoint moved to api/index.ts
+  
   app.get("/api/articles", async (req, res) => {
     try {
       // First, fetch the articles (only published ones)

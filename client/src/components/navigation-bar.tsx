@@ -289,7 +289,11 @@ export function NavigationBar({
                             {popularChannels?.slice(0, 5).map((channel) => (
                               <Link
                                 key={channel.id}
-                                href={`/channels/${channel.id}`}
+                                href={createSlugUrl(
+                                  "/channels/",
+                                  channel.slug || "",
+                                  channel.id
+                                )}
                                 className="block py-1 text-sm"
                               >
                                 {channel.name}

@@ -50,6 +50,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { getQueryFn } from "../lib/queryClient";
+import { createSlugUrl } from "@/lib/slug-utils";
 
 // Extended User type to include created_at
 type ExtendedUser = User & {
@@ -672,7 +673,13 @@ export default function ProfilePage() {
                                 {(channel as any).subscriberCount || 0}
                               </TableCell>
                               <TableCell className="text-right">
-                                <Link href={`/channels/${channel.id}`}>
+                                <Link
+                                  href={createSlugUrl(
+                                    "/channels/",
+                                    channel.slug || "",
+                                    channel.id
+                                  )}
+                                >
                                   <Button variant="outline" size="sm">
                                     View
                                   </Button>
@@ -788,7 +795,13 @@ export default function ProfilePage() {
                       {combinedOwnedChannels.map((channel: Channel) => (
                         <TableRow key={channel.id}>
                           <TableCell className="font-medium">
-                            <Link href={`/channels/${channel.id}`}>
+                            <Link
+                              href={createSlugUrl(
+                                "/channels/",
+                                channel.slug || "",
+                                channel.id
+                              )}
+                            >
                               {channel.name}
                             </Link>
                           </TableCell>

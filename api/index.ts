@@ -687,13 +687,22 @@ app.post("/api/channels", async (req, res) => {
       });
     }
     
+    // Generate a slug from the channel name
+    const baseSlug = name.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .substring(0, 60);
+    
+    console.log("Generated slug for channel:", baseSlug);
+    
     // Create the channel with the correct field name
     const { data: newChannel, error: insertError } = await supabase
       .from("channels")
       .insert({
         name,
         description,
-        user_id: numericUserId // Use the correct column name (user_id with underscore)
+        user_id: numericUserId, // Use the correct column name (user_id with underscore)
+        slug: baseSlug
       })
       .select("*")
       .single();
@@ -964,6 +973,19 @@ app.post("/api/articles", async (req, res) => {
       return res.status(403).json({ error: 'Not authorized to create article in this channel' });
     }
     
+    // Generate a slug from the title
+    const baseSlug = title.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .substring(0, 60);
+    
+    // Add date to make it more unique
+    const date = new Date();
+    const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+    const fullSlug = `${dateStr}-${baseSlug}`;
+    
+    console.log("Generated slug for article:", fullSlug);
+    
     // Create the article
     const { data: article, error: createError } = await supabase
       .from('articles')
@@ -974,6 +996,7 @@ app.post("/api/articles", async (req, res) => {
         user_id: userId,
         category: category || '',
         location: location || null,
+        slug: fullSlug,
         published: published,
         created_at: new Date().toISOString(),
         status: published ? 'published' : 'draft',
@@ -2684,9 +2707,9 @@ app.get("/api/channels/:id/drafts", async (req, res) => {
 // Add support for updating a channel
 app.patch("/api/channels/:id", async (req, res) => {
   try {
-    const channelId = parseInt(req.params.id);
+    const idParam = req.params.id;
     const { name, description, category } = req.body;
-    console.log(`Updating channel ID ${channelId} with:`, req.body);
+    console.log(`Updating channel with param ${idParam}:`, req.body);
     
     // Extract the Authorization header (if any)
     const authHeader = req.headers.authorization;
@@ -2722,6 +2745,36 @@ app.patch("/api/channels/:id", async (req, res) => {
     }
     
     const userId = dbUser.id;
+    
+    // Find the channel by ID or slug
+    let channelId: number;
+    if (/^\d+$/.test(idParam)) {
+      // It's a numeric ID
+      channelId = parseInt(idParam);
+    } else {
+      // It's a slug, we need to fetch the channel first to get its ID
+      console.log(`Looking up channel by slug for update: ${idParam}`);
+      const { data: channel, error: channelError } = await supabase
+        .from("channels")
+        .select("id")
+        .eq("slug", idParam)
+        .single();
+        
+      if (channelError || !channel) {
+        // Try extracting ID from slug as fallback
+        const idMatch = idParam.match(/-(\d+)$/);
+        if (idMatch) {
+          channelId = parseInt(idMatch[1]);
+          console.log(`Extracted ID from slug for update: ${channelId}`);
+        } else {
+          console.error(`Channel not found for slug: ${idParam}`);
+          return res.status(404).json({ error: "Channel not found" });
+        }
+      } else {
+        channelId = channel.id;
+        console.log(`Found channel ID ${channelId} for slug ${idParam}`);
+      }
+    }
     
     // Verify user owns this channel
     const { data: channel, error: channelError } = await supabase
@@ -3020,11 +3073,9 @@ app.patch("/api/articles/:id", async (req, res) => {
   try {
     console.log("Update article endpoint called");
     
-    // Get article ID from URL parameter
-    const articleId = parseInt(req.params.id);
-    if (isNaN(articleId)) {
-      return res.status(400).json({ message: "Invalid article ID" });
-    }
+    // Get article ID or slug from URL parameter
+    const idOrSlug = req.params.id;
+    console.log("Looking up article:", idOrSlug);
     
     // Authenticate user
     const { userId, error: authError } = await authenticateUser(req);
@@ -3032,14 +3083,31 @@ app.patch("/api/articles/:id", async (req, res) => {
       return res.status(401).json({ message: authError });
     }
     
-    // Fetch the article to check ownership
-    const { data: article, error: fetchError } = await supabase
-      .from('articles')
-      .select('*')
-      .eq('id', articleId)
-      .single();
+    // Fetch the article to check ownership - try both ID and slug
+    let article;
+    let fetchError;
+    
+    if (/^\d+$/.test(idOrSlug)) {
+      // It's a numeric ID
+      const result = await supabase
+        .from('articles')
+        .select('*')
+        .eq('id', parseInt(idOrSlug))
+        .single();
+      article = result.data;
+      fetchError = result.error;
+    } else {
+      // Try slug lookup
+      const result = await supabase
+        .from('articles')
+        .select('*')
+        .eq('slug', idOrSlug)
+        .single();
+      article = result.data;
+      fetchError = result.error;
+    }
       
-    if (fetchError) {
+    if (fetchError || !article) {
       console.error("Error fetching article:", fetchError);
       return res.status(404).json({ message: "Article not found" });
     }
@@ -3054,23 +3122,33 @@ app.patch("/api/articles/:id", async (req, res) => {
     
     // Construct update object with only provided fields
     const updates: any = {};
-    if (title !== undefined) updates.title = title;
+    if (title !== undefined) {
+      updates.title = title;
+      
+      // Update slug if title changes
+      const baseSlug = title.toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .substring(0, 60);
+      
+      // Add date to make it more unique
+      const date = new Date();
+      const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+      updates.slug = `${dateStr}-${baseSlug}`;
+      
+      console.log("Generated new slug for article update:", updates.slug);
+    }
     if (content !== undefined) updates.content = content;
     if (category !== undefined) updates.category = category;
     if (location !== undefined) updates.location = location;
+    if (categoryId !== undefined) updates.category_id = categoryId;
+    if (locationId !== undefined) updates.location_id = locationId;
     
-    // Add last_edited timestamp
-    updates.last_edited = new Date().toISOString();
-    
-    console.log("Updating article with:", updates);
-    
-    // Start a transaction for the update operations
-    // Use separate operations since Supabase doesn't support real transactions
-    // Step 1: Update the article in the articles table
+    // Update the article
     const { data: updatedArticle, error: updateError } = await supabase
       .from('articles')
       .update(updates)
-      .eq('id', articleId)
+      .eq('id', article.id)  // Always use numeric ID for update
       .select()
       .single();
       
@@ -3079,124 +3157,25 @@ app.patch("/api/articles/:id", async (req, res) => {
       return res.status(500).json({ message: "Failed to update article" });
     }
     
-    // Step 2: Handle article categories if categoryIds or categoryId is provided
-    if (categoryIds !== undefined || categoryId !== undefined) {
-      console.log(`Updating categories for article ${articleId}`);
+    // Handle category relationships if categoryIds is provided
+    if (categoryIds && Array.isArray(categoryIds)) {
+      // First remove all existing category relationships
+      await supabase
+        .from('article_categories')
+        .delete()
+        .eq('article_id', article.id);
       
-      // Determine which category IDs to keep
-      let newCategoryIds: number[] = [];
-      
-      if (Array.isArray(categoryIds)) {
-        // Use the categoryIds array if provided
-        // Limit to maximum of 3 categories
-        newCategoryIds = categoryIds.slice(0, 3).map(id => Number(id));
-      } else if (categoryId !== undefined) {
-        // Otherwise use the single categoryId if provided
-        newCategoryIds = [Number(categoryId)];
-      }
-      
-      if (newCategoryIds.length > 0) {
-        console.log(`Setting article ${articleId} to have categories:`, newCategoryIds);
+      // Then add new ones
+      if (categoryIds.length > 0) {
+        const categoryRelations = categoryIds.map((catId, index) => ({
+          article_id: article.id,
+          category_id: catId,
+          is_primary: index === 0
+        }));
         
-        // Fetch current categories for this article
-        const { data: existingCategories, error: fetchCategoriesError } = await supabase
+        await supabase
           .from('article_categories')
-          .select('category_id')
-          .eq('article_id', articleId);
-          
-        if (fetchCategoriesError) {
-          console.error("Error fetching existing categories:", fetchCategoriesError);
-          // Continue with the operation even if this fails
-        }
-        
-        // Find which categories to remove and which to add
-        const existingCategoryIds = existingCategories?.map(ec => ec.category_id) || [];
-        const categoriesToRemove = existingCategoryIds.filter(id => !newCategoryIds.includes(id));
-        const categoriesToAdd = newCategoryIds.filter(id => !existingCategoryIds.includes(id));
-        
-        console.log("Categories to remove:", categoriesToRemove);
-        console.log("Categories to add:", categoriesToAdd);
-        
-        // Remove categories that aren't in the new list
-        if (categoriesToRemove.length > 0) {
-          const { error: deleteError } = await supabase
-            .from('article_categories')
-            .delete()
-            .eq('article_id', articleId)
-            .in('category_id', categoriesToRemove);
-            
-          if (deleteError) {
-            console.error("Error removing categories:", deleteError);
-            // Continue anyway
-          } else {
-            console.log(`Successfully removed ${categoriesToRemove.length} categories`);
-          }
-        }
-        
-        // Add new categories
-        if (categoriesToAdd.length > 0) {
-          // Prepare the inserts with primary flag set appropriately
-          const inserts = categoriesToAdd.map((catId, index) => ({
-            article_id: articleId,
-            category_id: catId,
-            is_primary: newCategoryIds.indexOf(catId) === 0 // Mark first as primary
-          }));
-          
-          const { error: insertError } = await supabase
-            .from('article_categories')
-            .insert(inserts);
-            
-          if (insertError) {
-            console.error("Error adding new categories:", insertError);
-            // Continue anyway
-          } else {
-            console.log(`Successfully added ${categoriesToAdd.length} categories`);
-          }
-        }
-        
-        // Update primary status if needed
-        if (existingCategoryIds.length > 0 && newCategoryIds.length > 0) {
-          // Get the first category in the new list
-          const primaryCategoryId = newCategoryIds[0];
-          
-          // Update it to be primary if it already exists but isn't primary
-          if (existingCategoryIds.includes(primaryCategoryId)) {
-            const { error: updatePrimaryError } = await supabase
-              .from('article_categories')
-              .update({ is_primary: true })
-              .eq('article_id', articleId)
-              .eq('category_id', primaryCategoryId);
-              
-            if (updatePrimaryError) {
-              console.error("Error updating primary category:", updatePrimaryError);
-            } else {
-              console.log(`Set category ${primaryCategoryId} as primary`);
-            }
-            
-            // And make all others non-primary
-            const { error: updateNonPrimaryError } = await supabase
-              .from('article_categories')
-              .update({ is_primary: false })
-              .eq('article_id', articleId)
-              .neq('category_id', primaryCategoryId);
-              
-            if (updateNonPrimaryError) {
-              console.error("Error updating non-primary categories:", updateNonPrimaryError);
-            }
-          }
-        }
-      } else if (newCategoryIds.length === 0 && (categoryIds !== undefined)) {
-        // If categoryIds is explicitly provided as empty array, remove all categories
-        const { error: deleteAllError } = await supabase
-          .from('article_categories')
-          .delete()
-          .eq('article_id', articleId);
-          
-        if (deleteAllError) {
-          console.error("Error removing all categories:", deleteAllError);
-        } else {
-          console.log(`Removed all categories for article ${articleId}`);
-        }
+          .insert(categoryRelations);
       }
     }
     
@@ -3204,6 +3183,73 @@ app.patch("/api/articles/:id", async (req, res) => {
   } catch (error) {
     console.error("Error in update article endpoint:", error);
     return res.status(500).json({ message: "Failed to update article" });
+  }
+});
+
+// Delete an article
+app.delete("/api/articles/:id", async (req, res) => {
+  try {
+    console.log("Delete article endpoint called");
+    
+    // Get article ID or slug from URL parameter
+    const idOrSlug = req.params.id;
+    console.log("Looking up article to delete:", idOrSlug);
+    
+    // Authenticate the user
+    const { userId, error: authError } = await authenticateUser(req);
+    if (authError) {
+      return res.status(401).json({ message: authError });
+    }
+    
+    // Verify that article exists and belongs to this user - try both ID and slug
+    let article;
+    let getError;
+    
+    if (/^\d+$/.test(idOrSlug)) {
+      // It's a numeric ID
+      const result = await supabase
+        .from('articles')
+        .select('*')
+        .eq('id', parseInt(idOrSlug))
+        .single();
+      article = result.data;
+      getError = result.error;
+    } else {
+      // Try slug lookup
+      const result = await supabase
+        .from('articles')
+        .select('*')
+        .eq('slug', idOrSlug)
+        .single();
+      article = result.data;
+      getError = result.error;
+    }
+    
+    if (getError || !article) {
+      console.error("Error getting article to delete:", getError);
+      return res.status(404).json({ message: "Article not found" });
+    }
+    
+    if (article.user_id !== userId) {
+      return res.status(403).json({ message: "You don't have permission to delete this article" });
+    }
+    
+    // Delete the article (article_categories will cascade delete due to foreign key constraint)
+    const { error: deleteError } = await supabase
+      .from('articles')
+      .delete()
+      .eq('id', article.id);  // Always use numeric ID for delete
+    
+    if (deleteError) {
+      console.error("Error deleting article:", deleteError);
+      return res.status(500).json({ message: "Failed to delete article" });
+    }
+    
+    // Return 204 No Content on successful deletion
+    return res.status(204).send();
+  } catch (error) {
+    console.error("Error in delete article endpoint:", error);
+    return res.status(500).json({ message: "Failed to delete article" });
   }
 });
 
@@ -3625,58 +3671,6 @@ app.get("/api/locations", async (req, res) => {
   } catch (error) {
     console.error("Error in locations endpoint:", error);
     res.status(500).json({ error: "Failed to fetch locations" });
-  }
-});
-
-// Delete an article
-app.delete("/api/articles/:id", async (req, res) => {
-  try {
-    console.log("Delete article endpoint called");
-    
-    // Get article ID from URL parameter
-    const articleId = parseInt(req.params.id);
-    if (isNaN(articleId)) {
-      return res.status(400).json({ message: "Invalid article ID" });
-    }
-    
-    // Authenticate the user
-    const { userId, error: authError } = await authenticateUser(req);
-    if (authError) {
-      return res.status(401).json({ message: authError });
-    }
-    
-    // Verify that article exists and belongs to this user
-    const { data: article, error: getError } = await supabase
-      .from('articles')
-      .select('*')
-      .eq('id', articleId)
-      .single();
-    
-    if (getError || !article) {
-      console.error("Error getting article to delete:", getError);
-      return res.status(404).json({ message: "Article not found" });
-    }
-    
-    if (article.user_id !== userId) {
-      return res.status(403).json({ message: "You don't have permission to delete this article" });
-    }
-    
-    // Delete the article (article_categories will cascade delete due to foreign key constraint)
-    const { error: deleteError } = await supabase
-      .from('articles')
-      .delete()
-      .eq('id', articleId);
-    
-    if (deleteError) {
-      console.error("Error deleting article:", deleteError);
-      return res.status(500).json({ message: "Failed to delete article" });
-    }
-    
-    // Return 204 No Content on successful deletion
-    return res.status(204).send();
-  } catch (error) {
-    console.error("Error in delete article endpoint:", error);
-    return res.status(500).json({ message: "Failed to delete article" });
   }
 });
 
