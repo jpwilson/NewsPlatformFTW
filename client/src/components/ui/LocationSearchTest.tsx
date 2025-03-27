@@ -7,16 +7,36 @@ export function LocationSearchTest() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [apiToken, setApiToken] = useState<string | null>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
 
-  // For Vite projects - Try multiple environment variable sources
-  const mapboxToken =
-    // In development with Vite
-    import.meta.env.VITE_MAPBOX_TOKEN ||
-    // Direct environment variable (some hosting platforms)
-    import.meta.env.MAPBOX_TOKEN ||
-    // Vercel might inject it as window.ENV variable
-    (typeof window !== "undefined" && (window as any).ENV?.MAPBOX_TOKEN);
+  // Try to get token from environment first
+  const envToken = import.meta.env.VITE_MAPBOX_TOKEN;
+
+  // Only fetch from API if needed
+  useEffect(() => {
+    if (!envToken && !apiToken) {
+      fetch("/api/config/mapbox")
+        .then((res) => res.json())
+        .then((data) => setApiToken(data.token))
+        .catch((err) => console.error("Error fetching token:", err));
+    }
+  }, [envToken, apiToken]);
+
+  // Use either environment or API token
+  const mapboxToken = envToken || apiToken;
+
+  // Add debugging
+  useEffect(() => {
+    console.log("LocationSearchTest environment debug:");
+    console.log("- Env token:", envToken ? "exists" : "missing");
+    console.log("- API token:", apiToken ? "exists" : "missing");
+    console.log("- Final token:", mapboxToken ? "exists" : "missing");
+
+    if (!mapboxToken) {
+      console.error("Mapbox token not found in any location");
+    }
+  }, [mapboxToken, envToken, apiToken]);
 
   // Debounce function to limit API calls
   useEffect(() => {
