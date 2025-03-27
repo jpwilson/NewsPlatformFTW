@@ -20,6 +20,11 @@ export type ArticleWithSnakeCase = Article & {
   status?: "published" | "draft";
   categoryId?: number;
   locationId?: number;
+  // New location fields for MapboxLocationPicker
+  location_name?: string;
+  location_lat?: number;
+  location_lng?: number;
+  geom?: any; // PostGIS geometry object
   likes?: number;
   dislikes?: number;
   viewCount?: number;

@@ -941,7 +941,19 @@ app.post("/api/articles", async (req, res) => {
     const userId = dbUser.id;
     
     // Extract article data from request
-    const { title, content, channelId, categoryId, categoryIds, category, location, published = true } = req.body;
+    const { 
+      title, 
+      content, 
+      channelId, 
+      categoryId, 
+      categoryIds, 
+      category, 
+      location, 
+      location_name, 
+      location_lat, 
+      location_lng, 
+      published = true 
+    } = req.body;
     
     if (!title || typeof title !== 'string' || title.trim() === '') {
       return res.status(400).json({ error: 'Title is required' });
@@ -986,28 +998,49 @@ app.post("/api/articles", async (req, res) => {
     
     console.log("Generated slug for article:", fullSlug);
     
+    // Prepare the article object
+    const articleData: any = {
+      title: title.trim(),
+      content: content,
+      channel_id: channelIdNumber,
+      user_id: userId,
+      category: category || '',
+      slug: fullSlug,
+      published: published,
+      created_at: new Date().toISOString(),
+      status: published ? 'published' : 'draft',
+      view_count: 0
+    };
+    
+    // Handle backward compatibility for location
+    articleData.location = location_name || location || null;
+    
+    // Add new location fields if provided
+    if (location_name) {
+      articleData.location_name = location_name;
+    }
+    
+    if (location_lat !== undefined && location_lng !== undefined) {
+      articleData.location_lat = location_lat;
+      articleData.location_lng = location_lng;
+      
+      // Create PostGIS geometry point if coordinates are provided
+      if (typeof location_lat === 'number' && typeof location_lng === 'number') {
+        // Using PostGIS function to create a Point geometry
+        articleData.geom = `SRID=4326;POINT(${location_lng} ${location_lat})`;
+      }
+    }
+    
     // Create the article
     const { data: article, error: createError } = await supabase
       .from('articles')
-      .insert([{
-        title: title.trim(),
-        content: content,
-        channel_id: channelIdNumber,
-        user_id: userId,
-        category: category || '',
-        location: location || null,
-        slug: fullSlug,
-        published: published,
-        created_at: new Date().toISOString(),
-        status: published ? 'published' : 'draft',
-        view_count: 0
-      }])
+      .insert([articleData])
       .select()
       .single();
       
     if (createError) {
       console.error('Error creating article:', createError);
-      return res.status(500).json({ error: 'Failed to create article' });
+      return res.status(500).json({ error: 'Failed to create article', details: createError.message });
     }
     
     console.log(`Article created successfully with ID ${article.id}`);
@@ -3118,7 +3151,17 @@ app.patch("/api/articles/:id", async (req, res) => {
     }
     
     // Extract update fields from request body
-    const { title, content, categoryId, categoryIds, locationId, category, location } = req.body;
+    const { 
+      title, 
+      content, 
+      categoryId, 
+      categoryIds, 
+      category, 
+      location, 
+      location_name, 
+      location_lat, 
+      location_lng 
+    } = req.body;
     
     // Construct update object with only provided fields
     const updates: any = {};
@@ -3140,9 +3183,33 @@ app.patch("/api/articles/:id", async (req, res) => {
     }
     if (content !== undefined) updates.content = content;
     if (category !== undefined) updates.category = category;
-    if (location !== undefined) updates.location = location;
+    
+    // Handle location fields with the new structure
+    // For backward compatibility, also update the location column
+    if (location_name !== undefined) {
+      updates.location_name = location_name;
+      updates.location = location_name; // Keep legacy field in sync
+    } else if (location !== undefined) {
+      updates.location = location;
+      // Also update location_name if it's not explicitly set
+      if (location_name === undefined) {
+        updates.location_name = location;
+      }
+    }
+    
+    // Handle coordinates and geometry
+    if (location_lat !== undefined) updates.location_lat = location_lat;
+    if (location_lng !== undefined) updates.location_lng = location_lng;
+    
+    // Create PostGIS point geometry if we have valid coordinates
+    if (typeof location_lat === 'number' && typeof location_lng === 'number') {
+      updates.geom = `SRID=4326;POINT(${location_lng} ${location_lat})`;
+    } else if (location_lat === null && location_lng === null) {
+      // Clear geometry if coordinates are explicitly set to null
+      updates.geom = null;
+    }
+    
     if (categoryId !== undefined) updates.category_id = categoryId;
-    if (locationId !== undefined) updates.location_id = locationId;
     
     // Update the article
     const { data: updatedArticle, error: updateError } = await supabase
@@ -3154,7 +3221,7 @@ app.patch("/api/articles/:id", async (req, res) => {
       
     if (updateError) {
       console.error("Error updating article:", updateError);
-      return res.status(500).json({ message: "Failed to update article" });
+      return res.status(500).json({ message: "Failed to update article", details: updateError.message });
     }
     
     // Handle category relationships if categoryIds is provided

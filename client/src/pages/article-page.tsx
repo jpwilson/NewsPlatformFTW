@@ -37,10 +37,12 @@ import { Link } from "wouter";
 import { createSlugUrl } from "@/lib/slug-utils";
 import {
   HierarchicalCategorySelect,
-  HierarchicalLocationSelect,
+  CategoryWithChildren,
   EnhancedAutocomplete,
-  type CategoryWithChildren,
-  type LocationWithChildren,
+  LocationWithChildren,
+  MapboxLocationPicker,
+  MapboxLocation,
+  StandaloneLocationPicker,
 } from "@/components/article-editor";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
@@ -62,7 +64,12 @@ type ArticleWithSnakeCase = Article & {
   dislikes?: number;
   userReaction?: boolean | null;
   category?: string;
+  categoryId?: number;
+  categoryIds?: number[];
   location?: string;
+  location_name?: string;
+  location_lat?: number;
+  location_lng?: number;
   slug?: string;
   categories?: Array<{ id: number; name: string; isPrimary?: boolean }>;
   _count?: {
@@ -103,6 +110,7 @@ export default function ArticlePage() {
 
   // Add edit mode state
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [editableTitle, setEditableTitle] = useState("");
   const [editableContent, setEditableContent] = useState("");
   const [editableCategory, setEditableCategory] = useState("");
@@ -112,7 +120,14 @@ export default function ArticlePage() {
   >(undefined);
   const [editableLocationId, setEditableLocationId] = useState<
     number | undefined
-  >(undefined);
+  >();
+  const [editableLocationName, setEditableLocationName] = useState("");
+  const [editableLocationLat, setEditableLocationLat] = useState<
+    number | undefined
+  >();
+  const [editableLocationLng, setEditableLocationLng] = useState<
+    number | undefined
+  >();
   const [selectedCategories, setSelectedCategories] = useState<
     { id: number; path: string }[]
   >([]);
@@ -214,10 +229,13 @@ export default function ArticlePage() {
   // Initialize editable fields when article data is loaded
   useEffect(() => {
     if (article) {
-      setEditableTitle(article.title);
-      setEditableContent(article.content);
+      setEditableTitle(article.title || "");
+      setEditableContent(article.content || "");
       setEditableCategory(article.category || "");
       setEditableLocation(article.location || "");
+      setEditableLocationName(article.location_name || article.location || "");
+      setEditableLocationLat(article.location_lat);
+      setEditableLocationLng(article.location_lng);
 
       // We still use categoryId and locationId for the UI component display
       // but don't send them to the API
@@ -434,30 +452,25 @@ export default function ArticlePage() {
 
   // New mutation for updating the article
   const updateArticleMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("PATCH", `/api/articles/${id}`, {
-        title: editableTitle,
-        content: editableContent,
-        category: editableCategory,
-        location: editableLocation,
-        categoryIds: selectedCategories.map((cat) => cat.id),
-        locationId: editableLocationId,
-      });
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("PATCH", `/api/articles/${id}`, data);
       return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/articles/${id}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
       setIsEditing(false);
+      setIsSaving(false);
       toast({
         title: "Article updated",
         description: "Your article has been updated successfully.",
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
+      setIsSaving(false);
       toast({
         title: "Error",
-        description: "Failed to update the article.",
+        description: error.message || "Failed to update the article.",
         variant: "destructive",
       });
     },
@@ -496,16 +509,37 @@ export default function ArticlePage() {
   };
 
   const handleSaveChanges = () => {
-    updateArticleMutation.mutate();
+    setIsSaving(true);
+    // Create update object with categories
+    const updateData = {
+      title: editableTitle,
+      content: editableContent,
+      category: editableCategory,
+      location: editableLocationName, // Use the name from the MapboxLocationPicker
+      location_name: editableLocationName,
+      location_lat: editableLocationLat,
+      location_lng: editableLocationLng,
+      // Add categoryIds array if we have selected categories
+      categoryIds:
+        selectedCategories.length > 0
+          ? selectedCategories.map((cat) => cat.id)
+          : undefined,
+    };
+
+    // Make sure to properly call the mutation with the updateData object
+    updateArticleMutation.mutate(updateData);
   };
 
   const handleCancelEdit = () => {
     // Reset to original values
     if (article) {
-      setEditableTitle(article.title);
-      setEditableContent(article.content);
+      setEditableTitle(article.title || "");
+      setEditableContent(article.content || "");
       setEditableCategory(article.category || "");
       setEditableLocation(article.location || "");
+      setEditableLocationName(article.location_name || article.location || "");
+      setEditableLocationLat(article.location_lat);
+      setEditableLocationLng(article.location_lng);
 
       // We still use categoryId and locationId for the UI component display
       // but don't send them to the API
@@ -940,8 +974,10 @@ export default function ArticlePage() {
                   </>
                 )}
 
-                {/* Only show location if it exists and is not empty */}
-                {articleLocation && articleLocation.trim() !== "" ? (
+                {/* Only show location if it exists and is not empty AND we're not in edit mode */}
+                {articleLocation &&
+                articleLocation.trim() !== "" &&
+                !isEditing ? (
                   <>
                     {article.category &&
                       article.category.trim() !== "" &&
@@ -956,64 +992,47 @@ export default function ArticlePage() {
                 ) : null}
 
                 {isEditing && (
-                  <div className="flex-1 max-w-md mt-4">
-                    <span className="font-medium block mb-2">
-                      Location (optional):
-                    </span>
-                    <HierarchicalLocationSelect
-                      locations={locations || []}
-                      value={editableLocationId}
-                      onChange={(id) => {
-                        setEditableLocationId(id);
-                        if (locations) {
-                          const findLocation = (
-                            locs: LocationWithChildren[]
-                          ): LocationWithChildren | undefined => {
-                            for (const loc of locs) {
-                              if (loc.id === id) return loc;
-                              if (loc.children) {
-                                const found = findLocation(loc.children);
-                                if (found) return found;
+                  <div className="flex-1 mt-4 w-full">
+                    <div className="border border-input rounded-md p-4 bg-card">
+                      <span className="font-medium block mb-3">
+                        Location (optional):
+                      </span>
+                      <StandaloneLocationPicker
+                        value={
+                          editableLocationName
+                            ? {
+                                location_name: editableLocationName,
+                                location_lat: editableLocationLat,
+                                location_lng: editableLocationLng,
                               }
-                            }
-                            return undefined;
-                          };
-                          const selectedLocation = findLocation(locations);
-                          if (selectedLocation) {
-                            setEditableLocation(selectedLocation.name);
-                          }
+                            : null
                         }
-                      }}
-                      isLoading={isLoadingLocations}
-                    />
-
-                    <div className="mt-2">
-                      <EnhancedAutocomplete
-                        items={flatLocations}
-                        placeholder="Search for a location..."
-                        value={editableLocationId}
-                        isLoading={isLoadingLocations}
-                        onSelect={(id) => {
-                          setEditableLocationId(id);
-                          if (locations) {
-                            const findLocation = (
-                              locs: LocationWithChildren[]
-                            ): LocationWithChildren | undefined => {
-                              for (const loc of locs) {
-                                if (loc.id === id) return loc;
-                                if (loc.children) {
-                                  const found = findLocation(loc.children);
-                                  if (found) return found;
-                                }
-                              }
-                              return undefined;
-                            };
-                            const selectedLocation = findLocation(locations);
-                            if (selectedLocation) {
-                              setEditableLocation(selectedLocation.name);
-                            }
+                        onChange={(value) => {
+                          if (value) {
+                            setEditableLocationName(value.location_name || "");
+                            setEditableLocationLat(value.location_lat);
+                            setEditableLocationLng(value.location_lng);
+                            // For backward compatibility
+                            setEditableLocation(value.location_name || "");
+                          } else {
+                            // Clear all location data
+                            setEditableLocationName("");
+                            setEditableLocationLat(undefined);
+                            setEditableLocationLng(undefined);
+                            setEditableLocation("");
+                            setEditableLocationId(undefined);
                           }
                         }}
+                        onLocationSelected={(location) => {
+                          if (location) {
+                            setEditableLocationName(location.place_name);
+                            setEditableLocationLat(location.center[1]); // latitude
+                            setEditableLocationLng(location.center[0]); // longitude
+                            setEditableLocation(location.place_name);
+                          }
+                        }}
+                        label=""
+                        description="Select a location to help readers find geographically relevant content"
                       />
                     </div>
                   </div>

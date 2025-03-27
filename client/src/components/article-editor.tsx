@@ -38,6 +38,16 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import {
+  MapboxLocationPicker as BaseMapboxLocationPicker,
+  type MapboxLocation,
+} from "@/components/ui/MapboxLocationPicker";
+import { StandaloneLocationPicker } from "@/components/ui/StandaloneLocationPicker";
+
+// Re-export the MapboxLocationPicker, StandaloneLocationPicker, and MapboxLocation for use in other components
+export { MapboxLocation };
+export { StandaloneLocationPicker };
+export const MapboxLocationPicker = BaseMapboxLocationPicker;
 
 // Define extended types for hierarchical structures
 export interface CategoryWithChildren {
@@ -559,6 +569,9 @@ export function EnhancedAutocomplete({
 }
 
 // New component for hierarchical location selection
+/**
+ * @deprecated Use MapboxLocationPicker instead for better location selection with coordinates
+ */
 export function HierarchicalLocationSelect({
   locations,
   value,
@@ -826,6 +839,13 @@ export function HierarchicalLocationSelect({
   );
 }
 
+// Modified form type to include new location fields
+export interface ArticleFormData extends InsertArticle {
+  location_name?: string;
+  location_lat?: number;
+  location_lng?: number;
+}
+
 export function ArticleEditor({
   channels,
   existingArticle,
@@ -909,7 +929,7 @@ export function ArticleEditor({
     queryKey: ["/api/locations"],
   });
 
-  const form = useForm<InsertArticle>({
+  const form = useForm<ArticleFormData>({
     defaultValues: {
       title: existingArticle?.title || "",
       content: existingArticle?.content || "",
@@ -920,7 +940,10 @@ export function ArticleEditor({
         (channels && channels.length > 0 ? channels[0].id : undefined),
       category: existingArticle?.category || "",
       location: existingArticle?.location || "",
-      locationId: existingArticle?.locationId || undefined,
+      location_name:
+        existingArticle?.location_name || existingArticle?.location || "",
+      location_lat: existingArticle?.location_lat || undefined,
+      location_lng: existingArticle?.location_lng || undefined,
       categoryId: existingArticle?.categoryId || undefined,
       published: existingArticle ? existingArticle.published !== false : true,
       status: existingArticle
@@ -937,9 +960,11 @@ export function ArticleEditor({
         channelId: z.number({ required_error: "Please select a channel" }),
         // Other fields can remain optional or have their own validation
         categoryId: z.any().optional(),
-        locationId: z.any().optional(),
         category: z.string().optional(),
         location: z.string().optional(),
+        location_name: z.string().optional(),
+        location_lat: z.number().optional(),
+        location_lng: z.number().optional(),
         published: z.boolean().optional(),
         status: z.string().optional(),
       })
@@ -1004,7 +1029,7 @@ export function ArticleEditor({
   }, [locations]);
 
   // Handle form submission
-  const onSubmit = async (data: InsertArticle) => {
+  const onSubmit = async (data: ArticleFormData) => {
     console.log("Form submitted with data:", data);
     if (!user) {
       console.error("No user found");
@@ -1026,37 +1051,7 @@ export function ArticleEditor({
       return;
     }
 
-    // Get the location name if locationId is provided
-    let locationName = "";
-    if (data.locationId && locations) {
-      // Helper function to find a location by ID in the nested structure
-      const findLocation = (
-        items: LocationWithChildren[],
-        id: number
-      ): LocationWithChildren | undefined => {
-        for (const item of items) {
-          if (item.id === id) return item;
-          if (item.children) {
-            const found = findLocation(item.children, id);
-            if (found) return found;
-          }
-        }
-        return undefined;
-      };
-
-      const location = findLocation(
-        locations,
-        typeof data.locationId === "string"
-          ? parseInt(data.locationId)
-          : data.locationId
-      );
-
-      if (location) {
-        locationName = location.name;
-      }
-    }
-
-    // Process special values for categoryId and locationId
+    // Create a properly formatted object for API submission
     const processedData = {
       ...data,
       userId: user.id,
@@ -1075,16 +1070,12 @@ export function ArticleEditor({
         selectedCategories.length > 0
           ? selectedCategories.map((cat) => cat.id)
           : undefined,
-      locationId:
-        data.locationId &&
-        typeof data.locationId === "string" &&
-        (data.locationId === "no-location" ||
-          data.locationId === "no-locations" ||
-          isNaN(parseInt(data.locationId)))
-          ? undefined
-          : data.locationId,
-      // Set the location name based on the selected locationId
-      location: locationName || data.location || "",
+      // Set location fields from the MapboxLocationPicker data
+      location: data.location_name || data.location || "",
+      // Pass through the geographic coordinates for PostGIS
+      location_name: data.location_name || data.location || "",
+      location_lat: data.location_lat,
+      location_lng: data.location_lng,
     };
 
     console.log("Submitting article with data:", processedData);
@@ -1227,14 +1218,7 @@ export function ArticleEditor({
 
   return (
     <Form {...form}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          console.log("Form submitted!");
-          form.handleSubmit(onSubmit)(e);
-        }}
-        className="space-y-6"
-      >
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <FormField
           control={form.control}
           name="title"
@@ -1439,86 +1423,23 @@ export function ArticleEditor({
 
           <FormField
             control={form.control}
-            name="locationId"
+            name="location"
             render={({ field }) => (
-              <FormItem>
-                <FormLabel>Location (optional)</FormLabel>
-                {!isLoadingLocations && (
-                  <HierarchicalLocationSelect
-                    locations={locations || []}
-                    value={field.value}
-                    onChange={(id) => {
-                      field.onChange(id);
+              <MapboxLocationPicker
+                field={field}
+                label="Location (optional)"
+                placeholder="Search for a location..."
+                description="Select a location to help readers find geographically relevant content"
+                onLocationSelected={(location: MapboxLocation) => {
+                  // When a location is selected, update all related fields
+                  form.setValue("location_name", location.place_name);
+                  form.setValue("location_lat", location.center[1]); // latitude
+                  form.setValue("location_lng", location.center[0]); // longitude
 
-                      // Also set the text location field for backwards compatibility
-                      const findLocation = (
-                        locs: LocationWithChildren[]
-                      ): LocationWithChildren | undefined => {
-                        for (const loc of locs) {
-                          if (loc.id === id) return loc;
-                          if (loc.children) {
-                            const found = findLocation(loc.children);
-                            if (found) return found;
-                          }
-                        }
-                        return undefined;
-                      };
-
-                      if (locations) {
-                        const selectedLocation = findLocation(locations);
-                        if (selectedLocation) {
-                          form.setValue("location", selectedLocation.name);
-                        }
-                      }
-                    }}
-                    isLoading={isLoadingLocations}
-                  />
-                )}
-
-                <div className="mt-4">
-                  <FormLabel className="text-sm text-muted-foreground">
-                    Search Locations
-                  </FormLabel>
-                  <EnhancedAutocomplete
-                    items={flatLocations}
-                    placeholder="Search for a location..."
-                    value={field.value}
-                    isLoading={isLoadingLocations}
-                    onSelect={(id) => {
-                      field.onChange(id);
-
-                      // Also set the text location field for backwards compatibility
-                      const findLocation = (
-                        locs: LocationWithChildren[]
-                      ): LocationWithChildren | undefined => {
-                        for (const loc of locs) {
-                          if (loc.id === id) return loc;
-                          if (loc.children) {
-                            const found = findLocation(loc.children);
-                            if (found) return found;
-                          }
-                        }
-                        return undefined;
-                      };
-
-                      if (locations) {
-                        const selectedLocation = findLocation(locations);
-                        if (selectedLocation) {
-                          form.setValue("location", selectedLocation.name);
-                          console.log(
-                            `Set location name to: ${selectedLocation.name}`
-                          );
-                        }
-                      }
-                    }}
-                  />
-                </div>
-
-                <FormDescription>
-                  Select a location to help readers find geographically relevant
-                  content
-                </FormDescription>
-              </FormItem>
+                  // For backward compatibility
+                  form.setValue("location", location.place_name);
+                }}
+              />
             )}
           />
         </div>
