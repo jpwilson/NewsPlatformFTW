@@ -9,8 +9,14 @@ export function LocationSearchTest() {
   const [isOpen, setIsOpen] = useState(false);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
 
-  // For Vite projects
-  const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN;
+  // For Vite projects - Try multiple environment variable sources
+  const mapboxToken =
+    // In development with Vite
+    import.meta.env.VITE_MAPBOX_TOKEN ||
+    // Direct environment variable (some hosting platforms)
+    import.meta.env.MAPBOX_TOKEN ||
+    // Vercel might inject it as window.ENV variable
+    (typeof window !== "undefined" && (window as any).ENV?.MAPBOX_TOKEN);
 
   // Debounce function to limit API calls
   useEffect(() => {

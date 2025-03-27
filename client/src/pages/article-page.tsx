@@ -519,11 +519,12 @@ export default function ArticlePage() {
       location_name: editableLocationName,
       location_lat: editableLocationLat,
       location_lng: editableLocationLng,
-      // Add categoryIds array if we have selected categories
-      categoryIds:
-        selectedCategories.length > 0
-          ? selectedCategories.map((cat) => cat.id)
-          : undefined,
+      // Only include categoryIds if we actually have selections
+      ...(selectedCategories.length > 0
+        ? {
+            categoryIds: selectedCategories.map((cat) => cat.id),
+          }
+        : {}),
     };
 
     // Make sure to properly call the mutation with the updateData object
