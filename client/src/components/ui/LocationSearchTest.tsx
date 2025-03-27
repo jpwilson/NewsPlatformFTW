@@ -7,36 +7,10 @@ export function LocationSearchTest() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [apiToken, setApiToken] = useState<string | null>(null);
   const resultsContainerRef = useRef<HTMLDivElement>(null);
 
-  // Try to get token from environment first
-  const envToken = import.meta.env.VITE_MAPBOX_TOKEN;
-
-  // Only fetch from API if needed
-  useEffect(() => {
-    if (!envToken && !apiToken) {
-      fetch("/api/config/mapbox")
-        .then((res) => res.json())
-        .then((data) => setApiToken(data.token))
-        .catch((err) => console.error("Error fetching token:", err));
-    }
-  }, [envToken, apiToken]);
-
-  // Use either environment or API token
-  const mapboxToken = envToken || apiToken;
-
-  // Add debugging
-  useEffect(() => {
-    console.log("LocationSearchTest environment debug:");
-    console.log("- Env token:", envToken ? "exists" : "missing");
-    console.log("- API token:", apiToken ? "exists" : "missing");
-    console.log("- Final token:", mapboxToken ? "exists" : "missing");
-
-    if (!mapboxToken) {
-      console.error("Mapbox token not found in any location");
-    }
-  }, [mapboxToken, envToken, apiToken]);
+  // Get token from environment variable
+  const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
   // Debounce function to limit API calls
   useEffect(() => {

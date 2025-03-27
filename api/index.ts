@@ -3741,16 +3741,6 @@ app.get("/api/locations", async (req, res) => {
   }
 });
 
-// Add this endpoint near other configuration endpoints
-app.get("/api/config/mapbox", (req, res) => {
-  const mapboxToken = process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN;
-  if (!mapboxToken) {
-    console.error("Mapbox token not found in server environment");
-    return res.status(500).json({ error: "Mapbox token not configured" });
-  }
-  res.json({ token: mapboxToken });
-});
-
 // The handler function that routes requests to our Express app
 export default async function handler(
   req: VercelRequest,
