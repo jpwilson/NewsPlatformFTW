@@ -56,6 +56,126 @@ export function NavigationBar({
   const { selectedChannelId: contextChannelId, setSelectedChannelId } =
     useSelectedChannel();
 
+  // Get the last selected channel from localStorage
+  const getLastSelectedChannel = (userId: number) => {
+    try {
+      const stored = localStorage.getItem(`navbarChannel-${userId}`);
+      return stored ? Number(stored) : undefined;
+    } catch (e) {
+      console.error("Error reading from localStorage:", e);
+      return undefined;
+    }
+  };
+
+  // Save the last selected channel to localStorage
+  const saveLastSelectedChannel = (userId: number, channelId: number) => {
+    try {
+      localStorage.setItem(`navbarChannel-${userId}`, channelId.toString());
+    } catch (e) {
+      console.error("Error writing to localStorage:", e);
+    }
+  };
+
+  // Initialize currentChannelId from localStorage or first available channel
+  const [currentChannelId, setCurrentChannelId] = useState<number | undefined>(
+    undefined
+  );
+
+  // Fetch user's owned channels if the user is logged in
+  const { data: userChannels, isLoading: isUserChannelsLoading } = useQuery<
+    Channel[]
+  >({
+    queryKey: ["/api/channels", user?.id],
+    select: (channels) => channels?.filter((c) => c.userId === user?.id) || [],
+    enabled: !!user,
+  });
+
+  // Use debug endpoint as fallback for channels
+  const { data: debugChannelsData, isLoading: isDebugChannelsLoading } =
+    useQuery<DebugChannelsResponse>({
+      queryKey: ["/api/debug/channels", user?.id],
+      queryFn: async () => {
+        const response = await fetch(`/api/debug/channels?userId=${user?.id}`);
+        if (!response.ok) {
+          throw new Error(`Error fetching debug channels: ${response.status}`);
+        }
+        return response.json();
+      },
+      enabled: !!user && (!userChannels || userChannels.length === 0),
+    });
+
+  // Combine channels from both sources
+  const combinedUserChannels = useMemo(() => {
+    if (userChannels?.length) {
+      return userChannels;
+    }
+    if (debugChannelsData?.channels) {
+      return debugChannelsData.channels.filter((channel: Channel) => {
+        const channelUserId = (channel as any).user_id || channel.userId;
+        return channelUserId === user?.id;
+      });
+    }
+    return [];
+  }, [userChannels, debugChannelsData, user?.id]);
+
+  // Initialize the navbar channel selection when channels are loaded
+  useEffect(() => {
+    if (!user?.id || !combinedUserChannels?.length) return;
+
+    // If we already have a selection, keep it
+    if (
+      currentChannelId &&
+      combinedUserChannels.some((c) => c.id === currentChannelId)
+    ) {
+      return;
+    }
+
+    // Try to get the last selected channel from localStorage
+    const lastSelected = getLastSelectedChannel(user.id);
+    if (
+      lastSelected &&
+      combinedUserChannels.some((c) => c.id === lastSelected)
+    ) {
+      setCurrentChannelId(lastSelected);
+      setSelectedChannelId(lastSelected);
+      return;
+    }
+
+    // If no stored selection, use the first channel
+    const firstChannelId = combinedUserChannels[0].id;
+    setCurrentChannelId(firstChannelId);
+    setSelectedChannelId(firstChannelId);
+    saveLastSelectedChannel(user.id, firstChannelId);
+  }, [user?.id, combinedUserChannels, currentChannelId, setSelectedChannelId]);
+
+  // Get the selected channel for navbar display
+  const selectedChannel = useMemo(() => {
+    if (!combinedUserChannels?.length || !currentChannelId) return null;
+    return (
+      combinedUserChannels.find((c) => c.id === currentChannelId) ||
+      combinedUserChannels[0]
+    );
+  }, [combinedUserChannels, currentChannelId]);
+
+  // The displayed channel should always be the selected channel
+  const displayedChannel = selectedChannel;
+
+  const hasMultipleChannels =
+    combinedUserChannels && combinedUserChannels.length > 1;
+
+  const navigateToChannel = (channelId: number, channel?: any) => {
+    if (!isNaN(channelId) && user?.id) {
+      // Update the navbar selection
+      setCurrentChannelId(channelId);
+      setSelectedChannelId(channelId);
+      saveLastSelectedChannel(user.id, channelId);
+
+      // Navigate to the channel profile
+      const channelSlug = channel?.slug || "";
+      setLocation(createSlugUrl("/channels/", channelSlug, channelId));
+    }
+  };
+
   // Check if we're on the auth page to hide login button when already on it
   const isAuthPage = location === "/auth";
 
@@ -65,96 +185,12 @@ export function NavigationBar({
     enabled: true,
   });
 
-  // Use the prop value if provided (for explicit page-level control), otherwise use the context value
-  const effectiveChannelId =
-    selectedChannelId !== undefined
-      ? Number(selectedChannelId)
-      : contextChannelId;
-
+  // Add debugging to track channel changes
   useEffect(() => {
-    console.log(
-      "NavigationBar - Selected Channel ID from prop:",
-      selectedChannelId
-    );
-    console.log(
-      "NavigationBar - Selected Channel ID from context:",
-      contextChannelId
-    );
-    console.log("NavigationBar - Effective Channel ID:", effectiveChannelId);
-  }, [selectedChannelId, contextChannelId, effectiveChannelId]);
-
-  // When selectedChannelId prop changes and it's defined, update the context
-  useEffect(() => {
-    if (selectedChannelId !== undefined) {
-      setSelectedChannelId(Number(selectedChannelId));
-    }
-  }, [selectedChannelId, setSelectedChannelId]);
-
-  // Fetch user's owned channels if the user is logged in
-  const { data: userChannels } = useQuery<Channel[]>({
-    queryKey: ["/api/channels"],
-    select: (channels) => channels?.filter((c) => c.userId === user?.id) || [],
-    enabled: !!user,
-  });
-
-  // Use debug endpoint as fallback for channels
-  const { data: debugChannelsData } = useQuery<DebugChannelsResponse>({
-    queryKey: ["/api/debug/channels", user?.id],
-    queryFn: async () => {
-      const response = await fetch(`/api/debug/channels?userId=${user?.id}`);
-      if (!response.ok) {
-        throw new Error(`Error fetching debug channels: ${response.status}`);
-      }
-      return response.json();
-    },
-    enabled: !!user && (!userChannels || userChannels.length === 0),
-  });
-
-  // Combine channels from both sources
-  const combinedUserChannels = useMemo(() => {
-    if (userChannels?.length) {
-      return userChannels;
-    }
-
-    if (debugChannelsData && "channels" in debugChannelsData) {
-      return debugChannelsData.channels.filter((channel: Channel) => {
-        const channelUserId = (channel as any).user_id || channel.userId;
-        return channelUserId === user?.id;
-      });
-    }
-
-    return [];
-  }, [userChannels, debugChannelsData, user?.id]);
-
-  useEffect(() => {
-    if (combinedUserChannels?.length) {
-      console.log(
-        "NavigationBar - User Channels:",
-        combinedUserChannels.map((c) => ({ id: c.id, name: c.name }))
-      );
-    }
-  }, [combinedUserChannels]);
-
-  // Get the selected channel or default to the first one
-  const selectedChannel =
-    combinedUserChannels && effectiveChannelId
-      ? combinedUserChannels.find((c) => c.id === effectiveChannelId)
-      : null;
-
-  // Get the user's primary channel (first one they created)
-  const displayedChannel =
-    selectedChannel ||
-    (combinedUserChannels && combinedUserChannels.length > 0
-      ? combinedUserChannels[0]
-      : null);
-
-  const hasMultipleChannels =
-    combinedUserChannels && combinedUserChannels.length > 1;
-
-  useEffect(() => {
-    console.log("NavigationBar - Selected Channel:", selectedChannel);
-    console.log("NavigationBar - Displayed Channel:", displayedChannel);
-  }, [selectedChannel, displayedChannel]);
+    console.log("Current Channel ID:", currentChannelId);
+    console.log("Selected Channel:", selectedChannel);
+    console.log("Combined User Channels:", combinedUserChannels);
+  }, [currentChannelId, selectedChannel, combinedUserChannels]);
 
   const handleLogout = () => {
     // Reset theme appearance to light mode on logout, but don't clear the preference
@@ -162,21 +198,11 @@ export function NavigationBar({
     root.classList.remove("dark");
     root.classList.add("light");
 
-    // Don't clear theme preference so it persists for next login
-    // localStorage.removeItem("newsPlatform-theme");
+    // Don't clear lastSelectedChannel so it persists for next login
 
     logoutMutation.mutate();
     // Force redirect to the home page after logout
     setLocation("/");
-  };
-
-  const navigateToChannel = (channelId: number, channel?: any) => {
-    console.log("NavigationBar - Navigating to channel:", channelId);
-    setSelectedChannelId(channelId);
-
-    // Use slug if available (if the channel object has a slug property)
-    const channelSlug = channel?.slug || "";
-    setLocation(createSlugUrl("/channels/", channelSlug, channelId));
   };
 
   return (
@@ -243,7 +269,7 @@ export function NavigationBar({
                               <div
                                 key={channel.id}
                                 className={`text-sm py-1 cursor-pointer ${
-                                  channel.id === effectiveChannelId
+                                  channel.id === currentChannelId
                                     ? "font-medium"
                                     : ""
                                 }`}
@@ -348,7 +374,7 @@ export function NavigationBar({
                       key={channel.id}
                       onClick={() => navigateToChannel(channel.id, channel)}
                       className={
-                        channel.id === effectiveChannelId ? "font-medium" : ""
+                        channel.id === currentChannelId ? "font-medium" : ""
                       }
                     >
                       {channel.name}
