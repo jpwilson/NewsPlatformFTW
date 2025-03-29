@@ -3882,22 +3882,36 @@ app.put("/api/articles/:id/images", async (req, res) => {
 // Handle article image metadata
 app.post("/api/articles/:id/images", async (req, res) => {
   try {
+    console.log("=== DEBUG: POST /api/articles/:id/images ===");
+    console.log("Request body:", JSON.stringify(req.body, null, 2));
+    console.log("Request params:", JSON.stringify(req.params, null, 2));
+    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
+
     const { userId, error: authError } = await authenticateUser(req);
+    console.log("Auth result - userId:", userId, "authError:", authError);
+
     if (authError || !userId) {
+      console.log("Authentication failed");
       return res.status(401).json({ message: authError || "Unauthorized" });
     }
 
     const articleId = parseInt(req.params.id);
+    console.log("Parsed articleId:", articleId);
+
     if (isNaN(articleId)) {
+      console.log("Invalid article ID");
       return res.status(400).json({ message: "Invalid article ID" });
     }
 
     // Verify the article exists and belongs to the user
+    console.log("Fetching article from database...");
     const { data: article, error: getError } = await supabase
       .from("articles")
       .select("*")
       .eq("id", articleId)
       .single();
+
+    console.log("Article fetch result - article:", article, "error:", getError);
 
     if (getError || !article) {
       console.error("Error getting article:", getError);
@@ -3905,11 +3919,14 @@ app.post("/api/articles/:id/images", async (req, res) => {
     }
 
     if (article.user_id !== userId) {
+      console.log(`Permission denied - article.user_id: ${article.user_id}, userId: ${userId}`);
       return res.status(403).json({ message: "You don't have permission to modify this article" });
     }
 
     // Insert the image metadata
     const imageData = Array.isArray(req.body) ? req.body : [req.body];
+    console.log("Preparing to insert image metadata:", JSON.stringify(imageData, null, 2));
+
     const { data: insertedImages, error: insertError } = await supabase
       .from("article_images")
       .insert(imageData.map(img => ({
@@ -3920,15 +3937,18 @@ app.post("/api/articles/:id/images", async (req, res) => {
       })))
       .select();
 
+    console.log("Insert result - insertedImages:", insertedImages, "error:", insertError);
+
     if (insertError) {
       console.error("Error inserting image metadata:", insertError);
-      return res.status(500).json({ message: "Failed to save image metadata" });
+      return res.status(500).json({ message: "Failed to save image metadata", details: insertError });
     }
 
+    console.log("Successfully saved image metadata");
     return res.status(200).json(insertedImages);
   } catch (error) {
-    console.error("Error handling article images:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    console.error("Unexpected error handling article images:", error);
+    return res.status(500).json({ message: "Internal server error", details: error.message });
   }
 });
 
