@@ -23,6 +23,7 @@ import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { createSlugUrl } from "@/lib/slug-utils";
+import { useImageVisibility } from "@/components/image-toggle";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 type ArticleWithSnakeCase = Article & {
@@ -39,12 +40,14 @@ type ArticleWithSnakeCase = Article & {
   _count?: {
     comments?: number;
   };
+  images?: Array<{ imageUrl: string; caption?: string }>;
 };
 
 export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const { showImages } = useImageVisibility();
 
   const handleChannelClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -101,86 +104,103 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
     article.id.toString()
   );
 
+  // Check if article has an image and if images are enabled
+  const images = article.images ?? [];
+  const hasImage = showImages && images.length > 0;
+  const firstImage = hasImage ? images[0] : null;
+
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div className="space-y-2">
-            <Link href={articleUrl}>
-              <h3 className="text-xl font-semibold hover:underline cursor-pointer">
-                {article.title}
-              </h3>
-            </Link>
-            <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <span>
-                  {formatDate(article.created_at || article.createdAt)}
-                </span>
-                {article.location && <span>📍 {article.location}</span>}
-              </div>
-              <button
-                onClick={handleChannelClick}
-                className="text-primary hover:underline w-fit"
-              >
-                By: {article.channel?.name || "Unknown Channel"}
-              </button>
-              {/* Display all categories */}
-              {article.categories && article.categories.length > 0 ? (
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {article.categories.map((cat, index) => (
-                    <span
-                      key={`${cat.id}-${index}`}
-                      className="px-2 py-0.5 bg-muted rounded-md text-xs"
-                    >
-                      🏷️ {cat.name}
-                    </span>
-                  ))}
+      <Card className="flex overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div className={cn("flex-1", hasImage ? "w-2/3" : "w-full")}>
+          <CardHeader>
+            <div className="space-y-2">
+              <Link href={articleUrl}>
+                <h3 className="text-xl font-semibold hover:underline cursor-pointer">
+                  {article.title}
+                </h3>
+              </Link>
+              <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <span>
+                    {formatDate(article.created_at || article.createdAt)}
+                  </span>
+                  {article.location && <span>📍 {article.location}</span>}
                 </div>
-              ) : (
-                article.category &&
-                article.category.trim() !== "" && (
+                <button
+                  onClick={handleChannelClick}
+                  className="text-primary hover:underline w-fit"
+                >
+                  By: {article.channel?.name || "Unknown Channel"}
+                </button>
+                {/* Display all categories */}
+                {article.categories && article.categories.length > 0 ? (
                   <div className="flex flex-wrap gap-2 mt-1">
-                    <span className="px-2 py-0.5 bg-muted rounded-md text-xs">
-                      🏷️ {article.category}
-                    </span>
+                    {article.categories.map((cat, index) => (
+                      <span
+                        key={`${cat.id}-${index}`}
+                        className="px-2 py-0.5 bg-muted rounded-md text-xs"
+                      >
+                        🏷️ {cat.name}
+                      </span>
+                    ))}
                   </div>
-                )
-              )}
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent>
-          <p className="text-muted-foreground line-clamp-3">
-            {article.content.replace(/<[^>]+>/g, "")}
-          </p>
-        </CardContent>
-
-        <CardFooter>
-          <div className="flex items-center gap-5">
-            <div className="flex items-center text-muted-foreground">
-              <Eye className="h-4 w-4 mr-1" />
-              <span className="text-sm">{views}</span>
-            </div>
-
-            <div className="flex items-center text-muted-foreground">
-              <ThumbsUp className="h-4 w-4 mr-1" />
-              <span className="text-sm">{likes}</span>
-            </div>
-
-            <div className="flex items-center text-muted-foreground">
-              <ThumbsDown className="h-4 w-4 mr-1" />
-              <span className="text-sm">{dislikes}</span>
-            </div>
-
-            <Link href={`${articleUrl}#comments`}>
-              <div className="flex items-center text-muted-foreground hover:text-primary hover:underline cursor-pointer">
-                <MessageSquare className="h-4 w-4 mr-1" />
-                <span className="text-sm">{commentCount}</span>
+                ) : (
+                  article.category &&
+                  article.category.trim() !== "" && (
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      <span className="px-2 py-0.5 bg-muted rounded-md text-xs">
+                        🏷️ {article.category}
+                      </span>
+                    </div>
+                  )
+                )}
               </div>
-            </Link>
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            <p className="text-muted-foreground line-clamp-3">
+              {article.content.replace(/<[^>]+>/g, "")}
+            </p>
+          </CardContent>
+
+          <CardFooter>
+            <div className="flex items-center gap-5">
+              <div className="flex items-center text-muted-foreground">
+                <Eye className="h-4 w-4 mr-1" />
+                <span className="text-sm">{views}</span>
+              </div>
+
+              <div className="flex items-center text-muted-foreground">
+                <ThumbsUp className="h-4 w-4 mr-1" />
+                <span className="text-sm">{likes}</span>
+              </div>
+
+              <div className="flex items-center text-muted-foreground">
+                <ThumbsDown className="h-4 w-4 mr-1" />
+                <span className="text-sm">{dislikes}</span>
+              </div>
+
+              <Link href={`${articleUrl}#comments`}>
+                <div className="flex items-center text-muted-foreground hover:text-primary hover:underline cursor-pointer">
+                  <MessageSquare className="h-4 w-4 mr-1" />
+                  <span className="text-sm">{commentCount}</span>
+                </div>
+              </Link>
+            </div>
+          </CardFooter>
+        </div>
+
+        {firstImage && (
+          <div className="w-1/3 relative">
+            <img
+              src={firstImage.imageUrl}
+              alt={firstImage.caption || "Article image"}
+              className="absolute inset-0 w-full h-full object-cover rounded-r-lg"
+            />
           </div>
-        </CardFooter>
+        )}
       </Card>
 
       <AlertDialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>

@@ -22,6 +22,7 @@ import { Channel } from "@shared/schema";
 import { useEffect, useState, useMemo } from "react";
 import { useSelectedChannel } from "@/hooks/use-selected-channel";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ImageToggle } from "@/components/image-toggle";
 import {
   Sheet,
   SheetContent,
@@ -244,6 +245,7 @@ export function NavigationBar({
                   <div className="pb-4 flex items-center gap-2 py-2">
                     <span>Theme:</span>
                     <ThemeToggle />
+                    <ImageToggle />
                   </div>
                 )}
 
@@ -399,6 +401,7 @@ export function NavigationBar({
                   {/* Dark mode toggle - only shown for logged in users */}
                   <div className="flex items-center gap-2">
                     <ThemeToggle />
+                    <ImageToggle />
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
