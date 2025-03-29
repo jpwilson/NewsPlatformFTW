@@ -43,6 +43,11 @@ import {
   type MapboxLocation,
 } from "@/components/ui/MapboxLocationPicker";
 import { StandaloneLocationPicker } from "@/components/ui/StandaloneLocationPicker";
+import { ImageUpload } from "@/components/image-upload";
+import { useSupabaseClient } from "@supabase/auth-helpers-react";
+import imageCompression from "browser-image-compression";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase as defaultSupabase } from "@/lib/supabase"; // Import the default client
 
 // Re-export the MapboxLocationPicker, StandaloneLocationPicker, and MapboxLocation for use in other components
 export { MapboxLocation };
@@ -858,11 +863,15 @@ export function ArticleEditor({
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const supabaseFromHook = useSupabaseClient();
+  const supabase = supabaseFromHook?.storage
+    ? supabaseFromHook
+    : defaultSupabase;
+  const [images, setImages] = useState<{ file: File; caption: string }[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDraft, setIsDraft] = useState(
-    existingArticle
-      ? existingArticle.status === "draft" ||
-          existingArticle.published === false
-      : false
+    existingArticle ? existingArticle.published === false : false
   );
   const [selectedCategories, setSelectedCategories] = useState<
     { id: number; path: string }[]
@@ -1028,64 +1037,221 @@ export function ArticleEditor({
     return locations ? flattenLocations(locations) : [];
   }, [locations]);
 
-  // Handle form submission
+  const handleImageUpload = async (file: File) => {
+    try {
+      console.log("Starting image upload process");
+
+      if (!supabase?.storage) {
+        console.error("Supabase storage is not initialized");
+        throw new Error("Storage service is not available");
+      }
+
+      // Compress image if it's larger than 5MB
+      let imageFile = file;
+      if (file.size > 5 * 1024 * 1024) {
+        const options = {
+          maxSizeMB: 5,
+          maxWidthOrHeight: 1920,
+          useWebWorker: true,
+        };
+        imageFile = await imageCompression(file, options);
+      }
+
+      // Create a sanitized filename
+      const timestamp = Date.now();
+      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const filename = `${timestamp}_${sanitizedFilename}`;
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("article-images")
+        .upload(filename, imageFile);
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        throw uploadError;
+      }
+
+      // Get public URL with download token
+      const { data: urlData } = await supabase.storage
+        .from("article-images")
+        .createSignedUrl(uploadData.path, 31536000); // URL valid for 1 year
+
+      if (!urlData?.signedUrl) {
+        // Fallback to regular public URL if signed URL fails
+        const {
+          data: { publicUrl },
+        } = supabase.storage
+          .from("article-images")
+          .getPublicUrl(uploadData.path);
+
+        return publicUrl;
+      }
+
+      return urlData.signedUrl;
+    } catch (error) {
+      console.error("Error in handleImageUpload:", error);
+      throw error;
+    }
+  };
+
   const onSubmit = async (data: ArticleFormData) => {
-    console.log("Form submitted with data:", data);
-    if (!user) {
-      console.error("No user found");
+    setIsSubmitting(true);
+    try {
+      if (!user) {
+        toast({
+          title: "Error",
+          description: "You must be logged in to create an article",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Validate that channel is selected
+      if (!data.channelId) {
+        toast({
+          title: "Error",
+          description: "Please select a channel for this article",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Upload images first
+      const imageUploads = await Promise.all(
+        images.map(async (img) => {
+          try {
+            if (img.file) {
+              const imageUrl = await handleImageUpload(img.file);
+              return {
+                imageUrl,
+                caption: img.caption || "", // Ensure caption is never undefined
+              };
+            }
+            return null;
+          } catch (error) {
+            console.error("Error uploading image:", error);
+            toast({
+              title: "Error",
+              description: `Failed to upload image: ${img.file?.name}`,
+              variant: "destructive",
+            });
+            return null;
+          }
+        })
+      );
+
+      // Filter out failed uploads and ensure caption is never undefined
+      const successfulUploads = imageUploads.filter(
+        (img): img is { imageUrl: string; caption: string } => img !== null
+      );
+
+      // Create the article data
+      const processedData = {
+        ...data,
+        userId: user.id,
+        channelId: data.channelId,
+        category: data.category === "Other" ? "" : data.category,
+        categoryId:
+          data.categoryId &&
+          typeof data.categoryId === "string" &&
+          (data.categoryId === "no-categories" ||
+            isNaN(parseInt(data.categoryId)))
+            ? undefined
+            : data.categoryId,
+        categoryIds:
+          selectedCategories.length > 0
+            ? selectedCategories.map((cat) => cat.id)
+            : undefined,
+        location: data.location_name || data.location || "",
+        location_name: data.location_name || data.location || "",
+        location_lat: data.location_lat,
+        location_lng: data.location_lng,
+      };
+
+      let articleId: number;
+      if (existingArticle) {
+        // Update existing article
+        const result = await updateArticleMutation.mutateAsync(processedData);
+        articleId = result.id;
+      } else {
+        // Create new article
+        const result = await createArticleMutation.mutateAsync(processedData);
+        articleId = result.id;
+      }
+
+      // Save image metadata to database
+      if (successfulUploads.length > 0) {
+        console.log("Saving image metadata to database:", successfulUploads);
+        try {
+          const response = await apiRequest(
+            "POST",
+            `/api/articles/${articleId}/images`,
+            successfulUploads.map((img, index) => ({
+              article_id: articleId,
+              image_url: img.imageUrl,
+              caption: img.caption,
+              order: index,
+            }))
+          );
+
+          if (!response.ok) {
+            const error = await response.json();
+            console.error("Error saving image metadata:", error);
+            toast({
+              title: "Warning",
+              description:
+                "Article was published but there was an error saving the images. Please try adding them again.",
+              variant: "destructive",
+            });
+            return;
+          }
+
+          const imageData = await response.json();
+          console.log("Image metadata saved successfully:", imageData);
+        } catch (error) {
+          console.error("Error saving image metadata:", error);
+          toast({
+            title: "Warning",
+            description:
+              "Article was published but there was an error saving the images. Please try adding them again.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      // Invalidate queries to refresh the data
+      queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      if (existingArticle) {
+        queryClient.invalidateQueries({
+          queryKey: [`/api/articles/${existingArticle.id}`],
+        });
+      }
+
+      toast({
+        title: "Success",
+        description: isDraft
+          ? "Article saved as draft"
+          : existingArticle
+          ? "Article updated successfully"
+          : "Article published successfully",
+      });
+
+      // Navigate to the article page
+      setTimeout(() => {
+        window.location.href = `/articles/${articleId}`;
+      }, 1500);
+    } catch (error) {
+      console.error("Error submitting article:", error);
       toast({
         title: "Error",
-        description: "You must be logged in to create an article",
+        description:
+          error instanceof Error ? error.message : "Failed to submit article",
         variant: "destructive",
       });
-      return;
-    }
-
-    // Validate that channel is selected
-    if (!data.channelId) {
-      toast({
-        title: "Error",
-        description: "Please select a channel for this article",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Create a properly formatted object for API submission
-    const processedData = {
-      ...data,
-      userId: user.id,
-      channelId: data.channelId,
-      // Don't set a default category if none is selected
-      category: data.category === "Other" ? "" : data.category,
-      categoryId:
-        data.categoryId &&
-        typeof data.categoryId === "string" &&
-        (data.categoryId === "no-categories" ||
-          isNaN(parseInt(data.categoryId)))
-          ? undefined
-          : data.categoryId,
-      // Add the array of category IDs for multiple selection
-      categoryIds:
-        selectedCategories.length > 0
-          ? selectedCategories.map((cat) => cat.id)
-          : undefined,
-      // Set location fields from the MapboxLocationPicker data
-      location: data.location_name || data.location || "",
-      // Pass through the geographic coordinates for PostGIS
-      location_name: data.location_name || data.location || "",
-      location_lat: data.location_lat,
-      location_lng: data.location_lng,
-    };
-
-    console.log("Submitting article with data:", processedData);
-
-    if (existingArticle) {
-      // Update existing article
-      await updateArticleMutation.mutate(processedData);
-    } else {
-      // Create new article
-      await createArticleMutation.mutate(processedData);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1457,9 +1623,7 @@ Use blank lines to create paragraphs.
 Your formatting will be preserved.`}
                   className="min-h-[300px] max-h-[300px] overflow-y-auto font-sans"
                   {...field}
-                  // Ensure proper handling of line breaks
                   onChange={(e) => {
-                    // Use the raw value to preserve all line breaks
                     field.onChange(e.target.value);
                   }}
                 />
@@ -1471,6 +1635,17 @@ Your formatting will be preserved.`}
             </FormItem>
           )}
         />
+
+        <FormItem>
+          <FormLabel>Images</FormLabel>
+          <FormDescription>
+            Upload up to 5 images with captions. The first image will be
+            displayed at the top of the article.
+          </FormDescription>
+          <FormControl>
+            <ImageUpload onImagesChange={setImages} maxFiles={5} />
+          </FormControl>
+        </FormItem>
 
         <div className="flex items-center space-x-2 mb-4">
           <Switch
@@ -1485,31 +1660,30 @@ Your formatting will be preserved.`}
           type="submit"
           className="w-full"
           disabled={
-            createArticleMutation.isPending || updateArticleMutation?.isPending
+            createArticleMutation.isPending ||
+            updateArticleMutation?.isPending ||
+            isSubmitting
           }
         >
           {createArticleMutation.isPending ||
-          updateArticleMutation?.isPending ? (
+          updateArticleMutation?.isPending ||
+          isSubmitting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              {existingArticle
+              {isSubmitting
+                ? "Submitting..."
+                : existingArticle
                 ? isDraft
-                  ? "Saving..."
+                  ? "Saving draft..."
                   : "Updating..."
                 : isDraft
-                ? "Saving..."
+                ? "Saving draft..."
                 : "Publishing..."}
             </>
-          ) : existingArticle ? (
-            isDraft ? (
-              "Save Draft"
-            ) : (
-              "Update Article"
-            )
-          ) : isDraft ? (
-            "Save Draft"
           ) : (
-            "Publish Article"
+            <>
+              {existingArticle ? "Update" : isDraft ? "Save draft" : "Publish"}
+            </>
           )}
         </Button>
       </form>

@@ -14,6 +14,11 @@ import {
   Trash2,
   ExternalLink,
   FileDown,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Image as ImageIcon,
+  ImageOff,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -44,6 +49,7 @@ import {
   MapboxLocation,
   StandaloneLocationPicker,
 } from "@/components/article-editor";
+import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 type ArticleWithSnakeCase = Article & {
@@ -75,6 +81,7 @@ type ArticleWithSnakeCase = Article & {
   _count?: {
     comments?: number;
   };
+  images?: Array<{ imageUrl: string; caption?: string }>;
 };
 
 // Helper function to capitalize the first letter of a string
@@ -136,6 +143,10 @@ export default function ArticlePage() {
   const [viewCountOverride, setViewCountOverride] = useState<number | null>(
     null
   );
+
+  const [showImages, setShowImages] = useState(true);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [showImageModal, setShowImageModal] = useState(false);
 
   const { data: article, isLoading } = useQuery<ArticleWithSnakeCase>({
     queryKey: [`/api/articles/${id}`],
@@ -609,6 +620,18 @@ export default function ArticlePage() {
     setIsEditing(false);
   };
 
+  const handleNextImage = () => {
+    if (!article?.images?.length) return;
+    setSelectedImageIndex((prev) => (prev + 1) % article.images!.length);
+  };
+
+  const handlePrevImage = () => {
+    if (!article?.images?.length) return;
+    setSelectedImageIndex(
+      (prev) => (prev - 1 + article.images!.length) % article.images!.length
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
@@ -1075,8 +1098,127 @@ export default function ArticlePage() {
             </div>
           </header>
 
+          {/* Image Gallery */}
+          {article?.images && article.images.length > 0 && (
+            <div className="mb-8">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Article Images</h2>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowImages(!showImages)}
+                >
+                  {showImages ? (
+                    <>
+                      <ImageOff className="h-4 w-4 mr-2" />
+                      Hide Images
+                    </>
+                  ) : (
+                    <>
+                      <ImageIcon className="h-4 w-4 mr-2" />
+                      Show Images
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {showImages && article.images[0] && (
+                <div className="relative">
+                  <img
+                    src={article.images[0].imageUrl}
+                    alt="Article main image"
+                    className="w-full h-[400px] object-cover rounded-lg cursor-pointer"
+                    onClick={() => {
+                      setSelectedImageIndex(0);
+                      setShowImageModal(true);
+                    }}
+                  />
+                  {article.images[0].caption && (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      {article.images[0].caption}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Image Modal */}
+          {article?.images &&
+            article.images.length > 0 &&
+            article.images[selectedImageIndex] && (
+              <Dialog open={showImageModal} onOpenChange={setShowImageModal}>
+                <DialogContent className="max-w-4xl h-[80vh] p-0">
+                  <div className="relative h-full flex flex-col">
+                    <div className="absolute top-2 right-2 z-10">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowImageModal(false)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    <div className="flex-1 relative">
+                      <img
+                        src={article.images[selectedImageIndex].imageUrl}
+                        alt={`Article image ${selectedImageIndex + 1}`}
+                        className="w-full h-full object-contain"
+                      />
+
+                      {article.images.length > 1 && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute left-2 top-1/2 transform -translate-y-1/2"
+                            onClick={handlePrevImage}
+                          >
+                            <ChevronLeft className="h-6 w-6" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                            onClick={handleNextImage}
+                          >
+                            <ChevronRight className="h-6 w-6" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+
+                    {article.images[selectedImageIndex].caption && (
+                      <div className="p-4 bg-background border-t">
+                        <p className="text-sm text-muted-foreground">
+                          {article.images[selectedImageIndex].caption}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="p-2 bg-background border-t flex justify-center gap-2">
+                      {article.images.map((_, index) => (
+                        <Button
+                          key={index}
+                          variant={
+                            index === selectedImageIndex ? "default" : "ghost"
+                          }
+                          size="sm"
+                          onClick={() => setSelectedImageIndex(index)}
+                        >
+                          {index + 1}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+
           {/* Article content */}
-          <div className="prose prose-lg max-w-none dark:prose-invert">
+          <div className="prose dark:prose-invert max-w-none">
+            {/* Article content */}
             {isEditing ? (
               <textarea
                 value={editableContent}

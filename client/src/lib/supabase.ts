@@ -37,41 +37,31 @@ export const supabase = createClient(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true,
-      // Use implicit flow for both environments to ensure consistency
       flowType: 'implicit',
-      // This ensures the correct application name in the OAuth flow
-      // The proper site URL should be configured in Supabase Dashboard under Authentication > URL Configuration
-      storage: {
-        getItem: (key) => {
-          try {
-            const storedSession = globalThis.localStorage?.getItem(key);
-            console.log(`Retrieved session from localStorage: ${key} ${storedSession ? '✓' : '✗'}`);
-            return storedSession;
-          } catch (error) {
-            console.error('Error accessing localStorage:', error);
-            return null;
-          }
-        },
-        setItem: (key, value) => {
-          try {
-            globalThis.localStorage?.setItem(key, value);
-            console.log(`Stored session in localStorage: ${key} ✓`);
-          } catch (error) {
-            console.error('Error setting localStorage:', error);
-          }
-        },
-        removeItem: (key) => {
-          try {
-            globalThis.localStorage?.removeItem(key);
-            console.log(`Removed session from localStorage: ${key} ✓`);
-          } catch (error) {
-            console.error('Error removing from localStorage:', error);
-          }
-        },
+    },
+    // Add global error handler
+    global: {
+      headers: {
+        'x-client-info': 'news-platform@1.0.0',
       },
-    }
+    },
   }
 );
+
+// Debug storage initialization
+console.log('Supabase storage initialized:', !!supabase.storage);
+console.log('Supabase storage methods:', Object.keys(supabase.storage || {}));
+
+// Test storage access
+supabase.storage.listBuckets().then(({ data: buckets, error }) => {
+  if (error) {
+    console.error('Error accessing storage:', error);
+  } else {
+    console.log('Available storage buckets:', buckets);
+  }
+}).catch(err => {
+  console.error('Failed to access storage:', err);
+});
 
 // Add event listener for auth state changes (debugging)
 supabase.auth.onAuthStateChange((event, session) => {

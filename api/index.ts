@@ -1293,6 +1293,25 @@ app.get("/api/articles/:id", async (req, res) => {
         console.log(`No categories found for article ${articleId}`);
         article.categories = [];
       }
+
+      // Fetch images for this article
+      const { data: imageData, error: imageError } = await supabase
+        .from("article_images")
+        .select("*")
+        .eq("article_id", articleId)
+        .order("order", { ascending: true });
+
+      if (!imageError && imageData) {
+        console.log(`Found ${imageData.length} images for article ${articleId}`);
+        article.images = imageData.map(img => ({
+          imageUrl: img.image_url,
+          caption: img.caption || ""
+        }));
+        console.log("Article images:", article.images);
+      } else {
+        console.log(`No images found for article ${articleId}`);
+        article.images = [];
+      }
     }
     
     console.log("====== END ARTICLE LOOKUP DEBUG ======");
@@ -3300,12 +3319,39 @@ app.delete("/api/articles/:id", async (req, res) => {
     if (article.user_id !== userId) {
       return res.status(403).json({ message: "You don't have permission to delete this article" });
     }
+
+    // Get all images associated with this article
+    const { data: articleImages, error: imagesError } = await supabase
+      .from('article_images')
+      .select('*')
+      .eq('article_id', article.id);
+
+    if (imagesError) {
+      console.error("Error fetching article images:", imagesError);
+      return res.status(500).json({ message: "Failed to fetch article images" });
+    }
+
+    // Delete images from storage if they exist
+    if (articleImages && articleImages.length > 0) {
+      const storage = supabase.storage.from('article-images');
+      
+      for (const image of articleImages) {
+        // Extract filename from the URL
+        const filename = image.image_url.split('/').pop();
+        if (filename) {
+          const { error: deleteStorageError } = await storage.remove([filename]);
+          if (deleteStorageError) {
+            console.error("Error deleting image from storage:", deleteStorageError);
+          }
+        }
+      }
+    }
     
-    // Delete the article (article_categories will cascade delete due to foreign key constraint)
+    // Delete the article (this will cascade delete article_images due to foreign key constraint)
     const { error: deleteError } = await supabase
       .from('articles')
       .delete()
-      .eq('id', article.id);  // Always use numeric ID for delete
+      .eq('id', article.id);
     
     if (deleteError) {
       console.error("Error deleting article:", deleteError);
@@ -3738,6 +3784,151 @@ app.get("/api/locations", async (req, res) => {
   } catch (error) {
     console.error("Error in locations endpoint:", error);
     res.status(500).json({ error: "Failed to fetch locations" });
+  }
+});
+
+// Update article images
+app.put("/api/articles/:id/images", async (req, res) => {
+  try {
+    const articleId = parseInt(req.params.id);
+    const { images } = req.body; // Array of { image_url, caption, order }
+    
+    // Authenticate the user
+    const { userId, error: authError } = await authenticateUser(req);
+    if (authError) {
+      return res.status(401).json({ message: authError });
+    }
+    
+    // Verify article ownership
+    const { data: article, error: articleError } = await supabase
+      .from('articles')
+      .select('user_id')
+      .eq('id', articleId)
+      .single();
+      
+    if (articleError || !article) {
+      return res.status(404).json({ message: "Article not found" });
+    }
+    
+    if (article.user_id !== userId) {
+      return res.status(403).json({ message: "You don't have permission to update this article's images" });
+    }
+    
+    // Get current images
+    const { data: currentImages, error: getCurrentError } = await supabase
+      .from('article_images')
+      .select('*')
+      .eq('article_id', articleId);
+      
+    if (getCurrentError) {
+      console.error("Error fetching current images:", getCurrentError);
+      return res.status(500).json({ message: "Failed to fetch current images" });
+    }
+    
+    // Find images to delete (images in currentImages but not in new images array)
+    const newImageUrls = new Set(images.map(img => img.image_url));
+    const imagesToDelete = currentImages?.filter(img => !newImageUrls.has(img.image_url)) || [];
+    
+    // Delete removed images from storage
+    if (imagesToDelete.length > 0) {
+      const storage = supabase.storage.from('article-images');
+      for (const image of imagesToDelete) {
+        const filename = image.image_url.split('/').pop();
+        if (filename) {
+          const { error: deleteStorageError } = await storage.remove([filename]);
+          if (deleteStorageError) {
+            console.error("Error deleting image from storage:", deleteStorageError);
+          }
+        }
+      }
+    }
+    
+    // Delete all current images from the database (we'll reinsert the kept ones)
+    const { error: deleteError } = await supabase
+      .from('article_images')
+      .delete()
+      .eq('article_id', articleId);
+      
+    if (deleteError) {
+      console.error("Error deleting current images:", deleteError);
+      return res.status(500).json({ message: "Failed to update images" });
+    }
+    
+    // Insert new/kept images
+    if (images.length > 0) {
+      const { error: insertError } = await supabase
+        .from('article_images')
+        .insert(images.map(img => ({
+          article_id: articleId,
+          image_url: img.image_url,
+          caption: img.caption,
+          order: img.order
+        })));
+        
+      if (insertError) {
+        console.error("Error inserting new images:", insertError);
+        return res.status(500).json({ message: "Failed to update images" });
+      }
+    }
+    
+    return res.json({ message: "Images updated successfully" });
+  } catch (error) {
+    console.error("Error in update article images endpoint:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Add this new endpoint handler before the final export
+// Handle article image metadata
+app.post("/api/articles/:id/images", async (req, res) => {
+  try {
+    const { userId, error: authError } = await authenticateUser(req);
+    if (authError || !userId) {
+      return res.status(401).json({ message: authError || "Unauthorized" });
+    }
+
+    const articleId = parseInt(req.params.id);
+    if (isNaN(articleId)) {
+      return res.status(400).json({ message: "Invalid article ID" });
+    }
+
+    // Verify the article exists and belongs to the user
+    const { data: article, error: getError } = await supabase
+      .from("articles")
+      .select("*")
+      .eq("id", articleId)
+      .single();
+
+    if (getError || !article) {
+      console.error("Error getting article:", getError);
+      return res.status(404).json({ message: "Article not found" });
+    }
+
+    if (article.user_id !== userId) {
+      return res.status(403).json({ message: "You don't have permission to modify this article" });
+    }
+
+    // Insert the image metadata
+    const imageData = Array.isArray(req.body) ? req.body : [req.body];
+    const { data: insertedImages, error: insertError } = await supabase
+      .from("article_images")
+      .insert(imageData.map(img => ({
+        article_id: articleId,
+        image_url: img.image_url,
+        caption: img.caption || "",
+        order: img.order || 0
+      })))
+      .select();
+
+    if (insertError) {
+      console.error("Error inserting image metadata:", insertError);
+      return res.status(500).json({ message: "Failed to save image metadata" });
+    }
+
+    return res.status(200).json(insertedImages);
+  } catch (error) {
+    console.error("Error handling article images:", error);
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

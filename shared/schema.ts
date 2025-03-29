@@ -127,6 +127,15 @@ export const channelCategories = pgTable('channel_categories', {
   pk: primaryKey({ columns: [t.channelId, t.categoryId] })
 }));
 
+export const articleImages = pgTable('article_images', {
+  id: serial('id').primaryKey(),
+  articleId: integer('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
+  imageUrl: text('image_url').notNull(),
+  caption: text('caption'),
+  order: integer('order').default(0),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
 // Define schema relations
 export const usersRelations = relations(users, ({ many }) => ({
   channels: many(channels),
@@ -156,7 +165,15 @@ export const articlesRelations = relations(articles, ({ one, many }) => ({
     references: [users.id]
   }),
   comments: many(comments),
-  reactions: many(reactions)
+  reactions: many(reactions),
+  images: many(articleImages),
+}));
+
+export const articleImagesRelations = relations(articleImages, ({ one }) => ({
+  article: one(articles, {
+    fields: [articleImages.articleId],
+    references: [articles.id],
+  }),
 }));
 
 // Create Zod schemas from Drizzle schema
@@ -179,6 +196,7 @@ export const insertCategorySchema = createInsertSchema(categories);
 export const insertLocationSchema = createInsertSchema(locations);
 export const insertArticleCategorySchema = createInsertSchema(articleCategories);
 export const insertChannelCategorySchema = createInsertSchema(channelCategories);
+export const insertArticleImageSchema = createInsertSchema(articleImages);
 
 // Export types
 export type User = typeof users.$inferSelect;
@@ -192,6 +210,7 @@ export type Category = typeof categories.$inferSelect;
 export type Location = typeof locations.$inferSelect;
 export type ArticleCategory = typeof articleCategories.$inferSelect;
 export type ChannelCategory = typeof channelCategories.$inferSelect;
+export type ArticleImage = typeof articleImages.$inferSelect;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertChannel = z.infer<typeof insertChannelSchema>;
@@ -204,3 +223,4 @@ export type InsertCategory = z.infer<typeof insertCategorySchema>;
 export type InsertLocation = z.infer<typeof insertLocationSchema>;
 export type InsertArticleCategory = z.infer<typeof insertArticleCategorySchema>;
 export type InsertChannelCategory = z.infer<typeof insertChannelCategorySchema>;
+export type InsertArticleImage = z.infer<typeof insertArticleImageSchema>;
