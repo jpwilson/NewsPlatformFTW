@@ -50,6 +50,7 @@ import {
   StandaloneLocationPicker,
 } from "@/components/article-editor";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { supabase } from "@/lib/supabase";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 type ArticleWithSnakeCase = Article & {
@@ -358,8 +359,8 @@ export default function ArticlePage() {
   // Increment view count when the article is loaded
   useEffect(() => {
     if (id && !isLoading && article) {
-      console.log("Recording view for article:", id);
-      apiRequest("POST", `/api/articles/${id}/view`, {})
+      console.log("Recording view for article:", article.slug);
+      apiRequest("POST", `/api/articles/${article.slug}/view`, {})
         .then((response) => response.json())
         .then((data) => {
           console.log("View count response:", data);
@@ -406,14 +407,90 @@ export default function ArticlePage() {
     }
   }, [id, isLoading, article]);
 
+  const [likeCount, setLikeCount] = useState(0);
+  const [dislikeCount, setDislikeCount] = useState(0);
+  const [userReaction, setUserReaction] = useState<boolean | null>(null);
+
   const handleReaction = async (isLike: boolean) => {
     if (!user) {
-      setShowAuthDialog(true);
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to react to articles",
+        variant: "destructive",
+      });
       return;
     }
 
-    await apiRequest("POST", `/api/articles/${id}/reactions`, { isLike });
-    queryClient.invalidateQueries({ queryKey: [`/api/articles/${id}`] });
+    if (!article) {
+      toast({
+        title: "Error",
+        description: "Article not found",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const {
+        data: { session },
+        error: authError,
+      } = await supabase.auth.getSession();
+      if (authError || !session) {
+        throw new Error("No valid session");
+      }
+
+      const response = await fetch(`/api/articles/${article.slug}/reactions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ isLike }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to process reaction");
+      }
+
+      const data = await response.json();
+      setLikeCount(data.like_count);
+      setDislikeCount(data.dislike_count);
+      setUserReaction(data.user_reaction);
+
+      // Show success message
+      toast({
+        title: "Success",
+        description:
+          data.user_reaction === null
+            ? "Reaction removed"
+            : data.user_reaction
+            ? "Article liked!"
+            : "Article disliked!",
+        variant: "default",
+      });
+
+      // Invalidate queries to update counts everywhere
+      queryClient.invalidateQueries({
+        queryKey: [`/api/articles/${article.id}`],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+
+      // If article is from a channel, invalidate channel articles too
+      if (article.channelId || article.channel_id) {
+        const channelId = article.channelId || article.channel_id;
+        queryClient.invalidateQueries({
+          queryKey: [`/api/channels/${channelId}/articles`],
+        });
+      }
+    } catch (error) {
+      console.error("Error handling reaction:", error);
+      toast({
+        title: "Error",
+        description: "Failed to process reaction",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleChannelClick = (e: React.MouseEvent) => {

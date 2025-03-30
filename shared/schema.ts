@@ -224,3 +224,55 @@ export type InsertLocation = z.infer<typeof insertLocationSchema>;
 export type InsertArticleCategory = z.infer<typeof insertArticleCategorySchema>;
 export type InsertChannelCategory = z.infer<typeof insertChannelCategorySchema>;
 export type InsertArticleImage = z.infer<typeof insertArticleImageSchema>;
+
+// Database functions for atomic updates
+export const dbFunctions = {
+  // Function to increment article view count atomically
+  incrementArticleView: `
+    CREATE OR REPLACE FUNCTION increment_article_view(article_id INTEGER)
+    RETURNS void AS $$
+    BEGIN
+      UPDATE articles
+      SET view_count = COALESCE(view_count, 0) + 1
+      WHERE id = article_id;
+    END;
+    $$ LANGUAGE plpgsql;
+  `,
+
+  // Function to add a new reaction and update article counts
+  addArticleReaction: `
+    CREATE OR REPLACE FUNCTION add_article_reaction(article_id INTEGER, user_id INTEGER, is_like BOOLEAN)
+    RETURNS void AS $$
+    BEGIN
+      -- Insert the new reaction
+      INSERT INTO reactions (article_id, user_id, is_like)
+      VALUES (article_id, user_id, is_like);
+    END;
+    $$ LANGUAGE plpgsql;
+  `,
+
+  // Function to remove a reaction and update article counts
+  removeArticleReaction: `
+    CREATE OR REPLACE FUNCTION remove_article_reaction(article_id INTEGER, reaction_id INTEGER, was_like BOOLEAN)
+    RETURNS void AS $$
+    BEGIN
+      -- Delete the reaction
+      DELETE FROM reactions
+      WHERE id = reaction_id;
+    END;
+    $$ LANGUAGE plpgsql;
+  `,
+
+  // Function to update a reaction and update article counts
+  updateArticleReaction: `
+    CREATE OR REPLACE FUNCTION update_article_reaction(article_id INTEGER, reaction_id INTEGER, old_is_like BOOLEAN, new_is_like BOOLEAN)
+    RETURNS void AS $$
+    BEGIN
+      -- Update the reaction
+      UPDATE reactions
+      SET is_like = new_is_like
+      WHERE id = reaction_id;
+    END;
+    $$ LANGUAGE plpgsql;
+  `
+};
