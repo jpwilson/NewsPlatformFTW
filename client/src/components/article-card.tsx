@@ -35,7 +35,7 @@ type ArticleWithSnakeCase = Article & {
   viewCount?: number;
   view_count?: number;
   userReaction?: boolean | null;
-  slug?: string;
+  slug?: string | null;
   categories?: Array<{ id: number; name: string; isPrimary?: boolean }>;
   _count?: {
     comments?: number;

@@ -330,7 +330,7 @@ export default function HomePage() {
                 <p className="text-muted-foreground">
                   {user
                     ? "Latest articles from your favorite channels"
-                    : "Log in to see articles from your favorite channels"}
+                    : "Want to interact or write your own articles? Sign up or log in!"}
                 </p>
 
                 {/* Article control buttons - now contained in article column */}
