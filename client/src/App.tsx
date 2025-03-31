@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -18,6 +18,7 @@ import AuthCallback from "./pages/auth-callback";
 import ProfilePage from "./pages/profile-page";
 import EditArticle from "@/pages/edit-article";
 import ManageSubscribersPage from "@/pages/manage-subscribers";
+import { Analytics } from "@vercel/analytics/react";
 
 // Check if we're running in production (Vercel) or development
 const isProduction = process.env.NODE_ENV === "production";
@@ -57,6 +58,7 @@ function App() {
         <SelectedChannelProvider>
           <ThemeProvider defaultTheme="light">
             <Router />
+            <Analytics />
             <Toaster />
           </ThemeProvider>
         </SelectedChannelProvider>
