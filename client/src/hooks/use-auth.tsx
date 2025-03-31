@@ -11,6 +11,7 @@ import {
 } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
 
 type AuthContextType = {
   user: SelectUser | null;
@@ -83,6 +84,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logoutMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/logout");
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Error signing out from Supabase client:", error);
+      }
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);
