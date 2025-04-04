@@ -6,6 +6,7 @@ import { AuthProvider } from "@/hooks/use-auth";
 import { SelectedChannelProvider } from "@/hooks/use-selected-channel";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ProtectedRoute } from "./lib/protected-route";
+import { AdminRouteGuard } from "@/components/admin-route-guard";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
 import HomePage from "@/pages/home-page";
@@ -18,6 +19,7 @@ import AuthCallback from "./pages/auth-callback";
 import ProfilePage from "./pages/profile-page";
 import EditArticle from "@/pages/edit-article";
 import ManageSubscribersPage from "@/pages/manage-subscribers";
+import AdminPage from "@/pages/admin-page";
 import { Analytics } from "@vercel/analytics/react";
 
 // Check if we're running in production (Vercel) or development
@@ -43,9 +45,13 @@ function Router() {
       <ProtectedRoute path="/articles/:id/edit" component={EditArticle} />
       <Route path="/articles/:id" component={ArticlePage} />
       <Route path="/auth" component={AuthPage} />
-      {/* Use the React component for local dev and both for production */}
       <Route path="/auth-callback" component={AuthCallback} />
       <Route path="/profile" component={ProfilePage} />
+      <Route path="/admin">
+        <AdminRouteGuard>
+          <AdminPage />
+        </AdminRouteGuard>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
