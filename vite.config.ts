@@ -77,12 +77,42 @@ export default defineConfig(async ({ mode }) => {
     server: {
       port: 5001, // Match the port previously used by Express
       proxy: {
-        '/api': {
-          target: 'http://localhost:3000', // We'll run the serverless API on port 3000
+        '/api/admin-articles': {
+          target: `${process.env.VITE_SUPABASE_URL}/functions/v1`,
           changeOrigin: true,
-          secure: false
+          rewrite: (path) => path.replace(/^\/api/, ''),
+          configure: (proxy, _options) => {
+            proxy.on('proxyReq', (proxyReq, req, _res) => {
+              const authHeader = req.headers['authorization'];
+              if (authHeader) proxyReq.setHeader('Authorization', authHeader);
+              if (process.env.VITE_SUPABASE_ANON_KEY) proxyReq.setHeader('apikey', process.env.VITE_SUPABASE_ANON_KEY);
+            });
+            proxy.on('error', (err, _req, _res) => console.error('[Vite Proxy Error - /api/admin-articles]:', err));
+          }
+        },
+        '/api/is-admin': {
+          target: `${process.env.VITE_SUPABASE_URL}/functions/v1`,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api/, ''),
+          configure: (proxy, _options) => {
+            proxy.on('proxyReq', (proxyReq, req, _res) => {
+              const authHeader = req.headers['authorization'];
+              if (authHeader) proxyReq.setHeader('Authorization', authHeader);
+              if (process.env.VITE_SUPABASE_ANON_KEY) proxyReq.setHeader('apikey', process.env.VITE_SUPABASE_ANON_KEY);
+            });
+             proxy.on('error', (err, _req, _res) => console.error('[Vite Proxy Error - /api/is-admin]:', err));
+          }
+        },
+        '/api': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          configure: (proxy, _options) => {
+              proxy.on('proxyReq', (proxyReq, req, _res) => console.log(`[Vite Proxy -> localhost:3000] Forwarding: ${req.method} ${req.url}`));
+              proxy.on('proxyRes', (proxyRes, req, _res) => console.log(`[Vite Proxy -> localhost:3000] Response: ${proxyRes.statusCode} for ${req.url}`));
+              proxy.on('error', (err, _req, _res) => console.error('[Vite Proxy Error - /api]:', err));
+          }
         }
-      }
+      },
     },
     define: {
       // Explicitly make Supabase env vars available to client
