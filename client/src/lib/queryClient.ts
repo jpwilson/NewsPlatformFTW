@@ -38,15 +38,16 @@ export async function apiRequest(
 
   // Check if this path is a Supabase function AND we are in production
   const isSupabasePath = supabaseFunctionPaths.some(p => url.startsWith(p));
-  // Access NODE_ENV exposed via vite define config
-  const isProduction = process.env.NODE_ENV === 'production';
+  // Access environment MODE using import.meta.env
+  const isProduction = import.meta.env.MODE === 'production';
 
   if (isSupabasePath && isProduction) {
-    // Construct absolute Supabase Function URL
-    const supabaseBaseUrl = process.env.VITE_SUPABASE_URL;
+    // Construct absolute Supabase Function URL using import.meta.env
+    const supabaseBaseUrl = import.meta.env.VITE_SUPABASE_URL;
     if (!supabaseBaseUrl) {
-       console.error("VITE_SUPABASE_URL environment variable is not set!");
-       throw new Error("Supabase URL configuration is missing.");
+       // This error should now only happen if the env var is truly missing in the build
+       console.error("VITE_SUPABASE_URL environment variable was not properly injected into the build!");
+       throw new Error("Supabase URL configuration is missing in the build environment.");
     }
     // Extract function name + params (e.g., 'is-admin' or 'admin-articles/100')
     const functionPath = url.substring(4); // Remove '/api' prefix
