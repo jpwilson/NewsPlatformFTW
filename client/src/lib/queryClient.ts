@@ -19,36 +19,53 @@ export async function throwIfResNotOk(res: Response) {
   }
 }
 
+// List of paths that should target Supabase Edge Functions directly in production
+const supabaseFunctionPaths = ['/api/is-admin', '/api/admin-articles']; // Add more admin function paths here
+
 export async function apiRequest(
   method: string,
-  url: string,
+  url: string, // e.g., '/api/is-admin' or '/api/user'
   data?: unknown | undefined,
 ): Promise<Response> {
-  // Get the Supabase session
   const { data: { session } } = await supabase.auth.getSession();
-  
-  // Build headers
   const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
-  
-  // Add auth token if available
+
   if (session?.access_token) {
     headers["Authorization"] = `Bearer ${session.access_token}`;
-    console.log(`API Request ${method} ${url} - Auth token present (${session.access_token.substring(0, 10)}...)`);
-  } else {
-    console.warn(`API Request ${method} ${url} - No auth token available`);
   }
 
-  console.log(`Sending ${method} request to ${url}`);
-  
-  const res = await fetch(url, {
+  let targetUrl = url; // Default to relative path
+
+  // Check if this path is a Supabase function AND we are in production
+  const isSupabasePath = supabaseFunctionPaths.some(p => url.startsWith(p));
+  // Access NODE_ENV exposed via vite define config
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (isSupabasePath && isProduction) {
+    // Construct absolute Supabase Function URL
+    const supabaseBaseUrl = process.env.VITE_SUPABASE_URL;
+    if (!supabaseBaseUrl) {
+       console.error("VITE_SUPABASE_URL environment variable is not set!");
+       throw new Error("Supabase URL configuration is missing.");
+    }
+    // Extract function name + params (e.g., 'is-admin' or 'admin-articles/100')
+    const functionPath = url.substring(4); // Remove '/api' prefix
+    targetUrl = `${supabaseBaseUrl}/functions/v1${functionPath}`;
+    console.log(`[apiRequest] Production mode: Targeting absolute Supabase Function URL: ${targetUrl}`);
+  } else {
+     console.log(`[apiRequest] Development mode or non-Supabase API path: Using relative URL: ${targetUrl}`);
+  }
+
+  // Use the determined targetUrl for the fetch call
+  const res = await fetch(targetUrl, { 
     method,
     headers,
     body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
+    // credentials: "include", // Likely not needed for Supabase token auth
   });
 
-  console.log(`Response from ${url}: ${res.status} ${res.statusText}`);
-  
+  console.log(`Response from ${method} ${targetUrl}: ${res.status} ${res.statusText}`);
+
   await throwIfResNotOk(res);
   return res;
 }
