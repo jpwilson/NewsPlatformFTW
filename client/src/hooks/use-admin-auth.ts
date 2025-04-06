@@ -18,13 +18,11 @@ export function useAdminAuth() {
   useEffect(() => {
     let isMounted = true;
     const checkSupabaseAuth = async () => {
-      console.log('useAdminAuth Effect: Checking initial Supabase session...');
       try {
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) throw error;
         if (isMounted) {
           const currentId = session?.user?.id ?? null;
-          console.log('useAdminAuth Effect: Initial session user ID:', currentId);
           setSupabaseUserId(currentId);
         }
       } catch (error) {
@@ -34,7 +32,6 @@ export function useAdminAuth() {
         }
       } finally {
         if (isMounted) {
-          console.log('useAdminAuth Effect: Initial auth check attempt finished.');
           setInitialAuthAttempted(true);
         }
       }
@@ -45,15 +42,12 @@ export function useAdminAuth() {
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       const newUserId = session?.user?.id ?? null;
       if (isMounted) {
-        console.log('useAdminAuth Effect: Auth state changed, new user ID:', newUserId);
         setSupabaseUserId(newUserId);
-        // Ensure initial check is marked as attempted if auth changes
         setInitialAuthAttempted(true);
       }
     });
 
     return () => {
-      console.log('useAdminAuth Effect: Cleaning up listener.');
       isMounted = false;
       authListener?.subscription.unsubscribe();
     };
@@ -73,15 +67,12 @@ export function useAdminAuth() {
       if (!supabaseUserId) {
         // This case should ideally not be reached if enabled logic is correct,
         // but acts as a safeguard.
-        console.warn('useAdminAuth queryFn: Ran without supabaseUserId!');
         return { isAdmin: false };
       }
 
-      console.log(`useAdminAuth queryFn: Calling /api/is-admin for user ${supabaseUserId}`);
       try {
         const response = await apiRequest('GET', '/api/is-admin');
         const responseData: IsAdminResponse = await response.json();
-        console.log('useAdminAuth queryFn: /api/is-admin response data:', responseData);
         return responseData;
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to check admin status';
@@ -108,8 +99,6 @@ export function useAdminAuth() {
   const isAdmin = data?.isAdmin ?? false;
   // Prioritize error from the query data itself (returned by the function), then query-level error
   const error = data?.error || (queryError ? queryError.message : null);
-
-  console.log(`useAdminAuth final: isLoading: ${isLoading}, isAdmin: ${isAdmin}, error: ${error}, supabaseId: ${supabaseUserId}, initialAuthAttempted: ${initialAuthAttempted}, isAdminCheckLoading: ${isAdminCheckLoading}, isFetching: ${isFetching}`);
 
   return {
     isAdmin,

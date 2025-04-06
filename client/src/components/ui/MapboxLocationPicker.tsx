@@ -112,8 +112,6 @@ export function MapboxLocationPicker({
         );
       }
 
-      console.log("[MapboxLocationPicker] Using Mapbox Token:", mapboxToken);
-
       const endpoint = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
         searchText
       )}.json`;
