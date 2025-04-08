@@ -4032,3 +4032,80 @@ export default async function handler(
     }
   }
 } 
+
+// Toggle article publish status
+app.post("/api/articles/:id/toggle-status", async (req, res) => {
+  try {
+    console.log("Toggle article status endpoint called");
+    
+    // Get article ID or slug from URL parameter
+    const idOrSlug = req.params.id;
+    console.log("Looking up article for status toggle:", idOrSlug);
+    
+    // Authenticate user
+    const { userId, error: authError } = await authenticateUser(req);
+    if (authError) {
+      return res.status(401).json({ message: authError });
+    }
+    
+    // Fetch the article to check ownership - try both ID and slug
+    let article;
+    let fetchError;
+    
+    if (/^\d+$/.test(idOrSlug)) {
+      // It's a numeric ID
+      const result = await supabase
+        .from('articles')
+        .select('*')
+        .eq('id', parseInt(idOrSlug))
+        .single();
+      article = result.data;
+      fetchError = result.error;
+    } else {
+      // Try slug lookup
+      const result = await supabase
+        .from('articles')
+        .select('*')
+        .eq('slug', idOrSlug)
+        .single();
+      article = result.data;
+      fetchError = result.error;
+    }
+      
+    if (fetchError || !article) {
+      console.error("Error fetching article for status toggle:", fetchError);
+      return res.status(404).json({ message: "Article not found" });
+    }
+    
+    // Check if user owns the article
+    if (article.user_id !== userId) {
+      return res.status(403).json({ message: "Not authorized to toggle this article's status" });
+    }
+    
+    // Toggle the published status
+    const newStatus = article.published ? false : true;
+    
+    // Update the article
+    const { data: updatedArticle, error: updateError } = await supabase
+      .from('articles')
+      .update({ 
+        published: newStatus,
+        status: newStatus ? 'published' : 'draft',
+        last_edited: new Date().toISOString()
+      })
+      .eq('id', article.id)  // Always use numeric ID for update
+      .select()
+      .single();
+      
+    if (updateError) {
+      console.error(`Error toggling article ${article.id}:`, updateError);
+      return res.status(500).json({ message: "Failed to toggle article status" });
+    }
+    
+    console.log(`Article ${article.id} toggled to ${updatedArticle.published ? 'published' : 'draft'}`);
+    return res.json(updatedArticle);
+  } catch (error) {
+    console.error("Error in toggle article status endpoint:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+}); 
