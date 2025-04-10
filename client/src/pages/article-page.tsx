@@ -51,6 +51,9 @@ import {
 } from "@/components/article-editor";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
+import { ImageUpload } from "@/components/image-upload";
+import imageCompression from "browser-image-compression";
+import { Input } from "@/components/ui/input";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 type ArticleWithSnakeCase = Article & {
@@ -139,6 +142,15 @@ export default function ArticlePage() {
   const [selectedCategories, setSelectedCategories] = useState<
     { id: number; path: string }[]
   >([]);
+
+  // New state for image editing
+  const [newImages, setNewImages] = useState<{ file: File; caption: string }[]>(
+    []
+  );
+  const [existingImages, setExistingImages] = useState<
+    { imageUrl: string; caption: string; toKeep: boolean }[]
+  >([]);
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
 
   // Local override for view count in case API response is faster than query invalidation
   const [viewCountOverride, setViewCountOverride] = useState<number | null>(
@@ -248,6 +260,20 @@ export default function ArticlePage() {
       setEditableLocationName(article.location_name || article.location || "");
       setEditableLocationLat(article.location_lat);
       setEditableLocationLng(article.location_lng);
+
+      // Initialize existing images if available
+      if (article.images?.length) {
+        setExistingImages(
+          article.images.map((img) => ({
+            imageUrl: img.imageUrl,
+            caption: img.caption || "",
+            toKeep: true,
+          }))
+        );
+      } else {
+        setExistingImages([]);
+      }
+      setNewImages([]);
 
       // We still use categoryId and locationId for the UI component display
       // but don't send them to the API
@@ -596,27 +622,199 @@ export default function ArticlePage() {
     deleteArticleMutation.mutate();
   };
 
-  const handleSaveChanges = () => {
-    setIsSaving(true);
-    // Create update object with categories
-    const updateData = {
-      title: editableTitle,
-      content: editableContent,
-      category: editableCategory,
-      location: editableLocationName, // Use the name from the MapboxLocationPicker
-      location_name: editableLocationName,
-      location_lat: editableLocationLat,
-      location_lng: editableLocationLng,
-      // Only include categoryIds if we actually have selections
-      ...(selectedCategories.length > 0
-        ? {
-            categoryIds: selectedCategories.map((cat) => cat.id),
-          }
-        : {}),
-    };
+  // Handle image upload to Supabase storage
+  const handleImageUpload = async (file: File) => {
+    try {
+      console.log("Starting image upload process");
 
-    // Make sure to properly call the mutation with the updateData object
-    updateArticleMutation.mutate(updateData);
+      if (!supabase?.storage) {
+        console.error("Supabase storage is not initialized");
+        throw new Error("Storage service is not available");
+      }
+
+      // Compress image if it's larger than 5MB
+      let imageFile = file;
+      if (file.size > 5 * 1024 * 1024) {
+        const options = {
+          maxSizeMB: 5,
+          maxWidthOrHeight: 1920,
+          useWebWorker: true,
+        };
+        imageFile = await imageCompression(file, options);
+      }
+
+      // Create a sanitized filename
+      const timestamp = Date.now();
+      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const filename = `${timestamp}_${sanitizedFilename}`;
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("article-images")
+        .upload(filename, imageFile);
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        throw uploadError;
+      }
+
+      // Get public URL with download token
+      const { data: urlData } = await supabase.storage
+        .from("article-images")
+        .createSignedUrl(uploadData.path, 31536000); // URL valid for 1 year
+
+      if (!urlData?.signedUrl) {
+        // Fallback to regular public URL if signed URL fails
+        const {
+          data: { publicUrl },
+        } = supabase.storage
+          .from("article-images")
+          .getPublicUrl(uploadData.path);
+
+        return publicUrl;
+      }
+
+      return urlData.signedUrl;
+    } catch (error) {
+      console.error("Error in handleImageUpload:", error);
+      throw error;
+    }
+  };
+
+  // Enhanced handleSaveChanges to include image editing
+  const handleSaveChanges = async () => {
+    setIsSaving(true);
+    try {
+      // First update the article details
+      const updateData = {
+        title: editableTitle,
+        content: editableContent,
+        category: editableCategory,
+        location: editableLocationName,
+        location_name: editableLocationName,
+        location_lat: editableLocationLat,
+        location_lng: editableLocationLng,
+        ...(selectedCategories.length > 0
+          ? {
+              categoryIds: selectedCategories.map((cat) => cat.id),
+            }
+          : {}),
+      };
+
+      // Update article
+      await updateArticleMutation.mutateAsync(updateData);
+
+      // Handle image updates if there are new images or changes to existing ones
+      if (
+        newImages.length > 0 ||
+        existingImages.some((img) => !img.toKeep) ||
+        existingImages.some((img) => img.toKeep)
+      ) {
+        setIsUploadingImages(true);
+
+        // Step 1: Upload new images
+        const uploadedImages = await Promise.all(
+          newImages.map(async (img, index) => {
+            try {
+              if (img.file) {
+                const imageUrl = await handleImageUpload(img.file);
+                return {
+                  image_url: imageUrl,
+                  caption: img.caption || "",
+                  order:
+                    existingImages.filter((ei) => ei.toKeep).length + index,
+                };
+              }
+              return null;
+            } catch (error) {
+              console.error("Error uploading image:", error);
+              toast({
+                title: "Error",
+                description: `Failed to upload image: ${img.file?.name}`,
+                variant: "destructive",
+              });
+              return null;
+            }
+          })
+        );
+
+        // Filter out failed uploads
+        const successfulUploads = uploadedImages.filter((img) => img !== null);
+
+        // Step 2: Prepare existing images that are kept with their captions (even if unchanged)
+        const keptImages = existingImages
+          .filter((img) => img.toKeep)
+          .map((img, index) => ({
+            image_url: img.imageUrl,
+            caption: img.caption || "", // Ensure caption is never undefined
+            order: index,
+          }));
+
+        // Debug
+        console.log("Kept images with captions:", keptImages);
+        console.log("New uploads:", successfulUploads);
+
+        // Step 3: Combine kept existing images with new uploads
+        const allImages = [...keptImages, ...successfulUploads];
+
+        // Step 4: Update the article's images via the API
+        // Critical fix: Use the actual article.id (numeric) instead of the URL parameter which is a slug
+        if (allImages.length > 0 || existingImages.some((img) => !img.toKeep)) {
+          if (!article || !article.id) {
+            console.error("Article or article ID is missing");
+            toast({
+              title: "Error",
+              description: "Could not update images: article ID is missing",
+              variant: "destructive",
+            });
+            setIsSaving(false);
+            setIsUploadingImages(false);
+            return;
+          }
+
+          console.log(`Updating images for article ID ${article.id}`);
+          const response = await apiRequest(
+            "PUT",
+            `/api/articles/${article.id}/images`, // Use numeric article.id instead of URL slug
+            { images: allImages }
+          );
+
+          if (!response.ok) {
+            const error = await response.json();
+            console.error("Error updating article images:", error);
+            toast({
+              title: "Warning",
+              description:
+                "There was an error updating the images. Some changes may not have been saved.",
+              variant: "destructive",
+            });
+          } else {
+            const result = await response.json();
+            console.log("Images updated successfully:", result);
+          }
+        }
+      }
+
+      // Successfully updated
+      queryClient.invalidateQueries({ queryKey: [`/api/articles/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      setIsEditing(false);
+      setIsSaving(false);
+      setIsUploadingImages(false);
+      toast({
+        title: "Article updated",
+        description: "Your article has been updated successfully.",
+      });
+    } catch (error) {
+      console.error("Error saving article:", error);
+      setIsSaving(false);
+      setIsUploadingImages(false);
+      toast({
+        title: "Error",
+        description: "Failed to update the article. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleCancelEdit = () => {
@@ -629,6 +827,20 @@ export default function ArticlePage() {
       setEditableLocationName(article.location_name || article.location || "");
       setEditableLocationLat(article.location_lat);
       setEditableLocationLng(article.location_lng);
+
+      // Reset image states
+      if (article.images?.length) {
+        setExistingImages(
+          article.images.map((img) => ({
+            imageUrl: img.imageUrl,
+            caption: img.caption || "",
+            toKeep: true,
+          }))
+        );
+      } else {
+        setExistingImages([]);
+      }
+      setNewImages([]);
 
       // We still use categoryId and locationId for the UI component display
       // but don't send them to the API
@@ -695,6 +907,20 @@ export default function ArticlePage() {
       }
     }
     setIsEditing(false);
+  };
+
+  // Function to handle removing an existing image
+  const removeExistingImage = (index: number) => {
+    const updatedImages = [...existingImages];
+    updatedImages[index].toKeep = false;
+    setExistingImages(updatedImages);
+  };
+
+  // Function to update caption for an existing image
+  const updateExistingImageCaption = (index: number, caption: string) => {
+    const updatedImages = [...existingImages];
+    updatedImages[index].caption = caption;
+    setExistingImages(updatedImages);
   };
 
   const handleNextImage = () => {
@@ -780,17 +1006,23 @@ export default function ArticlePage() {
                         variant="default"
                         size="sm"
                         onClick={handleSaveChanges}
-                        disabled={updateArticleMutation.isPending}
+                        disabled={
+                          updateArticleMutation.isPending || isUploadingImages
+                        }
                       >
-                        {updateArticleMutation.isPending ? (
+                        {updateArticleMutation.isPending ||
+                        isUploadingImages ? (
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
                         ) : null}
-                        Save
+                        {isUploadingImages ? "Uploading Images..." : "Save"}
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={handleCancelEdit}
+                        disabled={
+                          updateArticleMutation.isPending || isUploadingImages
+                        }
                       >
                         Cancel
                       </Button>
@@ -1297,11 +1529,85 @@ export default function ArticlePage() {
           <div className="prose dark:prose-invert max-w-none">
             {/* Article content */}
             {isEditing ? (
-              <textarea
-                value={editableContent}
-                onChange={(e) => setEditableContent(e.target.value)}
-                className="w-full min-h-[500px] p-4 border border-input bg-background rounded-md"
-              />
+              <>
+                <textarea
+                  value={editableContent}
+                  onChange={(e) => setEditableContent(e.target.value)}
+                  className="w-full min-h-[500px] p-4 border border-input bg-background rounded-md"
+                />
+
+                {/* Image editing section */}
+                <div className="mt-8 border-t pt-8">
+                  <h3 className="text-lg font-semibold mb-4">Article Images</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    You can add up to 5 images. The first image will be
+                    displayed as the article preview.
+                  </p>
+
+                  {/* Existing images */}
+                  {existingImages.length > 0 && (
+                    <div className="space-y-4 mb-6">
+                      <h4 className="text-md font-medium">Current Images</h4>
+                      <div className="space-y-4">
+                        {existingImages.map(
+                          (image, index) =>
+                            image.toKeep && (
+                              <div
+                                key={`existing-${index}`}
+                                className="relative border rounded-lg p-4 flex items-start space-x-4"
+                              >
+                                <div className="relative w-24 h-24 flex-shrink-0">
+                                  <img
+                                    src={image.imageUrl}
+                                    alt={`Image ${index + 1}`}
+                                    className="w-full h-full object-cover rounded-md"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="icon"
+                                    className="absolute -top-2 -right-2 h-6 w-6"
+                                    onClick={() => removeExistingImage(index)}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                                <div className="flex-grow">
+                                  <p className="text-sm font-medium mb-1">
+                                    Image {index + 1}
+                                  </p>
+                                  <Input
+                                    type="text"
+                                    placeholder="Add a caption (optional)"
+                                    value={image.caption}
+                                    onChange={(e) =>
+                                      updateExistingImageCaption(
+                                        index,
+                                        e.target.value
+                                      )
+                                    }
+                                    className="mt-2 w-full"
+                                  />
+                                </div>
+                              </div>
+                            )
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Upload new images */}
+                  <div className="mt-4">
+                    <h4 className="text-md font-medium mb-2">Add New Images</h4>
+                    <ImageUpload
+                      onImagesChange={setNewImages}
+                      maxFiles={
+                        5 - existingImages.filter((img) => img.toKeep).length
+                      }
+                    />
+                  </div>
+                </div>
+              </>
             ) : (
               // Use white-space-pre-line to preserve paragraphs and text-justify for justified text
               <div
@@ -1315,29 +1621,62 @@ export default function ArticlePage() {
 
           {/* Interactive like/dislike buttons at the bottom */}
           <div className="flex items-center gap-4 my-8 border-t border-b py-6">
-            <div className="text-lg font-medium mr-2">What did you think?</div>
-            <Button
-              variant={userLiked ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleReaction(true)}
-              className={cn(userLiked && "bg-green-600 hover:bg-green-700")}
-            >
-              <ThumbsUp className="h-4 w-4 mr-2" />
-              Like {likes > 0 && <span className="ml-1">({likes})</span>}
-            </Button>
-            <Button
-              variant={userDisliked ? "default" : "outline"}
-              size="sm"
-              onClick={() => handleReaction(false)}
-              className={cn(userDisliked && "bg-red-600 hover:bg-red-700")}
-            >
-              <ThumbsDown className="h-4 w-4 mr-2" />
-              Dislike{" "}
-              {dislikes > 0 && <span className="ml-1">({dislikes})</span>}
-            </Button>
+            {!isEditing && (
+              <>
+                <div className="text-lg font-medium mr-2">
+                  What did you think?
+                </div>
+                <Button
+                  variant={userLiked ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleReaction(true)}
+                  className={cn(userLiked && "bg-green-600 hover:bg-green-700")}
+                >
+                  <ThumbsUp className="h-4 w-4 mr-2" />
+                  Like {likes > 0 && <span className="ml-1">({likes})</span>}
+                </Button>
+                <Button
+                  variant={userDisliked ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleReaction(false)}
+                  className={cn(userDisliked && "bg-red-600 hover:bg-red-700")}
+                >
+                  <ThumbsDown className="h-4 w-4 mr-2" />
+                  Dislike{" "}
+                  {dislikes > 0 && <span className="ml-1">({dislikes})</span>}
+                </Button>
+              </>
+            )}
+
+            {/* Add duplicate Save/Cancel buttons at the bottom when in edit mode */}
+            {isEditing && (
+              <div className="w-full flex justify-end gap-2">
+                <Button
+                  variant="default"
+                  onClick={handleSaveChanges}
+                  disabled={
+                    updateArticleMutation.isPending || isUploadingImages
+                  }
+                >
+                  {updateArticleMutation.isPending || isUploadingImages ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : null}
+                  {isUploadingImages ? "Uploading Images..." : "Save"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleCancelEdit}
+                  disabled={
+                    updateArticleMutation.isPending || isUploadingImages
+                  }
+                >
+                  Cancel
+                </Button>
+              </div>
+            )}
           </div>
 
-          <CommentSection articleId={article.id} />
+          {!isEditing && <CommentSection articleId={article.id} />}
         </article>
       </div>
 
