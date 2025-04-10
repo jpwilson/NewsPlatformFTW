@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useAdminAuth } from "@/hooks/use-admin-auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +54,7 @@ export function NavigationBar({
   selectedChannelId?: string | number;
 }) {
   const { user, logoutMutation } = useAuth();
+  const { isAdmin } = useAdminAuth();
   const [location, setLocation] = useLocation();
   const { selectedChannelId: contextChannelId, setSelectedChannelId } =
     useSelectedChannel();
@@ -183,7 +185,6 @@ export function NavigationBar({
   // Get popular channels for mobile menu
   const { data: popularChannels } = useQuery<Channel[]>({
     queryKey: ["/api/channels"],
-    enabled: true,
   });
 
   // Add debugging to track channel changes
@@ -236,6 +237,18 @@ export function NavigationBar({
                       className="flex items-center gap-2 py-2"
                     >
                       <span>Profile</span>
+                    </Link>
+                  </div>
+                )}
+
+                {/* Admin link in mobile menu - only for admin users */}
+                {user && isAdmin && (
+                  <div className="pb-4">
+                    <Link
+                      href="/admin"
+                      className="flex items-center gap-2 py-2"
+                    >
+                      <span>Admin</span>
                     </Link>
                   </div>
                 )}
@@ -419,6 +432,13 @@ export function NavigationBar({
                         <DropdownMenuItem asChild>
                           <Link href="/profile">Profile</Link>
                         </DropdownMenuItem>
+                        {isAdmin && (
+                          <>
+                            <DropdownMenuItem asChild>
+                              <Link href="/admin">Admin</Link>
+                            </DropdownMenuItem>
+                          </>
+                        )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={handleLogout}>
                           <LogOut className="h-4 w-4 mr-2" />
