@@ -14,7 +14,7 @@ import {
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { formatDate } from "@/lib/date-utils";
 import { useToast } from "@/hooks/use-toast";
-import { Pencil, Save, XCircle, Trash2 } from "lucide-react"; // Icons
+import { Pencil, Save, XCircle, ThumbsUp, ThumbsDown } from "lucide-react"; // Icons
 
 // Type matching the data structure returned by GET /admin-articles
 interface AdminArticle {
@@ -22,12 +22,16 @@ interface AdminArticle {
   title: string;
   created_at: string;
   view_count: number | null;
+  like_count: number | null;
+  dislike_count: number | null;
   channels: { name: string } | null;
 }
 
 // Type for the data sent in the PATCH request
 interface UpdateArticlePayload {
   view_count?: number;
+  like_count?: number;
+  dislike_count?: number;
 }
 
 export function AdminArticleTable() {
@@ -70,13 +74,25 @@ export function AdminArticleTable() {
       queryClient.setQueryData<AdminArticle[]>(["adminArticles"], (oldData) =>
         oldData?.map((article) =>
           article.id === updatedArticle.id
-            ? { ...article, view_count: updatedArticle.view_count }
+            ? {
+                ...article,
+                view_count: updatedArticle.view_count,
+                like_count: updatedArticle.like_count,
+                dislike_count: updatedArticle.dislike_count,
+              }
             : article
         )
       );
+
+      // Invalidate article queries to update counts everywhere
+      queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/articles/${updatedArticle.id}`],
+      });
+
       toast({
         title: "Success",
-        description: `Article "${updatedArticle.title}" view count updated.`,
+        description: `Article "${updatedArticle.title}" metrics updated.`,
       });
       setEditingRowId(null);
     },
@@ -95,6 +111,8 @@ export function AdminArticleTable() {
     setEditingRowId(article.id);
     setEditFormData({
       view_count: article.view_count ?? 0,
+      like_count: article.like_count ?? 0,
+      dislike_count: article.dislike_count ?? 0,
     });
   };
 
@@ -106,6 +124,8 @@ export function AdminArticleTable() {
   const handleSaveClick = (id: number) => {
     const payload: UpdateArticlePayload = {
       view_count: Math.max(0, editFormData.view_count ?? 0),
+      like_count: Math.max(0, editFormData.like_count ?? 0),
+      dislike_count: Math.max(0, editFormData.dislike_count ?? 0),
     };
     mutation.mutate({ id, payload });
   };
@@ -149,6 +169,14 @@ export function AdminArticleTable() {
             <TableHead>Channel</TableHead>
             <TableHead>Created</TableHead>
             <TableHead className="text-right">Views</TableHead>
+            <TableHead className="text-right">
+              <ThumbsUp className="inline h-4 w-4 mr-1" />
+              Likes
+            </TableHead>
+            <TableHead className="text-right">
+              <ThumbsDown className="inline h-4 w-4 mr-1" />
+              Dislikes
+            </TableHead>
             <TableHead className="text-center">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -172,6 +200,26 @@ export function AdminArticleTable() {
                       type="number"
                       name="view_count"
                       value={editFormData.view_count ?? ""}
+                      onChange={handleInputChange}
+                      className="h-8 text-right w-20"
+                      min="0"
+                    />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Input
+                      type="number"
+                      name="like_count"
+                      value={editFormData.like_count ?? ""}
+                      onChange={handleInputChange}
+                      className="h-8 text-right w-20"
+                      min="0"
+                    />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Input
+                      type="number"
+                      name="dislike_count"
+                      value={editFormData.dislike_count ?? ""}
                       onChange={handleInputChange}
                       className="h-8 text-right w-20"
                       min="0"
@@ -210,12 +258,18 @@ export function AdminArticleTable() {
                   <TableCell className="text-right">
                     {article.view_count ?? 0}
                   </TableCell>
+                  <TableCell className="text-right">
+                    {article.like_count ?? 0}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {article.dislike_count ?? 0}
+                  </TableCell>
                   <TableCell className="text-center">
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => handleEditClick(article)}
-                      title="Edit view count"
+                      title="Edit metrics"
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>

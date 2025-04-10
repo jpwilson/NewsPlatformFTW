@@ -3091,16 +3091,26 @@ app.post("/api/articles/:slug/view", async (req, res) => {
         throw viewError;
       }
 
-      // Get current view count
-      const { data: viewCount } = await supabase
-        .from('article_views')
-        .select('id', { count: 'exact' })
-        .eq('article_id', articleId);
-
+      // Get current view count from the article
+      const { data: currentArticle, error: getError } = await supabase
+        .from('articles')
+        .select('view_count')
+        .eq('id', articleId)
+        .single();
+        
+      if (getError) {
+        console.error('Error getting current view count:', getError);
+        throw getError;
+      }
+      
+      // Increment the current view count, preserving admin-set counts
+      const currentViews = currentArticle?.view_count || 0;
+      const newViewCount = currentViews + 1;
+      
       // Update the article's view count
       const { error: updateError } = await supabase
         .from('articles')
-        .update({ view_count: viewCount?.length || 1 })
+        .update({ view_count: newViewCount })
         .eq('id', articleId);
 
       if (updateError) {
