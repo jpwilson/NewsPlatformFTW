@@ -967,9 +967,6 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const articleId = parseInt(req.params.id);
       console.log(`Processing view for article ID: ${articleId}`);
-      console.log(`Request debug - Headers:`, req.headers);
-      console.log(`Request debug - IP:`, req.ip);
-      console.log(`Request debug - Auth:`, req.isAuthenticated ? req.isAuthenticated() : 'auth method not available');
       
       // Get user ID if authenticated or use null for anonymous users
       const userId = req.isAuthenticated() ? req.user.id : null;
