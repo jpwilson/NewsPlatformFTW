@@ -22,53 +22,101 @@ export async function throwIfResNotOk(res: Response) {
 // List of paths that should target Supabase Edge Functions directly in production
 const supabaseFunctionPaths = ['/api/is-admin', '/api/admin-articles']; // Add more admin function paths here
 
-export async function apiRequest(
-  method: string,
-  url: string, // e.g., '/api/is-admin' or '/api/user'
-  data?: unknown | undefined,
-): Promise<Response> {
-  const { data: { session } } = await supabase.auth.getSession();
-  const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
-
-  if (session?.access_token) {
-    headers["Authorization"] = `Bearer ${session.access_token}`;
+async function getAccessToken(): Promise<string | null> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token || null;
+  } catch (error) {
+    console.error("Error getting access token:", error);
+    return null;
   }
+}
 
-  let targetUrl = url; // Default to relative path
-
-  // Check if this path is a Supabase function AND we are in production
-  const isSupabasePath = supabaseFunctionPaths.some(p => url.startsWith(p));
-  // Access environment MODE using import.meta.env
-  const isProduction = import.meta.env.MODE === 'production';
-
-  if (isSupabasePath && isProduction) {
-    // Construct absolute Supabase Function URL using import.meta.env
-    const supabaseBaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (!supabaseBaseUrl) {
-       // This error should now only happen if the env var is truly missing in the build
-       console.error("VITE_SUPABASE_URL environment variable was not properly injected into the build!");
-       throw new Error("Supabase URL configuration is missing in the build environment.");
+export async function apiRequest(method: string, path: string, body?: object) {
+  try {
+    console.log(`[apiRequest] Making ${method} request to ${path}`);
+    
+    const isSupabaseFunction = supabaseFunctionPaths.some(funcPath => 
+      path === funcPath || path.startsWith(`${funcPath}/`));
+    
+    // For Supabase Edge Functions, use absolute URL. For regular API, use relative URL.
+    const isDevelopment = import.meta.env.MODE === 'development';
+    const isPublicFolderApi = path.startsWith('/api/public/');
+    const accessToken = await getAccessToken();
+    
+    // Determine the URL to use
+    let url: string;
+    
+    if (isSupabaseFunction && !isDevelopment) {
+      // Supabase function in production environment
+      console.log(`[apiRequest] Using Supabase URL for edge function: ${path}`);
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      
+      // Extract function name + params (e.g., 'is-admin' or 'admin-articles/100')
+      const functionPath = path.replace('/api/', '');
+      url = `${supabaseUrl}/functions/v1/${functionPath}`;
+    } else if (isPublicFolderApi) {
+      // Public folder API (static files)
+      url = path;
+    } else {
+      // Default - development mode or non-Supabase API path
+      console.log(`[apiRequest] Development mode or non-Supabase API path: Using relative URL: ${path}`);
+      url = path;
     }
-    // Extract function name + params (e.g., 'is-admin' or 'admin-articles/100')
-    const functionPath = url.substring(4); // Remove '/api' prefix
-    targetUrl = `${supabaseBaseUrl}/functions/v1${functionPath}`;
-    console.log(`[apiRequest] Production mode: Targeting absolute Supabase Function URL: ${targetUrl}`);
-  } else {
-     console.log(`[apiRequest] Development mode or non-Supabase API path: Using relative URL: ${targetUrl}`);
+    
+    // Prepare headers and request options
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    
+    const requestOptions: RequestInit = { method, headers };
+    
+    if (accessToken) {
+      console.log(`[apiRequest] Auth token present (${accessToken.substring(0, 8)}...)`);
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    } else {
+      console.log('[apiRequest] No auth token available');
+    }
+    
+    if (isSupabaseFunction && !isDevelopment) {
+      const apiKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+      console.log(`[apiRequest] Adding API key header for Supabase function (${apiKey.substring(0, 8)}...)`);
+      headers['apikey'] = apiKey;
+    }
+    
+    if (body) {
+      console.log(`[apiRequest] Request body:`, body);
+      requestOptions.body = JSON.stringify(body);
+    }
+    
+    console.log(`[apiRequest] Fetching data from ${url}`);
+    const response = await fetch(url, requestOptions);
+    
+    console.log(`[apiRequest] Response from ${path}: ${response.status} ${response.statusText}`);
+    
+    if (!response.ok) {
+      // If the response is not ok, try to parse the error
+      let errorText = await response.text();
+      let errorJson;
+      
+      try {
+        errorJson = JSON.parse(errorText);
+        console.error(`[apiRequest] Error response from ${path}:`, errorJson);
+      } catch (e) {
+        console.error(`[apiRequest] Error response from ${path} (not JSON):`, errorText);
+      }
+      
+      throw new Error(
+        errorJson?.error || errorJson?.message || 
+        `Request failed with status ${response.status}: ${response.statusText}`
+      );
+    }
+    
+    return response;
+  } catch (error) {
+    console.error(`[apiRequest] Error with ${method} ${path}:`, error);
+    throw error;
   }
-
-  // Use the determined targetUrl for the fetch call
-  const res = await fetch(targetUrl, { 
-    method,
-    headers,
-    body: data ? JSON.stringify(data) : undefined,
-    // credentials: "include", // Likely not needed for Supabase token auth
-  });
-
-  console.log(`Response from ${method} ${targetUrl}: ${res.status} ${res.statusText}`);
-
-  await throwIfResNotOk(res);
-  return res;
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";

@@ -878,8 +878,19 @@ app.get("/api/articles", async (req, res) => {
             
             // Calculate likes and dislikes
             const articleReactions = reactionsByArticle[article.id] || [];
-            article.likes = articleReactions.filter(r => r.is_like).length;
-            article.dislikes = articleReactions.filter(r => !r.is_like).length;
+            // Only count real user reactions
+            const userLikes = articleReactions.filter(r => r.is_like && r.user_id > 0).length;
+            const userDislikes = articleReactions.filter(r => !r.is_like && r.user_id > 0).length;
+            
+            // Add admin counts from the articles table
+            const adminLikes = article.admin_like_count || 0;
+            const adminDislikes = article.admin_dislike_count || 0;
+            
+            // Set both like_count/dislike_count and likes/dislikes for compatibility
+            article.like_count = userLikes + adminLikes;
+            article.dislike_count = userDislikes + adminDislikes;
+            article.likes = article.like_count;
+            article.dislikes = article.dislike_count;
             
             // Add user's reaction if authenticated
             if (userId) {
@@ -1344,8 +1355,24 @@ async function enrichArticleWithReactions(article, req) {
       .eq("article_id", article.id);
       
     if (!reactionsError && reactions) {
-      article.likes = reactions.filter(r => r.is_like).length;
-      article.dislikes = reactions.filter(r => !r.is_like).length;
+      // Only count real user reactions (positive user_id)
+      const userLikes = reactions.filter(r => r.is_like && r.user_id > 0).length;
+      const userDislikes = reactions.filter(r => !r.is_like && r.user_id > 0).length;
+      
+      // Add admin-set counts from the articles table
+      const adminLikes = article.admin_like_count || 0;
+      const adminDislikes = article.admin_dislike_count || 0;
+      
+      // Set the total counts (user reactions + admin counts)
+      article.like_count = userLikes + adminLikes;
+      article.dislike_count = userDislikes + adminDislikes;
+      
+      // For backwards compatibility
+      article.likes = article.like_count;
+      article.dislikes = article.dislike_count;
+      
+      console.log(`Article ${article.id} reactions: ${userLikes} user likes + ${adminLikes} admin likes = ${article.like_count} total`);
+      console.log(`Article ${article.id} reactions: ${userDislikes} user dislikes + ${adminDislikes} admin dislikes = ${article.dislike_count} total`);
       
       // If user is authenticated, check if they have reacted
       const authHeader = req.headers.authorization;
@@ -2630,8 +2657,19 @@ app.get("/api/channels/:id/articles", async (req, res) => {
       const articlesWithReactions = articles.map(article => {
         // Add reaction data
         const articleReactions = reactionsByArticle[article.id] || [];
-        const likes = articleReactions.filter(r => r.is_like).length;
-        const dislikes = articleReactions.filter(r => !r.is_like).length;
+        // Only count real user reactions
+        const userLikes = articleReactions.filter(r => r.is_like && r.user_id > 0).length;
+        const userDislikes = articleReactions.filter(r => !r.is_like && r.user_id > 0).length;
+        
+        // Add admin counts from the articles table
+        const adminLikes = article.admin_like_count || 0;
+        const adminDislikes = article.admin_dislike_count || 0;
+        
+        // Set both like_count/dislike_count and likes/dislikes for compatibility
+        article.like_count = userLikes + adminLikes;
+        article.dislike_count = userDislikes + adminDislikes;
+        article.likes = article.like_count;
+        article.dislikes = article.dislike_count;
         
         // Check if the current user has reacted
         let userReaction = null;
@@ -2650,8 +2688,8 @@ app.get("/api/channels/:id/articles", async (req, res) => {
         
         return {
           ...article,
-          likes,
-          dislikes,
+          likes: article.like_count,
+          dislikes: article.dislike_count,
           userReaction,
           images: transformedImages
         };
@@ -4103,3 +4141,156 @@ app.post("/api/articles/:id/toggle-status", async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 }); 
+
+// Article endpoint 
+app.get("/api/articles/:idOrSlug", async (req, res) => {
+  try {
+    console.log("Article endpoint called");
+    
+    // Get article ID or slug from URL parameter
+    const idOrSlug = req.params.idOrSlug;
+    console.log("Looking up article:", idOrSlug);
+    
+    let article;
+    let fetchError;
+    
+    if (/^\d+$/.test(idOrSlug)) {
+      // It's a numeric ID
+      console.log("Fetching article by ID:", idOrSlug);
+      const result = await supabase
+        .from('articles')
+        .select(`
+          *,
+          user:user_id (id, username, supabase_uid),
+          channel:channel_id (id, name, slug, description, profile_image, user_id),
+          images:article_images (id, image_url, caption, "order"),
+          categories:article_categories (
+            category_id, 
+            is_primary,
+            category:category_id (id, name, parent_id)
+          )
+        `)
+        .eq('id', parseInt(idOrSlug))
+        .single();
+      article = result.data;
+      fetchError = result.error;
+    } else {
+      // Try slug lookup
+      console.log("Fetching article by slug:", idOrSlug);
+      const result = await supabase
+        .from('articles')
+        .select(`
+          *,
+          user:user_id (id, username, supabase_uid),
+          channel:channel_id (id, name, slug, description, profile_image, user_id),
+          images:article_images (id, image_url, caption, "order"),
+          categories:article_categories (
+            category_id, 
+            is_primary,
+            category:category_id (id, name, parent_id)
+          )
+        `)
+        .eq('slug', idOrSlug)
+        .single();
+      article = result.data;
+      fetchError = result.error;
+    }
+      
+    if (fetchError || !article) {
+      console.error("Error fetching article:", fetchError);
+      return res.status(404).json({ message: "Article not found" });
+    }
+    
+    console.log(`Found article: "${article.title}"`);
+    
+    // Get reaction counts
+    const { data: likes, error: likesError } = await supabase
+      .from('reactions')
+      .select('id')
+      .eq('article_id', article.id)
+      .eq('is_like', true)
+      .gt('user_id', 0); // Only count real user reactions here
+      
+    if (likesError) {
+      console.error("Error fetching likes:", likesError);
+    }
+    
+    const { data: dislikes, error: dislikesError } = await supabase
+      .from('reactions')
+      .select('id')
+      .eq('article_id', article.id)
+      .eq('is_like', false)
+      .gt('user_id', 0); // Only count real user reactions here
+      
+    if (dislikesError) {
+      console.error("Error fetching dislikes:", dislikesError);
+    }
+    
+    // Get user's reaction if authenticated
+    let userReaction = null;
+    
+    if (req.headers.authorization) {
+      const token = req.headers.authorization.replace('Bearer ', '');
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      
+      if (!authError && user) {
+        // Get internal user ID from Supabase Auth ID
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('supabase_uid', user.id)
+          .single();
+          
+        if (dbUser) {
+          const { data: reaction } = await supabase
+            .from('reactions')
+            .select('is_like')
+            .eq('article_id', article.id)
+            .eq('user_id', dbUser.id)
+            .maybeSingle();
+            
+          if (reaction) {
+            userReaction = reaction.is_like;
+          }
+        }
+      }
+    }
+    
+    // Add reaction data to article
+    const userLikes = likes?.length || 0;
+    const userDislikes = dislikes?.length || 0;
+    const adminLikes = article.admin_like_count || 0;
+    const adminDislikes = article.admin_dislike_count || 0;
+    
+    // The frontend expects like_count and dislike_count, not likes and dislikes
+    article.like_count = userLikes + adminLikes;
+    article.dislike_count = userDislikes + adminDislikes;
+    article.userReaction = userReaction;
+    
+    console.log(`Article ${article.id} reactions: ${userLikes} user likes + ${adminLikes} admin likes = ${article.like_count} total likes`);
+    console.log(`Article ${article.id} reactions: ${userDislikes} user dislikes + ${adminDislikes} admin dislikes = ${article.dislike_count} total dislikes`);
+    
+    // Keep these for backwards compatibility
+    article.likes = article.like_count;
+    article.dislikes = article.dislike_count;
+    
+    // Sort images by order field
+    if (article.images) {
+      article.images.sort((a, b) => (a.order || 0) - (b.order || 0));
+    }
+    
+    // Format categories to match expected client structure
+    if (article.categories) {
+      article.categories = article.categories.map(cat => ({
+        id: cat.category_id,
+        name: cat.category?.name,
+        isPrimary: cat.is_primary
+      }));
+    }
+    
+    res.json(article);
+  } catch (error) {
+    console.error("Error in article endpoint:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});

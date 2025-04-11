@@ -82,10 +82,10 @@ Deno.serve(async (req) => {
       // GET /admin-articles - Fetch all articles
       console.log('Handling GET /admin-articles')
       
-      // First fetch the articles with basic info
+      // First fetch the articles with basic info including admin counts
       const { data: articles, error } = await supabaseAdminClient
         .from('articles')
-        .select('id, title, created_at, view_count, channels(name)') 
+        .select('id, title, created_at, view_count, admin_like_count, admin_dislike_count, channels(name)') 
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -93,42 +93,59 @@ Deno.serve(async (req) => {
       // Then get reaction counts for all articles
       const articleIds = articles.map(article => article.id)
       
-      // Get all reactions for these articles
+      // Get all user reactions for these articles
       const { data: reactions, error: reactionsError } = await supabaseAdminClient
         .from('reactions')
-        .select('article_id, is_like')
+        .select('article_id, is_like, user_id')
         .in('article_id', articleIds)
+        .gt('user_id', 0) // Only count real user reactions
       
       if (reactionsError) {
         console.error('Error fetching reactions:', reactionsError)
-        // Continue anyway, we'll just show 0 for likes/dislikes
+        // Continue anyway, we'll just show admin counts only
       }
       
-      // Calculate like/dislike counts for each article
-      const reactionCounts = {}
+      // Calculate real user like/dislike counts for each article
+      const userReactionCounts = {}
       
       if (reactions) {
         reactions.forEach(reaction => {
-          if (!reactionCounts[reaction.article_id]) {
-            reactionCounts[reaction.article_id] = { likes: 0, dislikes: 0 }
+          if (!userReactionCounts[reaction.article_id]) {
+            userReactionCounts[reaction.article_id] = { likes: 0, dislikes: 0 }
           }
           
           if (reaction.is_like) {
-            reactionCounts[reaction.article_id].likes++
+            userReactionCounts[reaction.article_id].likes++
           } else {
-            reactionCounts[reaction.article_id].dislikes++
+            userReactionCounts[reaction.article_id].dislikes++
           }
         })
       }
       
-      // Add reaction counts to each article
-      const articlesWithReactions = articles.map(article => ({
-        ...article,
-        like_count: reactionCounts[article.id]?.likes || 0,
-        dislike_count: reactionCounts[article.id]?.dislikes || 0
-      }))
+      // Combine user reactions with admin counts for the total
+      const articlesWithTotalCounts = articles.map(article => {
+        // Get user reaction counts (or 0 if none)
+        const userLikes = userReactionCounts[article.id]?.likes || 0;
+        const userDislikes = userReactionCounts[article.id]?.dislikes || 0;
+        
+        // Get admin-set counts
+        const adminLikes = article.admin_like_count || 0;
+        const adminDislikes = article.admin_dislike_count || 0;
+        
+        // Calculate total counts (user + admin)
+        const totalLikes = userLikes + adminLikes;
+        const totalDislikes = userDislikes + adminDislikes;
+        
+        console.log(`Article ${article.id}: ${userLikes} user likes + ${adminLikes} admin likes = ${totalLikes} total`);
+        
+        return {
+          ...article,
+          like_count: totalLikes,
+          dislike_count: totalDislikes
+        }
+      })
       
-      return new Response(JSON.stringify(articlesWithReactions), {
+      return new Response(JSON.stringify(articlesWithTotalCounts), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       })
@@ -137,396 +154,146 @@ Deno.serve(async (req) => {
       // PATCH /admin-articles/:id - Update article metrics
       console.log(`Handling PATCH /admin-articles/${articleId}`)
       const updates = await req.json()
-      console.log('Received updates:', updates)
+      console.log('Received updates:', JSON.stringify(updates))
 
+      // Log the request headers to check authentication 
+      console.log('Request headers:', Object.fromEntries(req.headers.entries()))
+      
       // Validate updates - only allow specific fields that exist
       const allowedUpdates: { [key: string]: number } = {}
-      if (typeof updates.view_count === 'number' && updates.view_count >= 0) { // Add non-negative check
+      if (typeof updates.view_count === 'number' && updates.view_count >= 0) {
         allowedUpdates.view_count = updates.view_count
       }
-
-      // Process the article update first if we have any allowed updates
-      let updatedArticle = null
       
-      if (Object.keys(allowedUpdates).length > 0) {
-        console.log('Applying article updates:', allowedUpdates)
-        const { data, error } = await supabaseAdminClient
-          .from('articles')
-          .update(allowedUpdates)
-          .eq('id', articleId)
-          // Only select columns that exist
-          .select('id, title, view_count') 
-          .single() // Expect only one row
-  
-        if (error) {
-          console.error(`Error updating article ${articleId}:`, error.message)
-          if (error.code === 'PGRST116') { // PostgREST code for no rows found
-            return new Response(JSON.stringify({ error: `Article with ID ${articleId} not found` }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              status: 404,
-            })
-          }
-          throw error // Rethrow other errors
-        }
-        
-        updatedArticle = data
-        console.log(`Article ${articleId} updated successfully.`)
-      } else if (
-        (typeof updates.like_count !== 'number' || updates.like_count < 0) && 
-        (typeof updates.dislike_count !== 'number' || updates.dislike_count < 0)
-      ) {
-        return new Response(JSON.stringify({ error: 'No valid fields to update' }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        })
+      // Add admin_like_count and admin_dislike_count to allowed updates
+      if (typeof updates.like_count === 'number' && updates.like_count >= 0) {
+        // We'll calculate the admin_like_count below after getting user likes
+        console.log(`Like count update requested: ${updates.like_count}`)
       }
       
-      // Handle reaction counts update if specified
-      if (typeof updates.like_count === 'number' && updates.like_count >= 0) {
-        console.log(`Setting like count for article ${articleId} to ${updates.like_count}`)
-        
-        // First, get the article if we don't have it yet
-        if (!updatedArticle) {
-          const { data: article, error } = await supabaseAdminClient
-            .from('articles')
-            .select('id, title')
-            .eq('id', articleId)
-            .single()
-            
-          if (error) {
-            console.error(`Error getting article ${articleId}:`, error.message)
-            return new Response(JSON.stringify({ error: `Article with ID ${articleId} not found` }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              status: 404,
-            })
-          }
+      if (typeof updates.dislike_count === 'number' && updates.dislike_count >= 0) {
+        // We'll calculate the admin_dislike_count below after getting user dislikes
+        console.log(`Dislike count update requested: ${updates.dislike_count}`)
+      }
+
+      // First get the article and current reaction counts
+      let updatedArticle = null
+      let userLikeCount = 0
+      let userDislikeCount = 0
+      
+      try {
+        // Get the article first
+        const { data: article, error: articleError } = await supabaseAdminClient
+          .from('articles')
+          .select('id, title, view_count, admin_like_count, admin_dislike_count')
+          .eq('id', articleId)
+          .single()
           
-          updatedArticle = article
+        if (articleError || !article) {
+          console.error(`Error getting article ${articleId}:`, articleError?.message || 'Not found')
+          return new Response(JSON.stringify({ error: `Article with ID ${articleId} not found` }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 404,
+          })
         }
         
-        // Get current like count
-        const { data: likes, error: likesError } = await supabaseAdminClient
+        updatedArticle = article
+        
+        // Get user-generated likes count
+        const { data: userLikes, error: likesError } = await supabaseAdminClient
           .from('reactions')
           .select('id')
           .eq('article_id', articleId)
           .eq('is_like', true)
+          .gt('user_id', 0) // Only real user reactions
           
         if (likesError) {
-          console.error(`Error getting like count for article ${articleId}:`, likesError.message)
+          console.error(`Error getting user like count:`, likesError.message)
           throw likesError
         }
         
-        const currentLikes = likes.length
-        const targetLikes = updates.like_count
+        userLikeCount = userLikes?.length || 0
         
-        if (targetLikes > currentLikes) {
-          // We need to add likes - create admin reactions
-          const likesToAdd = targetLikes - currentLikes
-          console.log(`Adding ${likesToAdd} admin likes`)
-          
-          // Check if is_admin_generated column exists before creating reactions
-          let shouldAddAdminGeneratedField = false
-          try {
-            const { data: columnCheck, error: columnError } = await supabaseAdminClient
-              .from('reactions')
-              .select('is_admin_generated')
-              .limit(1)
-              
-            if (!columnError) {
-              // Column exists
-              shouldAddAdminGeneratedField = true
-            } else {
-              console.log('is_admin_generated column does not exist, skipping this property')
-            }
-          } catch (e) {
-            console.log('Error checking for is_admin_generated column, skipping this property')
-          }
-          
-          // Create special admin user reactions
-          const newLikes = []
-          for (let i = 0; i < likesToAdd; i++) {
-            const like: any = {
-              article_id: articleId,
-              user_id: 0, // Special admin user ID
-              is_like: true
-            }
-            
-            if (shouldAddAdminGeneratedField) {
-              like.is_admin_generated = true
-            }
-            
-            newLikes.push(like)
-          }
-          
-          const { error: insertError } = await supabaseAdminClient
-            .from('reactions')
-            .insert(newLikes)
-            
-          if (insertError) {
-            console.error(`Error adding admin likes:`, insertError.message)
-            throw insertError
-          }
-        } else if (targetLikes < currentLikes) {
-          // Need to remove some likes - remove admin-generated ones first
-          const likesToRemove = currentLikes - targetLikes
-          console.log(`Removing ${likesToRemove} admin likes`)
-          
-          let adminLikesToRemove = []
-          
-          // Check if is_admin_generated column exists
-          try {
-            const { data: columnCheck, error: columnError } = await supabaseAdminClient
-              .from('reactions')
-              .select('is_admin_generated')
-              .limit(1)
-              
-            if (!columnError) {
-              // Column exists, try to select admin-generated likes first
-              const { data: adminLikes, error: adminLikesError } = await supabaseAdminClient
-                .from('reactions')
-                .select('id')
-                .eq('article_id', articleId)
-                .eq('is_like', true)
-                .eq('is_admin_generated', true)
-                .limit(likesToRemove)
-                
-              if (!adminLikesError && adminLikes.length > 0) {
-                adminLikesToRemove = adminLikes
-              }
-            }
-          } catch (e) {
-            console.log('Error checking for is_admin_generated column, skipping admin filtering')
-          }
-          
-          // If we didn't find enough admin-generated likes (or if the column doesn't exist),
-          // get regular likes to make up the difference
-          if (adminLikesToRemove.length < likesToRemove) {
-            const regularLikesToRemove = likesToRemove - adminLikesToRemove.length
-            
-            const { data: regularLikes, error: regularLikesError } = await supabaseAdminClient
-              .from('reactions')
-              .select('id')
-              .eq('article_id', articleId)
-              .eq('is_like', true)
-              .limit(regularLikesToRemove)
-              
-            if (regularLikesError) {
-              console.error(`Error getting regular likes:`, regularLikesError.message)
-              throw regularLikesError
-            }
-            
-            // Combine admin likes and regular likes
-            if (regularLikes.length > 0) {
-              adminLikesToRemove = [...adminLikesToRemove, ...regularLikes]
-            }
-          }
-          
-          // Remove the reactions
-          if (adminLikesToRemove.length > 0) {
-            const likeIdsToRemove = adminLikesToRemove.map(like => like.id)
-            const { error: deleteError } = await supabaseAdminClient
-              .from('reactions')
-              .delete()
-              .in('id', likeIdsToRemove)
-              
-            if (deleteError) {
-              console.error(`Error removing likes:`, deleteError.message)
-              throw deleteError
-            }
-          }
-        }
-      }
-      
-      // Handle dislike count update if specified
-      if (typeof updates.dislike_count === 'number' && updates.dislike_count >= 0) {
-        console.log(`Setting dislike count for article ${articleId} to ${updates.dislike_count}`)
-        
-        // First, get the article if we don't have it yet
-        if (!updatedArticle) {
-          const { data: article, error } = await supabaseAdminClient
-            .from('articles')
-            .select('id, title')
-            .eq('id', articleId)
-            .single()
-            
-          if (error) {
-            console.error(`Error getting article ${articleId}:`, error.message)
-            return new Response(JSON.stringify({ error: `Article with ID ${articleId} not found` }), {
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-              status: 404,
-            })
-          }
-          
-          updatedArticle = article
-        }
-        
-        // Get current dislike count
-        const { data: dislikes, error: dislikesError } = await supabaseAdminClient
+        // Get user-generated dislikes count
+        const { data: userDislikes, error: dislikesError } = await supabaseAdminClient
           .from('reactions')
           .select('id')
           .eq('article_id', articleId)
           .eq('is_like', false)
+          .gt('user_id', 0) // Only real user reactions
           
         if (dislikesError) {
-          console.error(`Error getting dislike count for article ${articleId}:`, dislikesError.message)
+          console.error(`Error getting user dislike count:`, dislikesError.message)
           throw dislikesError
         }
         
-        const currentDislikes = dislikes.length
-        const targetDislikes = updates.dislike_count
+        userDislikeCount = userDislikes?.length || 0
         
-        if (targetDislikes > currentDislikes) {
-          // We need to add dislikes - create admin reactions
-          const dislikesToAdd = targetDislikes - currentDislikes
-          console.log(`Adding ${dislikesToAdd} admin dislikes`)
-          
-          // Check if is_admin_generated column exists before creating reactions
-          let shouldAddAdminGeneratedFieldForDislikes = false
-          try {
-            const { data: columnCheck, error: columnError } = await supabaseAdminClient
-              .from('reactions')
-              .select('is_admin_generated')
-              .limit(1)
-              
-            if (!columnError) {
-              // Column exists
-              shouldAddAdminGeneratedFieldForDislikes = true
-            } else {
-              console.log('is_admin_generated column does not exist, skipping this property')
-            }
-          } catch (e) {
-            console.log('Error checking for is_admin_generated column, skipping this property')
+        // Now set the admin counts based on the target values
+        if (typeof updates.like_count === 'number' && updates.like_count >= 0) {
+          // If target is less than user count, set admin count to 0 (can't remove real reactions)
+          if (updates.like_count <= userLikeCount) {
+            allowedUpdates.admin_like_count = 0
+          } else {
+            // Set admin count to make up the difference
+            allowedUpdates.admin_like_count = updates.like_count - userLikeCount
           }
-          
-          // Create special admin user reactions
-          const newDislikes = []
-          for (let i = 0; i < dislikesToAdd; i++) {
-            const dislike: any = {
-              article_id: articleId,
-              user_id: 0, // Special admin user ID
-              is_like: false
-            }
-            
-            if (shouldAddAdminGeneratedFieldForDislikes) {
-              dislike.is_admin_generated = true
-            }
-            
-            newDislikes.push(dislike)
-          }
-          
-          const { error: insertDislikeError } = await supabaseAdminClient
-            .from('reactions')
-            .insert(newDislikes)
-            
-          if (insertDislikeError) {
-            console.error(`Error adding admin dislikes:`, insertDislikeError.message)
-            throw insertDislikeError
-          }
-        } else if (targetDislikes < currentDislikes) {
-          // Need to remove some dislikes - remove admin-generated ones first
-          const dislikesToRemove = currentDislikes - targetDislikes
-          console.log(`Removing ${dislikesToRemove} admin dislikes`)
-          
-          let adminDislikesToRemove = []
-          
-          // Check if is_admin_generated column exists
-          try {
-            const { data: columnCheck, error: columnError } = await supabaseAdminClient
-              .from('reactions')
-              .select('is_admin_generated')
-              .limit(1)
-              
-            if (!columnError) {
-              // Column exists, try to select admin-generated dislikes first
-              const { data: adminDislikes, error: adminDislikesError } = await supabaseAdminClient
-                .from('reactions')
-                .select('id')
-                .eq('article_id', articleId)
-                .eq('is_like', false)
-                .eq('is_admin_generated', true)
-                .limit(dislikesToRemove)
-                
-              if (!adminDislikesError && adminDislikes.length > 0) {
-                adminDislikesToRemove = adminDislikes
-              }
-            }
-          } catch (e) {
-            console.log('Error checking for is_admin_generated column, skipping admin filtering')
-          }
-          
-          // If we didn't find enough admin-generated dislikes (or if the column doesn't exist),
-          // get regular dislikes to make up the difference
-          if (adminDislikesToRemove.length < dislikesToRemove) {
-            const regularDislikesToRemove = dislikesToRemove - adminDislikesToRemove.length
-            
-            const { data: regularDislikes, error: regularDislikesError } = await supabaseAdminClient
-              .from('reactions')
-              .select('id')
-              .eq('article_id', articleId)
-              .eq('is_like', false)
-              .limit(regularDislikesToRemove)
-              
-            if (regularDislikesError) {
-              console.error(`Error getting regular dislikes:`, regularDislikesError.message)
-              throw regularDislikesError
-            }
-            
-            // Combine admin dislikes and regular dislikes
-            if (regularDislikes.length > 0) {
-              adminDislikesToRemove = [...adminDislikesToRemove, ...regularDislikes]
-            }
-          }
-          
-          // Remove the reactions
-          if (adminDislikesToRemove.length > 0) {
-            const dislikeIdsToRemove = adminDislikesToRemove.map(dislike => dislike.id)
-            const { error: deleteError } = await supabaseAdminClient
-              .from('reactions')
-              .delete()
-              .in('id', dislikeIdsToRemove)
-              
-            if (deleteError) {
-              console.error(`Error removing dislikes:`, deleteError.message)
-              throw deleteError
-            }
-          }
+          console.log(`Setting admin_like_count to ${allowedUpdates.admin_like_count} to reach target of ${updates.like_count}`)
         }
-      }
-      
-      // Get the updated reaction counts
-      const { data: updatedLikes, error: updatedLikesError } = await supabaseAdminClient
-        .from('reactions')
-        .select('id')
-        .eq('article_id', articleId)
-        .eq('is_like', true)
         
-      if (updatedLikesError) {
-        console.error(`Error getting updated like count:`, updatedLikesError.message)
-        throw updatedLikesError
-      }
-      
-      const { data: updatedDislikes, error: updatedDislikesError } = await supabaseAdminClient
-        .from('reactions')
-        .select('id')
-        .eq('article_id', articleId)
-        .eq('is_like', false)
+        if (typeof updates.dislike_count === 'number' && updates.dislike_count >= 0) {
+          // If target is less than user count, set admin count to 0 (can't remove real reactions)
+          if (updates.dislike_count <= userDislikeCount) {
+            allowedUpdates.admin_dislike_count = 0
+          } else {
+            // Set admin count to make up the difference
+            allowedUpdates.admin_dislike_count = updates.dislike_count - userDislikeCount
+          }
+          console.log(`Setting admin_dislike_count to ${allowedUpdates.admin_dislike_count} to reach target of ${updates.dislike_count}`)
+        }
         
-      if (updatedDislikesError) {
-        console.error(`Error getting updated dislike count:`, updatedDislikesError.message)
-        throw updatedDislikesError
+        // Apply the updates if we have any
+        if (Object.keys(allowedUpdates).length > 0) {
+          console.log('Applying article updates:', allowedUpdates)
+          const { data, error } = await supabaseAdminClient
+            .from('articles')
+            .update(allowedUpdates)
+            .eq('id', articleId)
+            .select('id, title, view_count, admin_like_count, admin_dislike_count')
+            .single()
+          
+          if (error) {
+            console.error(`Error updating article ${articleId}:`, error.message)
+            throw error
+          }
+          
+          updatedArticle = data
+          console.log(`Article ${articleId} updated successfully.`)
+        }
+        
+        // Calculate the total like and dislike counts
+        const totalLikeCount = userLikeCount + (updatedArticle.admin_like_count || 0)
+        const totalDislikeCount = userDislikeCount + (updatedArticle.admin_dislike_count || 0)
+        
+        // Prepare the final response
+        const response = {
+          ...updatedArticle,
+          like_count: totalLikeCount,
+          dislike_count: totalDislikeCount
+        }
+        
+        return new Response(JSON.stringify(response), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        })
+        
+      } catch (error) {
+        console.error(`Error updating article metrics:`, error)
+        return new Response(JSON.stringify({ error: error.message || 'Failed to update article metrics' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        })
       }
-      
-      // Prepare the final response with all updated metrics
-      const response = {
-        ...updatedArticle,
-        like_count: updatedLikes.length,
-        dislike_count: updatedDislikes.length
-      }
-      
-      return new Response(JSON.stringify(response), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
 
     } else {
       // Method/path not supported
