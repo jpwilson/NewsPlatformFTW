@@ -966,6 +966,10 @@ export async function registerRoutes(app: Express): Promise<void> {
   app.post("/api/articles/:id/view", async (req, res) => {
     try {
       const articleId = parseInt(req.params.id);
+      console.log(`Processing view for article ID: ${articleId}`);
+      console.log(`Request debug - Headers:`, req.headers);
+      console.log(`Request debug - IP:`, req.ip);
+      console.log(`Request debug - Auth:`, req.isAuthenticated ? req.isAuthenticated() : 'auth method not available');
       
       // Get user ID if authenticated or use null for anonymous users
       const userId = req.isAuthenticated() ? req.user.id : null;
@@ -974,49 +978,24 @@ export async function registerRoutes(app: Express): Promise<void> {
       const clientIp = req.ip || req.headers['x-forwarded-for'] || 'unknown';
       const clientIdentifier = userId ? `user-${userId}` : `ip-${clientIp}`;
       
-      console.log("Processing view:", { articleId, userId, clientIdentifier });
+      console.log("Processing view with client identifier:", clientIdentifier);
       
-      // First, check if view_count column exists in articles table
-      const { data: columnCheck, error: columnError } = await supabase
-        .from('articles')
-        .select('view_count')
-        .limit(1);
+      // First get the article to check its current view count
+      const { data: article, error: articleError } = await supabase
+        .from("articles")
+        .select("view_count, title")
+        .eq("id", articleId)
+        .single();
         
-      // If column doesn't exist, create it
-      if (columnError) {
-        console.error("Error checking view_count column:", columnError);
-        // We'll handle this by assuming it might not exist yet
+      if (articleError || !article) {
+        console.error("Error getting article:", articleError);
+        return res.status(404).json({ error: "Article not found" });
       }
       
-      // Then check if article_views table exists
-      const { data: tableCheck, error: tableError } = await supabase
-        .from('article_views')
-        .select('id')
-        .limit(1);
-        
-      // If we get an error, the table might not exist
-      if (tableError) {
-        console.log("article_views table may not exist:", tableError);
-        console.log("Falling back to simple view count increment");
-        
-        // Just increment the view count directly
-        const { data: article } = await supabase
-          .from("articles")
-          .select("view_count")
-          .eq("id", articleId)
-          .single();
-          
-        const currentViews = article?.view_count || 0;
-        
-        await supabase
-          .from("articles")
-          .update({ view_count: currentViews + 1 })
-          .eq("id", articleId);
-          
-        return res.json({ counted: true });
-      }
+      const currentCount = article.view_count || 0;
+      console.log(`Found article "${article.title}" with current view_count: ${currentCount}`);
       
-      // Check if this client has viewed this article before (ever)
+      // Check if this client has viewed this article before (anti-gaming mechanism)
       const { data: existingViews, error: viewsError } = await supabase
         .from("article_views")
         .select("id")
@@ -1030,14 +1009,18 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // If user has already viewed this article before, don't count another view
       if (existingViews && existingViews.length > 0) {
-        return res.json({ 
+        console.log('View already recorded for this client, not incrementing count');
+        return res.json({
           counted: false, 
           message: "View already counted for this article",
-          alreadyViewed: true
+          alreadyViewed: true,
+          view_count: currentCount 
         });
       }
       
-      // Record this view
+      console.log('New view detected, recording view');
+      
+      // Record this view in article_views table
       const { error: insertError } = await supabase
         .from("article_views")
         .insert({
@@ -1051,23 +1034,14 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(500).json({ error: "Failed to record view" });
       }
       
-      // Increment the view count in the articles table
-      const { data: article, error: getError } = await supabase
-        .from("articles")
-        .select("view_count")
-        .eq("id", articleId)
-        .single();
-        
-      if (getError) {
-        console.error("Error getting current view count:", getError);
-        return res.status(500).json({ error: "Failed to get current view count" });
-      }
-      
-      const currentViews = article?.view_count || 0;
+      // Increment the current view count by 1, ALWAYS keeping the admin-set counts
+      // This ensures we're incrementing from the current value, which may be admin-set
+      const updatedViewCount = currentCount + 1;
+      console.log(`Incrementing view count from ${currentCount} to ${updatedViewCount}`);
       
       const { error: updateError } = await supabase
         .from("articles")
-        .update({ view_count: currentViews + 1 })
+        .update({ view_count: updatedViewCount })
         .eq("id", articleId);
         
       if (updateError) {
@@ -1075,9 +1049,11 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(500).json({ error: "Failed to update view count" });
       }
       
-      res.json({ 
-        counted: true,
-        firstView: true
+      // Return the updated view count
+      return res.json({ 
+        counted: true, 
+        message: "View recorded",
+        view_count: updatedViewCount
       });
     } catch (error) {
       console.error("Error handling view count:", error);

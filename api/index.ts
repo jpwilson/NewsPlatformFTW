@@ -3019,10 +3019,12 @@ app.get("/api/articles/:id/comments", async (req, res) => {
 // Article view endpoint
 app.post("/api/articles/:slug/view", async (req, res) => {
   try {
+    console.log(`Processing view for article slug: ${req.params.slug}`);
+    
     // Get article ID from slug
     const { data: article, error: articleError } = await supabase
       .from('articles')
-      .select('id')
+      .select('id, view_count, title')
       .eq('slug', req.params.slug)
       .single();
 
@@ -3032,6 +3034,9 @@ app.post("/api/articles/:slug/view", async (req, res) => {
     }
 
     const articleId = article.id;
+    const currentCount = article.view_count || 0;
+    console.log(`Found article ID: ${articleId}, Title: "${article.title}", Current view_count: ${currentCount}`);
+    
     let userId = null;
     let clientIdentifier = null;
 
@@ -3051,6 +3056,7 @@ app.post("/api/articles/:slug/view", async (req, res) => {
         if (dbUser) {
           userId = dbUser.id;
           clientIdentifier = `user-${userId}`;
+          console.log(`Authenticated user ID: ${userId}`);
         }
       }
     }
@@ -3059,11 +3065,10 @@ app.post("/api/articles/:slug/view", async (req, res) => {
     if (!clientIdentifier) {
       const ip = req.ip || req.headers['x-forwarded-for'] || '127.0.0.1';
       clientIdentifier = `ip-${ip}`;
+      console.log(`Anonymous user with IP identifier: ${clientIdentifier}`);
     }
 
-    console.log(`Recording view for article ${articleId} with client identifier ${clientIdentifier}`);
-
-    // Check if this view already exists
+    // Check if this view already exists (anti-gaming mechanism)
     const { data: existingView } = await supabase
       .from('article_views')
       .select('*')
@@ -3072,11 +3077,12 @@ app.post("/api/articles/:slug/view", async (req, res) => {
       .single();
 
     let shouldInvalidateFeeds = false;
+    let updatedViewCount = currentCount;
 
     if (!existingView) {
       console.log('New view detected, recording view');
 
-      // Record the view
+      // Record the view in article_views table
       const { error: viewError } = await supabase
         .from('article_views')
         .insert({
@@ -3091,26 +3097,15 @@ app.post("/api/articles/:slug/view", async (req, res) => {
         throw viewError;
       }
 
-      // Get current view count from the article
-      const { data: currentArticle, error: getError } = await supabase
-        .from('articles')
-        .select('view_count')
-        .eq('id', articleId)
-        .single();
-        
-      if (getError) {
-        console.error('Error getting current view count:', getError);
-        throw getError;
-      }
-      
-      // Increment the current view count, preserving admin-set counts
-      const currentViews = currentArticle?.view_count || 0;
-      const newViewCount = currentViews + 1;
+      // Increment the current view count by 1, ALWAYS preserving the current count
+      // This ensures admin-set counts are respected
+      updatedViewCount = currentCount + 1;
+      console.log(`Incrementing view count from ${currentCount} to ${updatedViewCount}`);
       
       // Update the article's view count
       const { error: updateError } = await supabase
         .from('articles')
-        .update({ view_count: newViewCount })
+        .update({ view_count: updatedViewCount })
         .eq('id', articleId);
 
       if (updateError) {
@@ -3120,27 +3115,16 @@ app.post("/api/articles/:slug/view", async (req, res) => {
 
       shouldInvalidateFeeds = true;
     } else {
-      console.log('View already recorded');
+      console.log('View already recorded for this client, not incrementing count');
     }
 
-    // Get the current view count
-    const { data: article_with_count, error: countError } = await supabase
-      .from('articles')
-      .select('view_count')
-      .eq('id', articleId)
-      .single();
-
-    if (countError) {
-      console.error('Error getting view count:', countError);
-      throw countError;
-    }
-
+    // Return the current view count
     res.json({
       success: true,
       counted: !existingView,
       message: existingView ? 'View already recorded' : 'View recorded',
       shouldInvalidateFeeds,
-      view_count: article_with_count.view_count
+      view_count: updatedViewCount
     });
   } catch (error) {
     console.error('Error processing view:', error);
