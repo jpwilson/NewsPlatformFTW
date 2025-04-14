@@ -386,7 +386,10 @@ export async function registerRoutes(app: Express): Promise<void> {
             userReaction,
             _count: { 
               comments: commentCountError ? 0 : (commentCountData?.length || 0)
-            }
+            },
+            // Add additional comment count fields for backward compatibility
+            comment_count: commentCountError ? 0 : (commentCountData?.length || 0),
+            commentCount: commentCountError ? 0 : (commentCountData?.length || 0)
           };
         }));
         

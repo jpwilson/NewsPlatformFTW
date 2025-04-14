@@ -34,6 +34,8 @@ type ArticleWithSnakeCase = Article & {
   dislikes?: number;
   viewCount?: number;
   view_count?: number;
+  commentCount?: number;
+  comment_count?: number;
   userReaction?: boolean | null;
   slug?: string | null;
   categories?: Array<{ id: number; name: string; isPrimary?: boolean }>;
@@ -91,7 +93,11 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
   const dislikes = article.dislikes || 0;
   // Check for both camelCase and snake_case view count properties
   const views = article.viewCount || article.view_count || 0;
-  const commentCount = article._count?.comments || 0;
+  const commentCount =
+    article._count?.comments ||
+    article.commentCount ||
+    article.comment_count ||
+    0;
 
   // Check if user has liked or disliked
   const userLiked = article.userReaction === true;

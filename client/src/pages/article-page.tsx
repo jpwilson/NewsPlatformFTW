@@ -70,6 +70,8 @@ type ArticleWithSnakeCase = Article & {
   published?: boolean;
   view_count?: number;
   viewCount?: number;
+  commentCount?: number;
+  comment_count?: number;
   likes?: number;
   dislikes?: number;
   userReaction?: boolean | null;
@@ -593,12 +595,30 @@ export default function ArticlePage() {
   // Mutation for deleting the article
   const deleteArticleMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("DELETE", `/api/articles/${id}`);
-      // Don't try to parse JSON for 204 No Content responses
-      if (response.status === 204) {
-        return null; // No content to parse
+      console.log(`Attempting to delete article with ID: ${id}`);
+      try {
+        const response = await apiRequest("DELETE", `/api/articles/${id}`);
+        // Don't try to parse JSON for 204 No Content responses
+        if (response.status === 204) {
+          return null; // No content to parse
+        }
+
+        // If there's an error response with JSON body
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("Error deleting article:", errorData);
+          throw new Error(
+            errorData.error ||
+              errorData.message ||
+              "Failed to delete the article"
+          );
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error("Error in article deletion:", error);
+        throw error;
       }
-      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
@@ -608,10 +628,13 @@ export default function ArticlePage() {
         description: "The article has been deleted.",
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error("Deletion error details:", error);
+      const errorMessage = error.message || "Failed to delete the article.";
+
       toast({
         title: "Error",
-        description: "Failed to delete the article.",
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -935,6 +958,11 @@ export default function ArticlePage() {
     );
   };
 
+  // Add a state for real-time comment count
+  const [realTimeCommentCount, setRealTimeCommentCount] = useState<
+    number | null
+  >(null);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
@@ -964,7 +992,15 @@ export default function ArticlePage() {
     viewCountOverride !== null
       ? viewCountOverride
       : article.viewCount || article.view_count || 0;
-  const commentCount = article._count?.comments || 0;
+
+  // Use real-time comment count if available, otherwise fall back to article data
+  const commentCount =
+    realTimeCommentCount !== null
+      ? realTimeCommentCount
+      : article._count?.comments ||
+        article.commentCount ||
+        article.comment_count ||
+        0;
 
   // Check if user has liked or disliked
   const userLiked = article.userReaction === true;
@@ -1676,7 +1712,12 @@ export default function ArticlePage() {
             )}
           </div>
 
-          {!isEditing && <CommentSection articleId={article.id} />}
+          {!isEditing && (
+            <CommentSection
+              articleId={article.id}
+              onCommentsLoaded={setRealTimeCommentCount}
+            />
+          )}
         </article>
       </div>
 

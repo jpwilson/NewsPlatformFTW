@@ -843,6 +843,27 @@ app.get("/api/articles", async (req, res) => {
             });
           }
           
+          // Get comment counts for all articles in one query
+          const { data: commentCounts, error: commentCountsError } = await supabase
+            .from("comments")
+            .select("article_id, id")
+            .in("article_id", articleIds);
+            
+          if (commentCountsError) {
+            console.error("Error fetching comment counts for articles:", commentCountsError);
+          }
+          
+          // Group comments by article ID
+          const commentsByArticle = {};
+          if (commentCounts && commentCounts.length > 0) {
+            commentCounts.forEach(comment => {
+              if (!commentsByArticle[comment.article_id]) {
+                commentsByArticle[comment.article_id] = [];
+              }
+              commentsByArticle[comment.article_id].push(comment);
+            });
+          }
+          
           // Get user ID if authenticated
           let userId = null;
           const authHeader = req.headers.authorization;
@@ -907,6 +928,15 @@ app.get("/api/articles", async (req, res) => {
                 caption: img.caption || ""
               }));
             }
+            
+            // Add comment counts from our grouped data
+            const articleComments = commentsByArticle[article.id] || [];
+            const commentCount = articleComments.length;
+            
+            // Ensure comment count is available in multiple formats for backward compatibility
+            article._count = { comments: commentCount };
+            article.commentCount = commentCount;
+            article.comment_count = commentCount;
           });
         }
       }
@@ -2628,6 +2658,27 @@ app.get("/api/channels/:id/articles", async (req, res) => {
         });
       }
       
+      // Get comment counts for all articles in one query
+      const { data: commentCounts, error: commentCountsError } = await supabase
+        .from("comments")
+        .select("article_id, id")
+        .in("article_id", articleIds);
+        
+      if (commentCountsError) {
+        console.error("Error fetching comment counts for articles:", commentCountsError);
+      }
+      
+      // Group comments by article ID
+      const commentsByArticle = {};
+      if (commentCounts && commentCounts.length > 0) {
+        commentCounts.forEach(comment => {
+          if (!commentsByArticle[comment.article_id]) {
+            commentsByArticle[comment.article_id] = [];
+          }
+          commentsByArticle[comment.article_id].push(comment);
+        });
+      }
+      
       // Get user ID if authenticated
       let userId = null;
       const authHeader = req.headers.authorization;
@@ -2686,12 +2737,27 @@ app.get("/api/channels/:id/articles", async (req, res) => {
           caption: img.caption || ""
         })) : [];
         
+        // Add comment count in multiple formats for compatibility
+        // Note: We can't fetch this in real-time here as it would require
+        // an async operation inside a map, but we'll set placeholder values
+        // that will be used by the UI until a proper count is available
+        if (!article._count) {
+          article._count = { comments: 0 };
+        }
+        
         return {
           ...article,
           likes: article.like_count,
           dislikes: article.dislike_count,
           userReaction,
-          images: transformedImages
+          images: transformedImages,
+          // Ensure comment count is available in multiple formats
+          commentCount: article.commentCount || article.comment_count || article._count?.comments || 0,
+          comment_count: article.commentCount || article.comment_count || article._count?.comments || 0,
+          _count: {
+            ...article._count,
+            comments: article._count?.comments || 0
+          }
         };
       });
       
@@ -2977,20 +3043,36 @@ app.post("/api/articles/:id/comments", async (req, res) => {
     }
     
     // Create the comment
-    const { content } = req.body;
+    const { content, parent_id } = req.body;
+    console.log("Creating comment with:", { content, parent_id, articleId, userId });
     
     if (!content || typeof content !== 'string' || content.trim() === '') {
       return res.status(400).json({ error: 'Comment content is required' });
     }
     
+    const commentData: {
+      article_id: number;
+      user_id: number;
+      content: string;
+      created_at: string;
+      parent_id?: number;
+    } = {
+      article_id: articleId,
+      user_id: userId,
+      content: content.trim(),
+      created_at: new Date().toISOString()
+    };
+    
+    // Add parent_id if it's provided
+    if (parent_id) {
+      commentData.parent_id = parseInt(parent_id, 10);
+    }
+    
+    console.log("Final comment data to insert:", commentData);
+    
     const { data: comment, error: commentError } = await supabase
       .from('comments')
-      .insert([{
-        article_id: articleId,
-        user_id: userId,
-        content: content.trim(),
-        created_at: new Date().toISOString()
-      }])
+      .insert([commentData])
       .select('*, user:user_id(id, username)')
       .single();
       
@@ -3370,49 +3452,79 @@ app.delete("/api/articles/:id", async (req, res) => {
       return res.status(403).json({ message: "You don't have permission to delete this article" });
     }
 
-    // Get all images associated with this article
-    const { data: articleImages, error: imagesError } = await supabase
-      .from('article_images')
-      .select('*')
-      .eq('article_id', article.id);
-
-    if (imagesError) {
-      console.error("Error fetching article images:", imagesError);
-      return res.status(500).json({ message: "Failed to fetch article images" });
-    }
-
-    // Delete images from storage if they exist
-    if (articleImages && articleImages.length > 0) {
-      const storage = supabase.storage.from('article-images');
-      
-      for (const image of articleImages) {
-        // Extract filename from the URL
-        const filename = image.image_url.split('/').pop();
-        if (filename) {
-          const { error: deleteStorageError } = await storage.remove([filename]);
-          if (deleteStorageError) {
-            console.error("Error deleting image from storage:", deleteStorageError);
-          }
-        }
+    console.log(`Deleting article ${article.id} with a direct SQL approach`);
+    
+    try {
+      // Step 1: Delete all comments for this article
+      const { error: commentsError } = await supabase
+        .from('comments')
+        .delete()
+        .eq('article_id', article.id);
+        
+      if (commentsError) {
+        console.error("Error deleting comments:", commentsError);
       }
+      
+      // Step 2: Delete all reactions for this article
+      const { error: reactionsError } = await supabase
+        .from('reactions')
+        .delete()
+        .eq('article_id', article.id);
+        
+      if (reactionsError) {
+        console.error("Error deleting reactions:", reactionsError);
+      }
+      
+      // Step 3: Delete all images for this article
+      const { error: imagesError } = await supabase
+        .from('article_images')
+        .delete()
+        .eq('article_id', article.id);
+        
+      if (imagesError) {
+        console.error("Error deleting images:", imagesError);
+      }
+      
+      // Step 4: Delete all category associations
+      const { error: categoriesError } = await supabase
+        .from('article_categories')
+        .delete()
+        .eq('article_id', article.id);
+        
+      if (categoriesError) {
+        console.error("Error deleting article categories:", categoriesError);
+      }
+
+      // Step 5: Finally, delete the article
+      const { error: articleError } = await supabase
+        .from('articles')
+        .delete()
+        .eq('id', article.id);
+        
+      if (articleError) {
+        console.error("Error deleting article:", articleError);
+        return res.status(500).json({ 
+          message: "Failed to delete article", 
+          error: articleError.message,
+          details: articleError
+        });
+      }
+      
+      console.log(`Successfully deleted article ${article.id}`);
+      return res.status(204).send();
+    } catch (err) {
+      console.error("Error during article deletion sequence:", err);
+      return res.status(500).json({ 
+        message: "Failed to delete article", 
+        error: err instanceof Error ? err.message : String(err)
+      });
     }
-    
-    // Delete the article (this will cascade delete article_images due to foreign key constraint)
-    const { error: deleteError } = await supabase
-      .from('articles')
-      .delete()
-      .eq('id', article.id);
-    
-    if (deleteError) {
-      console.error("Error deleting article:", deleteError);
-      return res.status(500).json({ message: "Failed to delete article" });
-    }
-    
-    // Return 204 No Content on successful deletion
-    return res.status(204).send();
   } catch (error) {
     console.error("Error in delete article endpoint:", error);
-    return res.status(500).json({ message: "Failed to delete article" });
+    return res.status(500).json({ 
+      message: "Failed to delete article",
+      error: error instanceof Error ? error.message : String(error)
+    });
   }
 });
 
@@ -4226,6 +4338,37 @@ app.get("/api/articles/:idOrSlug", async (req, res) => {
       console.error("Error fetching dislikes:", dislikesError);
     }
     
+    // Get comment count - this needs to actually count the comments
+    const { data: comments, error: commentsError } = await supabase
+      .from('comments')
+      .select('id')
+      .eq('article_id', article.id);
+      
+    if (commentsError) {
+      console.error("Error fetching comment count:", commentsError);
+    }
+    
+    console.log(`DEBUG: Raw comments data:`, comments);
+    
+    // Store comment count in article._count - use actual comment array length
+    const commentCount = comments?.length || 0;
+    console.log(`DEBUG: Comment count calculated:`, commentCount);
+    
+    article._count = {
+      ...article._count,
+      comments: commentCount
+    };
+    
+    // Also expose comment count in multiple formats for backward compatibility
+    article.comment_count = commentCount;
+    article.commentCount = commentCount;
+    
+    console.log(`DEBUG: Article comment counts set:`, {
+      _count: article._count,
+      comment_count: article.comment_count,
+      commentCount: article.commentCount
+    });
+    
     // Get user's reaction if authenticated
     let userReaction = null;
     
@@ -4269,6 +4412,7 @@ app.get("/api/articles/:idOrSlug", async (req, res) => {
     
     console.log(`Article ${article.id} reactions: ${userLikes} user likes + ${adminLikes} admin likes = ${article.like_count} total likes`);
     console.log(`Article ${article.id} reactions: ${userDislikes} user dislikes + ${adminDislikes} admin dislikes = ${article.dislike_count} total dislikes`);
+    console.log(`Article ${article.id} has ${commentCount} comments`);
     
     // Keep these for backwards compatibility
     article.likes = article.like_count;
