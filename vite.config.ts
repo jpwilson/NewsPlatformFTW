@@ -80,36 +80,49 @@ export default defineConfig(async ({ mode }) => {
         '/api/admin-articles': {
           target: `${process.env.VITE_SUPABASE_URL}/functions/v1`,
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ''),
-          configure: (proxy, _options) => {
-            proxy.on('proxyReq', (proxyReq, req, _res) => {
+          rewrite: (path: string) => path.replace(/^\/api/, ''),
+          configure: (proxy: any, _options: any) => {
+            proxy.on('proxyReq', (proxyReq: any, req: any, _res: any) => {
               const authHeader = req.headers['authorization'];
               if (authHeader) proxyReq.setHeader('Authorization', authHeader);
               if (process.env.VITE_SUPABASE_ANON_KEY) proxyReq.setHeader('apikey', process.env.VITE_SUPABASE_ANON_KEY);
             });
-            proxy.on('error', (err, _req, _res) => console.error('[Vite Proxy Error - /api/admin-articles]:', err));
+            proxy.on('error', (err: any, _req: any, _res: any) => console.error('[Vite Proxy Error - /api/admin-articles]:', err));
+          }
+        },
+        '/api/admin-channels': {
+          target: `${process.env.VITE_SUPABASE_URL}/functions/v1`,
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/api/, ''),
+          configure: (proxy: any, _options: any) => {
+            proxy.on('proxyReq', (proxyReq: any, req: any, _res: any) => {
+              const authHeader = req.headers['authorization'];
+              if (authHeader) proxyReq.setHeader('Authorization', authHeader);
+              if (process.env.VITE_SUPABASE_ANON_KEY) proxyReq.setHeader('apikey', process.env.VITE_SUPABASE_ANON_KEY);
+            });
+            proxy.on('error', (err: any, _req: any, _res: any) => console.error('[Vite Proxy Error - /api/admin-channels]:', err));
           }
         },
         '/api/is-admin': {
           target: `${process.env.VITE_SUPABASE_URL}/functions/v1`,
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ''),
-          configure: (proxy, _options) => {
-            proxy.on('proxyReq', (proxyReq, req, _res) => {
+          rewrite: (path: string) => path.replace(/^\/api/, ''),
+          configure: (proxy: any, _options: any) => {
+            proxy.on('proxyReq', (proxyReq: any, req: any, _res: any) => {
               const authHeader = req.headers['authorization'];
               if (authHeader) proxyReq.setHeader('Authorization', authHeader);
               if (process.env.VITE_SUPABASE_ANON_KEY) proxyReq.setHeader('apikey', process.env.VITE_SUPABASE_ANON_KEY);
             });
-             proxy.on('error', (err, _req, _res) => console.error('[Vite Proxy Error - /api/is-admin]:', err));
+             proxy.on('error', (err: any, _req: any, _res: any) => console.error('[Vite Proxy Error - /api/is-admin]:', err));
           }
         },
         '/api': {
           target: 'http://localhost:3000',
           changeOrigin: true,
-          configure: (proxy, _options) => {
-              proxy.on('proxyReq', (proxyReq, req, _res) => console.log(`[Vite Proxy -> localhost:3000] Forwarding: ${req.method} ${req.url}`));
-              proxy.on('proxyRes', (proxyRes, req, _res) => console.log(`[Vite Proxy -> localhost:3000] Response: ${proxyRes.statusCode} for ${req.url}`));
-              proxy.on('error', (err, _req, _res) => console.error('[Vite Proxy Error - /api]:', err));
+          configure: (proxy: any, _options: any) => {
+              proxy.on('proxyReq', (proxyReq: any, req: any, _res: any) => console.log(`[Vite Proxy -> localhost:3000] Forwarding: ${req.method} ${req.url}`));
+              proxy.on('proxyRes', (proxyRes: any, req: any, _res: any) => console.log(`[Vite Proxy -> localhost:3000] Response: ${proxyRes.statusCode} for ${req.url}`));
+              proxy.on('error', (err: any, _req: any, _res: any) => console.error('[Vite Proxy Error - /api]:', err));
           }
         }
       },

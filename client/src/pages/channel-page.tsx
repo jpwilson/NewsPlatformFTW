@@ -22,6 +22,7 @@ import {
   Eye,
   MessageSquare,
   ThumbsUp,
+  ChevronDown,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
@@ -50,6 +51,12 @@ import {
 } from "@/components/ui/tooltip";
 import { createSlugUrl } from "@/lib/slug-utils";
 import { cn } from "@/lib/utils";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type SortField =
   | "title"
@@ -65,6 +72,8 @@ type ExtendedChannel = Channel & {
   created_at?: string;
   user_id?: number;
   subscriberCount?: number;
+  realSubscriberCount?: number;
+  isSubscribed?: boolean;
 };
 
 export default function ChannelPage() {
@@ -159,8 +168,24 @@ export default function ChannelPage() {
   });
 
   const isOwner = user?.id === (channel?.user_id || channel?.userId);
+  // Use the server-provided isSubscribed flag from channel data when available
+  // Fall back to client-side calculation if not present (backwards compatibility)
   const isSubscribed =
-    subscriptions?.some((sub: Channel) => sub.id === Number(id)) || false;
+    channel?.isSubscribed !== undefined
+      ? channel.isSubscribed
+      : subscriptions?.some((sub: Channel) => sub.id === Number(id)) || false;
+
+  // Debug subscription state
+  useEffect(() => {
+    if (channel) {
+      console.log("Subscription state:", {
+        isSubscribed,
+        channelIsSubscribed: channel.isSubscribed,
+        clientDerived:
+          subscriptions?.some((sub: Channel) => sub.id === Number(id)) || false,
+      });
+    }
+  }, [channel, subscriptions, id, isSubscribed]);
 
   // Initialize edit form fields when channel data is loaded
   useEffect(() => {
@@ -666,9 +691,38 @@ export default function ChannelPage() {
                         onClick={() => subscribeMutation.mutate()}
                         disabled={subscribeMutation.isPending}
                       >
+                        {subscribeMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : null}
                         Subscribe
                       </Button>
-                    ) : null)}
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className="flex items-center gap-1 bg-primary-foreground border-primary-foreground"
+                          >
+                            <span className="text-primary font-medium">
+                              Subscribed
+                            </span>
+                            <ChevronDown className="h-4 w-4 opacity-50" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive cursor-pointer"
+                            onClick={() => unsubscribeMutation.mutate()}
+                            disabled={unsubscribeMutation.isPending}
+                          >
+                            {unsubscribeMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : null}
+                            Unsubscribe
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ))}
                 </div>
               </div>
 
@@ -759,12 +813,26 @@ export default function ChannelPage() {
                     </div>
                     {isSubscribed && !isOwner && (
                       <div className="text-sm mt-2">
-                        <span
-                          className="text-primary hover:underline cursor-pointer"
-                          onClick={() => unsubscribeMutation.mutate()}
-                        >
-                          Unsubscribe from channel
-                        </span>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <span className="text-primary hover:underline cursor-pointer flex items-center gap-1">
+                              Subscribed
+                              <ChevronDown className="h-3 w-3 opacity-70" />
+                            </span>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive cursor-pointer"
+                              onClick={() => unsubscribeMutation.mutate()}
+                              disabled={unsubscribeMutation.isPending}
+                            >
+                              {unsubscribeMutation.isPending ? (
+                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                              ) : null}
+                              Unsubscribe from channel
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     )}
                   </div>

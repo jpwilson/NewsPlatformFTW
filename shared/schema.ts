@@ -59,7 +59,8 @@ export const channels = pgTable('channels', {
   profileImage: text('profile_image'),
   slug: text('slug').unique(),
   locationId: integer('location_id').references(() => locations.id),
-  createdAt: timestamp('created_at').defaultNow()
+  createdAt: timestamp('created_at').defaultNow(),
+  adminSubscriberCount: integer('admin_subscriber_count').default(0),
 });
 
 export const articles = pgTable('articles', {

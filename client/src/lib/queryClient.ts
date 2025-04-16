@@ -20,7 +20,7 @@ export async function throwIfResNotOk(res: Response) {
 }
 
 // List of paths that should target Supabase Edge Functions directly in production
-const supabaseFunctionPaths = ['/api/is-admin', '/api/admin-articles']; // Add more admin function paths here
+const supabaseFunctionPaths = ['/api/is-admin', '/api/admin-articles', '/api/admin-channels']; // Add more admin function paths here
 
 async function getAccessToken(): Promise<string | null> {
   try {

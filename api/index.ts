@@ -574,10 +574,10 @@ app.post('/api/auth/supabase-callback', async (req, res) => {
 app.get("/api/channels", async (req, res) => {
   try {
     console.log("Fetching channels from Supabase");
-    // Fetch all channels from Supabase
+    // Fetch all channels from Supabase, including admin_subscriber_count
     const { data: channels, error } = await supabase
       .from("channels")
-      .select("*");
+      .select("*, admin_subscriber_count");
     
     if (error) {
       console.error("Error fetching channels:", error);
@@ -599,21 +599,26 @@ app.get("/api/channels", async (req, res) => {
           console.error(`Error fetching subscriber count for channel ${channel.id}:`, countError);
           return {
             ...channel,
-            subscriberCount: 0
+            subscriberCount: channel.admin_subscriber_count || 0
           };
         }
         
-        console.log(`Channel ${channel.id} (${channel.name}) has ${count || 0} subscribers`);
+        // Add admin_subscriber_count to the real count
+        const realCount = count || 0;
+        const adminCount = channel.admin_subscriber_count || 0;
+        const totalCount = realCount + adminCount;
+        
+        console.log(`Channel ${channel.id} (${channel.name}) has ${realCount} real subscribers + ${adminCount} admin subscribers = ${totalCount} total`);
         
         return {
           ...channel,
-          subscriberCount: count || 0
+          subscriberCount: totalCount
         };
       } catch (countError) {
         console.error(`Unexpected error fetching subscriber count for channel ${channel.id}:`, countError);
         return {
           ...channel,
-          subscriberCount: 0
+          subscriberCount: channel.admin_subscriber_count || 0
         };
       }
     }));
@@ -2339,7 +2344,7 @@ app.get("/api/channels/:id", async (req, res) => {
       console.log("Looking up channel by numeric ID:", id);
       const result = await supabase
         .from("channels")
-        .select("*")
+        .select("*, admin_subscriber_count")
         .eq("id", parseInt(id))
         .single();
         
@@ -2350,7 +2355,7 @@ app.get("/api/channels/:id", async (req, res) => {
       console.log("Looking up channel by slug:", id);
       const result = await supabase
         .from("channels")
-        .select("*")
+        .select("*, admin_subscriber_count")
         .eq("slug", id)
         .single();
         
@@ -2366,7 +2371,7 @@ app.get("/api/channels/:id", async (req, res) => {
           
           const idResult = await supabase
             .from("channels")
-            .select("*")
+            .select("*, admin_subscriber_count")
             .eq("id", parseInt(extractedId))
             .single();
             
@@ -2388,7 +2393,7 @@ app.get("/api/channels/:id", async (req, res) => {
     
     console.log("Retrieved channel:", channel.id, channel.name);
     
-    // Get subscriber count
+    // Get real subscriber count
     try {
       const { count: subscriberCount, error: countError } = await supabase
         .from("subscriptions")
@@ -2399,13 +2404,20 @@ app.get("/api/channels/:id", async (req, res) => {
         console.error(`Error fetching subscriber count for channel ${channel.id}:`, countError);
       }
       
-      // Add subscriber count to the channel data
-      channel.subscriberCount = subscriberCount || 0;
+      // Add real and admin subscriber counts
+      const realCount = subscriberCount || 0;
+      const adminCount = channel.admin_subscriber_count || 0;
+      const totalCount = realCount + adminCount;
       
-      console.log(`Channel ${channel.id} has ${channel.subscriberCount} subscribers`);
+      // Add subscriber count to the channel data
+      channel.subscriberCount = totalCount;
+      channel.realSubscriberCount = realCount;
+      
+      console.log(`Channel ${channel.id} has ${realCount} real + ${adminCount} admin = ${totalCount} total subscribers`);
     } catch (countError) {
       console.error(`Error calculating subscriber count for channel ${channel.id}:`, countError);
-      channel.subscriberCount = 0;
+      channel.subscriberCount = channel.admin_subscriber_count || 0;
+      channel.realSubscriberCount = 0;
     }
     
     // Check if user is subscribed - use authenticateUser helper
@@ -2470,7 +2482,44 @@ app.post("/api/channels/:id/subscribe", async (req, res) => {
     }
     
     const userId = dbUser.id;
-    const channelId = parseInt(req.params.id);
+    
+    // Handle both numeric IDs and slugs
+    const channelIdParam = req.params.id;
+    let channelId: number;
+    
+    if (/^\d+$/.test(channelIdParam)) {
+      // It's a numeric ID
+      channelId = parseInt(channelIdParam);
+    } else {
+      // It's a slug, we need to fetch the channel first to get its ID
+      console.log(`Looking up channel by slug: ${channelIdParam}`);
+      const { data: channel, error: channelError } = await supabase
+        .from("channels")
+        .select("id")
+        .eq("slug", channelIdParam)
+        .single();
+        
+      if (channelError || !channel) {
+        // Try extracting ID from slug as fallback
+        const idMatch = channelIdParam.match(/-(\d+)$/);
+        if (idMatch) {
+          channelId = parseInt(idMatch[1]);
+          console.log(`Extracted ID from slug: ${channelId}`);
+        } else {
+          console.error(`Channel not found for slug: ${channelIdParam}`);
+          return res.status(404).json({ error: "Channel not found" });
+        }
+      } else {
+        channelId = channel.id;
+        console.log(`Found channel ID ${channelId} for slug ${channelIdParam}`);
+      }
+    }
+    
+    // Validate the channel ID
+    if (isNaN(channelId)) {
+      console.error(`Invalid channel ID: ${channelIdParam}, parsed as NaN`);
+      return res.status(400).json({ error: "Invalid channel ID" });
+    }
     
     // Check if already subscribed
     const { data: existingSub, error: subCheckError } = await supabase
@@ -2545,7 +2594,44 @@ app.delete("/api/channels/:id/subscribe", async (req, res) => {
     }
     
     const userId = dbUser.id;
-    const channelId = parseInt(req.params.id);
+    
+    // Handle both numeric IDs and slugs
+    const channelIdParam = req.params.id;
+    let channelId: number;
+    
+    if (/^\d+$/.test(channelIdParam)) {
+      // It's a numeric ID
+      channelId = parseInt(channelIdParam);
+    } else {
+      // It's a slug, we need to fetch the channel first to get its ID
+      console.log(`Looking up channel by slug: ${channelIdParam}`);
+      const { data: channel, error: channelError } = await supabase
+        .from("channels")
+        .select("id")
+        .eq("slug", channelIdParam)
+        .single();
+        
+      if (channelError || !channel) {
+        // Try extracting ID from slug as fallback
+        const idMatch = channelIdParam.match(/-(\d+)$/);
+        if (idMatch) {
+          channelId = parseInt(idMatch[1]);
+          console.log(`Extracted ID from slug: ${channelId}`);
+        } else {
+          console.error(`Channel not found for slug: ${channelIdParam}`);
+          return res.status(404).json({ error: "Channel not found" });
+        }
+      } else {
+        channelId = channel.id;
+        console.log(`Found channel ID ${channelId} for slug ${channelIdParam}`);
+      }
+    }
+    
+    // Validate the channel ID
+    if (isNaN(channelId)) {
+      console.error(`Invalid channel ID: ${channelIdParam}, parsed as NaN`);
+      return res.status(400).json({ error: "Invalid channel ID" });
+    }
     
     // Delete the subscription
     const { error: deleteError } = await supabase
