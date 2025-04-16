@@ -120,9 +120,27 @@ export default function HomePage() {
         return true;
       });
 
+      // Sort channels by subscriber count (highest first)
+      filtered.sort((a, b) => {
+        const aSubscribers =
+          a.subscriberCount || a.subscriber_count || a.subscribers?.length || 0;
+        const bSubscribers =
+          b.subscriberCount || b.subscriber_count || b.subscribers?.length || 0;
+        return bSubscribers - aSubscribers;
+      });
+
       setFilteredChannels(filtered);
     } else if (channels) {
-      setFilteredChannels(channels);
+      // Sort all channels by subscriber count if user is not logged in
+      const sorted = [...channels].sort((a, b) => {
+        const aSubscribers =
+          a.subscriberCount || a.subscriber_count || a.subscribers?.length || 0;
+        const bSubscribers =
+          b.subscriberCount || b.subscriber_count || b.subscribers?.length || 0;
+        return bSubscribers - aSubscribers;
+      });
+
+      setFilteredChannels(sorted);
     }
   }, [channels, user]);
 

@@ -64,7 +64,7 @@ interface OrderOption {
 
 export default function ChannelsPage() {
   const { user } = useAuth();
-  const [orderField, setOrderField] = useState<OrderField>("createdAt");
+  const [orderField, setOrderField] = useState<OrderField>("subscriberCount");
   const [orderDirection, setOrderDirection] = useState<OrderDirection>("desc");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategories, setFilterCategories] = useState<string[]>([]);
@@ -183,7 +183,7 @@ export default function ChannelsPage() {
   const clearFilters = () => {
     setSearchTerm("");
     setFilterCategories([]);
-    setOrderField("createdAt");
+    setOrderField("subscriberCount");
     setOrderDirection("desc");
   };
 
@@ -202,7 +202,7 @@ export default function ChannelsPage() {
 
   // Count active filters
   const activeFilterCount =
-    (orderField !== "createdAt" ? 1 : 0) +
+    (orderField !== "subscriberCount" ? 1 : 0) +
     (searchTerm ? 1 : 0) +
     filterCategories.length;
 
@@ -245,11 +245,11 @@ export default function ChannelsPage() {
                           setOrderField(value as OrderField)
                         }
                       >
-                        <DropdownMenuRadioItem value="createdAt">
-                          Date Created
-                        </DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="subscriberCount">
                           Subscriber Count
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="createdAt">
+                          Date Created
                         </DropdownMenuRadioItem>
                         <DropdownMenuRadioItem value="articleCount">
                           Article Count
@@ -264,74 +264,16 @@ export default function ChannelsPage() {
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  {/* Filter Popover */}
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="gap-2 relative">
-                        <Filter className="h-4 w-4" />
-                        Filter
-                        {activeFilterCount > 0 && (
-                          <Badge
-                            className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center"
-                            variant="destructive"
-                          >
-                            {activeFilterCount}
-                          </Badge>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-80">
-                      <div className="space-y-4">
-                        <h4 className="font-medium">Filter Channels</h4>
-
-                        {/* Search */}
-                        <div className="space-y-2">
-                          <Label htmlFor="search">Search</Label>
-                          <div className="relative">
-                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input
-                              id="search"
-                              placeholder="Search by name or description..."
-                              className="pl-8"
-                              value={searchTerm}
-                              onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Categories */}
-                        <div className="space-y-2">
-                          <Label>Categories</Label>
-                          <ScrollArea className="h-32">
-                            <div className="space-y-2">
-                              {availableCategories.map((category) => (
-                                <div
-                                  key={category}
-                                  className="flex items-center space-x-2"
-                                >
-                                  <Checkbox
-                                    id={`category-${category}`}
-                                    checked={filterCategories.includes(
-                                      category
-                                    )}
-                                    onCheckedChange={() =>
-                                      toggleCategory(category)
-                                    }
-                                  />
-                                  <Label
-                                    htmlFor={`category-${category}`}
-                                    className="text-sm cursor-pointer"
-                                  >
-                                    {category}
-                                  </Label>
-                                </div>
-                              ))}
-                            </div>
-                          </ScrollArea>
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
+                  {/* Search input */}
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search channels..."
+                      className="w-64 pl-8"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -348,7 +290,7 @@ export default function ChannelsPage() {
             {/* Display active filters */}
             {activeFilterCount > 0 && (
               <div className="flex flex-wrap gap-2 mb-4">
-                {orderField !== "createdAt" && (
+                {orderField !== "subscriberCount" && (
                   <Badge
                     variant="secondary"
                     className="flex items-center gap-1"
