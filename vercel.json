@@ -17,6 +17,26 @@
             }
         }
     ],
+    "headers": [
+        {
+            "source": "/articles/(.*)",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                }
+            ]
+        },
+        {
+            "source": "/api/prerender-article",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                }
+            ]
+        }
+    ],
     "rewrites": [
         {
             "source": "/api/debug/:path*",
@@ -46,10 +66,6 @@
             "destination": "/api/prerender-article?path=/articles/:slug"
         },
         {
-            "source": "/test-preview/articles/:slug",
-            "destination": "/api/prerender-article?path=/articles/:slug&forcePrerender=true"
-        },
-        {
             "source": "/auth-callback",
             "destination": "/index.html"
         },
@@ -61,5 +77,6 @@
             "source": "/(.*)",
             "destination": "/index.html"
         }
-    ]
+    ],
+    "public": true
 }
