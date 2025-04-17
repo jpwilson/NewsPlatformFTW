@@ -65,6 +65,11 @@ function createDescription(content, maxLength = 160) {
 export default async function handler(req, res) {
   try {
     console.log('========= DIRECT PRERENDER HANDLER START =========');
+    console.log('Environment check:');
+    console.log('- VITE_SUPABASE_URL:', process.env.VITE_SUPABASE_URL ? 'defined' : 'undefined');
+    console.log('- VITE_SUPABASE_ANON_KEY:', process.env.VITE_SUPABASE_ANON_KEY ? 'defined' : 'undefined');
+    console.log('- NODE_ENV:', process.env.NODE_ENV || 'undefined');
+    
     console.log('Request details:', {
       url: req.url,
       path: req.path,
@@ -110,20 +115,88 @@ export default async function handler(req, res) {
     if (isNumericId) {
       query = supabase
         .from('articles')
-        .select('*, images(*), channel(id, name, slug)')
+        .select(`
+          *,
+          images:article_images (
+            image_url,
+            caption,
+            order
+          ),
+          channel (
+            id,
+            name,
+            slug
+          )
+        `)
         .eq('id', articleId)
         .single();
     } else {
       query = supabase
         .from('articles')
-        .select('*, images(*), channel(id, name, slug)')
+        .select(`
+          *,
+          images:article_images (
+            image_url,
+            caption,
+            order
+          ),
+          channel (
+            id,
+            name,
+            slug
+          )
+        `)
         .eq('slug', articleId)
         .single();
     }
     
     let { data: article, error } = await query;
     
-    if (error) {
+    // If we got a relationship error, try a simpler query without the joins
+    if (error && error.message && (
+        error.message.includes('relationship between') || 
+        error.message.includes('schema cache')
+    )) {
+      console.log('Got a relationship error, trying a simpler query');
+      
+      // Try a simpler query without joins
+      let simpleQuery;
+      if (isNumericId) {
+        simpleQuery = supabase
+          .from('articles')
+          .select('*')
+          .eq('id', articleId)
+          .single();
+      } else {
+        simpleQuery = supabase
+          .from('articles')
+          .select('*')
+          .eq('slug', articleId)
+          .single();
+      }
+      
+      const { data: simpleArticle, error: simpleError } = await simpleQuery;
+      
+      if (simpleError) {
+        console.error('Error with simple query too:', simpleError);
+        return res.status(404).json({ 
+          error: 'Article not found', 
+          details: simpleError.message,
+          originalError: error.message
+        });
+      }
+      
+      if (!simpleArticle) {
+        return res.status(404).json({ 
+          error: 'Article not found', 
+          details: 'No data returned from simple query' 
+        });
+      }
+      
+      // Use the simple article data
+      article = simpleArticle;
+      console.log('Using simple article data without images');
+    } else if (error) {
       console.error('Error fetching article:', error);
       return res.status(404).json({ error: 'Article not found', details: error.message });
     }
@@ -136,26 +209,57 @@ export default async function handler(req, res) {
     console.log('Article data retrieved:', {
       id: article.id,
       title: article.title,
-      imageCount: article.images?.length || 0
+      channelName: article.channel?.name || 'Unknown',
+      imageCount: Array.isArray(article.images) ? article.images.length : 'not an array'
     });
+    
+    // Debug the structure of the article data
+    console.log('Article data structure:');
+    console.log('- article.images type:', typeof article.images);
+    console.log('- article keys:', Object.keys(article));
+    
+    if (article.images && !Array.isArray(article.images)) {
+      console.log('Warning: images is not an array. Converting to array if possible.');
+      try {
+        // Try to convert to array if it's some other structure
+        article.images = Array.isArray(article.images) ? article.images : [article.images];
+      } catch (err) {
+        console.error('Could not convert images to array:', err);
+        article.images = [];
+      }
+    }
     
     // Get the site URL for absolute URLs
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.headers['x-forwarded-host'] || req.headers.host || 'newsplatform.org';
     const siteUrl = `${protocol}://${host}`;
     
-    // Find the first image if available
-    const firstImage = article.images && article.images.length > 0 
-      ? article.images[0].image_url 
-      : null;
+    // Find the first image if available, with better fallback handling
+    let firstImage = null;
+    let imageUrl = null;
+    
+    if (Array.isArray(article.images) && article.images.length > 0) {
+      // Try to get the image_url property
+      if (article.images[0].image_url) {
+        firstImage = article.images[0].image_url;
+      } 
+      // Fallback to check for imageUrl property
+      else if (article.images[0].imageUrl) {
+        firstImage = article.images[0].imageUrl;
+      }
+      // Log what we found
+      console.log('First image found:', firstImage);
+    } else {
+      console.log('No images found or images is not an array');
+    }
     
     // Create a description from the content
     const description = createDescription(article.content);
     
     // Ensure URLs are absolute
-    const imageUrl = firstImage 
-      ? (firstImage.startsWith('http') ? firstImage : `${siteUrl}${firstImage}`)
-      : null;
+    if (firstImage) {
+      imageUrl = firstImage.startsWith('http') ? firstImage : `${siteUrl}${firstImage}`;
+    }
     
     const articleUrl = `${siteUrl}/articles/${article.slug || article.id}`;
     
@@ -194,14 +298,14 @@ export default async function handler(req, res) {
           <meta property="og:url" content="${articleUrl}" />
           <meta property="og:title" content="${title}" />
           <meta property="og:description" content="${escapedDescription}" />
-          ${imageUrl ? `<meta property="og:image" content="${imageUrl}" />` : ''}
+          ${imageUrl ? `<meta property="og:image" content="${imageUrl}" />` : '<!-- No image available for og:image -->'}
           <meta property="og:site_name" content="News Platform" />
           
           <!-- Twitter -->
           <meta property="twitter:card" content="${imageUrl ? 'summary_large_image' : 'summary'}" />
           <meta property="twitter:title" content="${title}" />
           <meta property="twitter:description" content="${escapedDescription}" />
-          ${imageUrl ? `<meta property="twitter:image" content="${imageUrl}" />` : ''}
+          ${imageUrl ? `<meta property="twitter:image" content="${imageUrl}" />` : '<!-- No image available for twitter:image -->'}
           
           <!-- Redirect to the actual app after a moment for regular users -->
           <meta http-equiv="refresh" content="0;url=${articleUrl}" />
@@ -209,16 +313,22 @@ export default async function handler(req, res) {
         <body>
           <h1>${title}</h1>
           <p>${escapedDescription}</p>
-          ${imageUrl ? `<img src="${imageUrl}" alt="${title}" />` : ''}
+          ${imageUrl ? `<img src="${imageUrl}" alt="${title}" />` : '<p>No image available</p>'}
           <p>Redirecting to the article...</p>
           
           <div style="margin-top: 30px; padding: 15px; border: 1px solid #ccc; background: #f5f5f5;">
             <h2>Debug Information</h2>
             <p>This page is for social media crawlers to generate link previews.</p>
             <p>Article ID: ${article.id}</p>
-            <p>Article Slug: ${article.slug}</p>
+            <p>Article Slug: ${article.slug || 'No slug'}</p>
             <p>Image URL: ${imageUrl || 'None'}</p>
             <p>Site URL: ${siteUrl}</p>
+            <p>Channel: ${article.channel?.name || 'Unknown'}</p>
+            
+            <h3>Environment</h3>
+            <p>NODE_ENV: ${process.env.NODE_ENV || 'undefined'}</p>
+            <p>SUPABASE_URL: ${process.env.VITE_SUPABASE_URL ? 'defined' : 'undefined'}</p>
+            <p>SUPABASE_KEY: ${process.env.VITE_SUPABASE_ANON_KEY ? 'defined' : 'undefined'}</p>
           </div>
         </body>
       </html>
