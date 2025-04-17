@@ -10,10 +10,6 @@
             "use": "@vercel/node"
         },
         {
-            "src": "api/direct-prerender.js",
-            "use": "@vercel/node"
-        },
-        {
             "src": "package.json",
             "use": "@vercel/static-build",
             "config": {
@@ -39,39 +35,9 @@
                     "value": "*"
                 }
             ]
-        },
-        {
-            "source": "/api/debug/prerender-test",
-            "headers": [
-                {
-                    "key": "Access-Control-Allow-Origin",
-                    "value": "*"
-                }
-            ]
-        },
-        {
-            "source": "/test-prerender/(.*)",
-            "headers": [
-                {
-                    "key": "Access-Control-Allow-Origin",
-                    "value": "*"
-                }
-            ]
         }
     ],
     "rewrites": [
-        {
-            "source": "/test-prerender/:slug",
-            "destination": "/api/direct-prerender.js?slug=:slug"
-        },
-        {
-            "source": "/test-prerender/:slug/with-image",
-            "destination": "/api/direct-prerender.js?slug=:slug&forceImage=true"
-        },
-        {
-            "source": "/api/debug/prerender-test",
-            "destination": "/api/index.ts"
-        },
         {
             "source": "/api/debug/:path*",
             "destination": "/api/index.ts"
@@ -98,10 +64,6 @@
                 }
             ],
             "destination": "/api/prerender-article.js?path=/articles/:slug"
-        },
-        {
-            "source": "/articles/:slug/prerender",
-            "destination": "/api/direct-prerender.js?slug=:slug"
         },
         {
             "source": "/auth-callback",

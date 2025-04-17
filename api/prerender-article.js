@@ -118,18 +118,13 @@ export default async function handler(req, res) {
     if (req.query && req.query.path) {
       path = req.query.path;
     } else if (req.url) {
-      // Extract path from the request URL
       const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       path = urlObj.pathname;
     } else {
-      // Fallback to request path
       path = req.path || '';
     }
     
-    // Get the user agent for crawler detection
     const userAgent = req.headers['user-agent'] || '';
-    
-    // To enable local testing, don't check for crawler user agent in development
     const isDev = process.env.NODE_ENV !== 'production';
     const isTestMode = req.query.forcePrerender === 'true';
     const shouldProcess = isDev || isTestMode || isSocialMediaCrawler(userAgent);
@@ -157,84 +152,98 @@ export default async function handler(req, res) {
     
     console.log('Prerendering article:', articleId);
     
-    // Fetch the article data from the database
-    // First check if it's a numeric ID or a slug
+    // Fetch the article data, ensuring we join article_images correctly
     const isNumericId = /^\d+$/.test(articleId);
-    
     let query;
+    const selectStatement = `
+      *,
+      images:article_images (
+        image_url,
+        caption,
+        order
+      ),
+      channel (
+        id,
+        name,
+        slug
+      )
+    `;
+
     if (isNumericId) {
-      query = supabase
-        .from('articles')
-        .select('*, images(*), channel(id, name, slug)')
-        .eq('id', articleId)
-        .single();
+      query = supabase.from('articles').select(selectStatement).eq('id', articleId).single();
     } else {
-      query = supabase
-        .from('articles')
-        .select('*, images(*), channel(id, name, slug)')
-        .eq('slug', articleId)
-        .single();
+      query = supabase.from('articles').select(selectStatement).eq('slug', articleId).single();
     }
     
     let { data: article, error } = await query;
     
     if (error) {
       console.error('Error fetching article:', error);
-      return res.status(404).end();
+      return res.status(404).end(`Error fetching article: ${error.message}`);
     }
     
     if (!article) {
       console.error('Article not found:', articleId);
-      return res.status(404).end();
+      return res.status(404).end('Article not found');
     }
     
-    console.log('Article data retrieved:', {
-      id: article.id,
-      title: article.title,
-      imageCount: article.images?.length || 0
-    });
-    
+    console.log('Article data structure check:');
+    console.log('- article keys:', Object.keys(article));
+    console.log('- article.images type:', typeof article.images);
+    console.log('- article.images:', JSON.stringify(article.images));
+
     // Get the site URL for absolute URLs
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.headers['x-forwarded-host'] || req.headers.host || 'newsplatform.org';
     const siteUrl = `${protocol}://${host}`;
     
-    // Find the first image if available
-    const firstImage = article.images && article.images.length > 0 
-      ? article.images[0].image_url 
-      : null;
-    
-    // Create a description from the content
-    const description = createDescription(article.content);
-    
-    // Ensure URLs are absolute
-    const imageUrl = firstImage 
-      ? (firstImage.startsWith('http') ? firstImage : `${siteUrl}${firstImage}`)
-      : null;
-    
+    // Simplified image extraction - expecting article.images to be the result of the join
+    let imageUrl = null;
+    if (article.images && Array.isArray(article.images) && article.images.length > 0) {
+      const firstImage = article.images[0];
+      if (firstImage && (firstImage.image_url || firstImage.imageUrl)) {
+        imageUrl = firstImage.image_url || firstImage.imageUrl;
+        console.log('Found image URL:', imageUrl);
+      } else {
+        console.log('First image object found, but no image_url or imageUrl property.');
+      }
+    } else {
+      console.log('No images found in article.images array.');
+    }
+
+    // Ensure image URL is absolute
+    let absoluteImageUrl = null;
+    if (imageUrl) {
+      if (imageUrl.startsWith('//')) {
+        absoluteImageUrl = `https:${imageUrl}`;
+      } else if (imageUrl.startsWith('/')) {
+        absoluteImageUrl = `${siteUrl}${imageUrl}`;
+      } else if (!imageUrl.startsWith('http')) {
+        absoluteImageUrl = `${siteUrl}/${imageUrl}`;
+      } else {
+        absoluteImageUrl = imageUrl;
+      }
+      console.log('Final absolute image URL:', absoluteImageUrl);
+    }
+
     const articleUrl = `${siteUrl}/articles/${article.slug || article.id}`;
-    
-    // Escape HTML entities in text content
-    const escapeHtml = (text) => {
-      return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-    };
-    
+    const description = createDescription(article.content);
+    const escapeHtml = (text) => String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     const title = escapeHtml(article.title || 'News Article');
     const escapedDescription = escapeHtml(description);
     
     console.log('Preparing HTML response with:', {
       title,
       description: description.substring(0, 50) + '...',
-      imageUrl: imageUrl ? 'present' : 'not found',
+      imageUrl: absoluteImageUrl ? 'present' : 'not found',
       articleUrl
     });
     
-    // Construct HTML with proper meta tags
+    // Determine redirect delay based on user agent
+    const isCrawler = userAgent.match(/(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot)/i);
+    const redirectDelay = isCrawler ? 30 : 1;
+
+    // Construct HTML
     const html = `
       <!DOCTYPE html>
       <html lang="en">
@@ -249,38 +258,23 @@ export default async function handler(req, res) {
           <meta property="og:url" content="${articleUrl}" />
           <meta property="og:title" content="${title}" />
           <meta property="og:description" content="${escapedDescription}" />
-          ${imageUrl ? `<meta property="og:image" content="${imageUrl}" />` : ''}
+          ${absoluteImageUrl ? `<meta property="og:image" content="${absoluteImageUrl}" />` : '<!-- No image available -->'}
           <meta property="og:site_name" content="News Platform" />
           
           <!-- Twitter -->
-          <meta property="twitter:card" content="${imageUrl ? 'summary_large_image' : 'summary'}" />
-          <meta property="twitter:title" content="${title}" />
-          <meta property="twitter:description" content="${escapedDescription}" />
-          ${imageUrl ? `<meta property="twitter:image" content="${imageUrl}" />` : ''}
+          <meta name="twitter:card" content="${absoluteImageUrl ? 'summary_large_image' : 'summary'}" />
+          <meta name="twitter:title" content="${title}" />
+          <meta name="twitter:description" content="${escapedDescription}" />
+          ${absoluteImageUrl ? `<meta name="twitter:image" content="${absoluteImageUrl}" />` : '<!-- No image available -->'}
           
-          <!-- Redirect to the actual app after a moment for regular users -->
-          <meta http-equiv="refresh" content="0;url=${articleUrl}" />
-          
-          <!-- Debug info for development -->
-          ${isDev || isTestMode ? `<!-- Debug Mode: Article ID ${article.id}, Slug: ${article.slug} -->` : ''}
+          <!-- Redirect after delay -->
+          <meta http-equiv="refresh" content="${redirectDelay};url=${articleUrl}" />
         </head>
         <body>
           <h1>${title}</h1>
           <p>${escapedDescription}</p>
-          ${imageUrl ? `<img src="${imageUrl}" alt="${title}" />` : ''}
-          <p>Redirecting to the article...</p>
-          
-          ${isDev || isTestMode ? `
-          <div style="margin-top: 30px; padding: 15px; border: 1px solid #ccc; background: #f5f5f5;">
-            <h2>Debug Information (Development/Test Mode Only)</h2>
-            <p>This page is for social media crawlers to generate link previews.</p>
-            <p>Article ID: ${article.id}</p>
-            <p>Article Slug: ${article.slug}</p>
-            <p>Image URL: ${imageUrl || 'None'}</p>
-            <p>Site URL: ${siteUrl}</p>
-            <p>User Agent: ${userAgent}</p>
-          </div>
-          ` : ''}
+          ${absoluteImageUrl ? `<img src="${absoluteImageUrl}" alt="${title}" style="max-width:100%; height:auto;">` : '<p>No image available</p>'}
+          <p>Redirecting to the article in ${redirectDelay} second${redirectDelay !== 1 ? 's' : ''}...</p>
         </body>
       </html>
     `;
@@ -292,14 +286,6 @@ export default async function handler(req, res) {
     
   } catch (err) {
     console.error('Error in prerender middleware:', err);
-    return res.status(500).send(`
-      <html>
-        <head><title>Error</title></head>
-        <body>
-          <h1>Error processing article for sharing</h1>
-          <p>${process.env.NODE_ENV !== 'production' ? err.toString() : 'An error occurred'}</p>
-        </body>
-      </html>
-    `);
+    return res.status(500).send(`<html><body><h1>Error processing article for sharing</h1><p>${err.message}</p></body></html>`);
   }
 } 
