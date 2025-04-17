@@ -21,6 +21,7 @@ import EditArticle from "@/pages/edit-article";
 import ManageSubscribersPage from "@/pages/manage-subscribers";
 import AdminPage from "@/pages/admin-page";
 import { Analytics } from "@vercel/analytics/react";
+import { HelmetProvider } from "react-helmet-async";
 
 // Check if we're running in production (Vercel) or development
 const isProduction = process.env.NODE_ENV === "production";
@@ -60,15 +61,17 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <SelectedChannelProvider>
-          <ThemeProvider defaultTheme="light">
-            <Router />
-            <Analytics />
-            <Toaster />
-          </ThemeProvider>
-        </SelectedChannelProvider>
-      </AuthProvider>
+      <HelmetProvider>
+        <AuthProvider>
+          <SelectedChannelProvider>
+            <ThemeProvider defaultTheme="light">
+              <Router />
+              <Analytics />
+              <Toaster />
+            </ThemeProvider>
+          </SelectedChannelProvider>
+        </AuthProvider>
+      </HelmetProvider>
     </QueryClientProvider>
   );
 }

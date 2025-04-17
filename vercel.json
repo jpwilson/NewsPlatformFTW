@@ -6,6 +6,10 @@
             "use": "@vercel/node"
         },
         {
+            "src": "api/prerender-article.js",
+            "use": "@vercel/node"
+        },
+        {
             "src": "package.json",
             "use": "@vercel/static-build",
             "config": {
@@ -31,6 +35,17 @@
             "dest": "/api/index.ts"
         },
         {
+            "src": "/articles/([^/]+)",
+            "headers": {
+                "user-agent": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
+            },
+            "dest": "/api/prerender-article?path=/articles/$1"
+        },
+        {
+            "src": "/test-preview/articles/([^/]+)",
+            "dest": "/api/prerender-article?path=/articles/$1&forcePrerender=true"
+        },
+        {
             "handle": "filesystem"
         },
         {
@@ -43,7 +58,13 @@
         },
         {
             "src": "/(.*)",
-            "dest": "/index.html"
+            "dest": "/$1"
+        }
+    ],
+    "rewrites": [
+        {
+            "source": "/(.*)",
+            "destination": "/index.html"
         }
     ]
 }

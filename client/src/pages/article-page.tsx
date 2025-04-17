@@ -19,6 +19,7 @@ import {
   X,
   Image as ImageIcon,
   ImageOff,
+  Share,
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -54,6 +55,13 @@ import { supabase } from "@/lib/supabase";
 import { ImageUpload } from "@/components/image-upload";
 import imageCompression from "browser-image-compression";
 import { Input } from "@/components/ui/input";
+import { MetaHead } from "@/components/meta-head";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 type ArticleWithSnakeCase = Article & {
@@ -111,6 +119,44 @@ function formatDateWithoutDay(
     options.minute = "2-digit";
   }
   return new Date(date).toLocaleDateString("en-US", options);
+}
+
+// Helper function to extract a readable description from article content
+function extractDescription(
+  content: string | undefined,
+  maxLength = 160
+): string {
+  if (!content) return "";
+
+  // Strip HTML tags if present
+  const strippedContent = content.replace(/<[^>]*>/g, " ");
+
+  // Remove excess whitespace
+  const cleanedContent = strippedContent.replace(/\s+/g, " ").trim();
+
+  // If content is shorter than maxLength, return it all
+  if (cleanedContent.length <= maxLength) {
+    return cleanedContent;
+  }
+
+  // Find the last complete sentence or cut at a reasonable word boundary
+  const truncated = cleanedContent.substring(0, maxLength);
+
+  // Try to find the last period, question mark, or exclamation within the truncated text
+  const lastSentenceEnd = Math.max(
+    truncated.lastIndexOf("."),
+    truncated.lastIndexOf("?"),
+    truncated.lastIndexOf("!")
+  );
+
+  if (lastSentenceEnd > maxLength * 0.7) {
+    // If we found a sentence end that's at least 70% through the max length, cut there
+    return truncated.substring(0, lastSentenceEnd + 1);
+  } else {
+    // Otherwise, find the last space to avoid cutting words in half
+    const lastSpace = truncated.lastIndexOf(" ");
+    return truncated.substring(0, lastSpace) + "...";
+  }
 }
 
 export default function ArticlePage() {
@@ -963,6 +1009,74 @@ export default function ArticlePage() {
     number | null
   >(null);
 
+  // Replace the handleShare function with two separate functions
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast({
+        title: "Link copied to clipboard",
+        description: "You can now share it manually",
+      });
+    } catch (err) {
+      console.error("Error copying to clipboard:", err);
+      toast({
+        title: "Copying failed",
+        description: "Could not copy the link to clipboard",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleShareVia = async () => {
+    const articleUrl = window.location.href;
+    const title = article?.title || "News Article";
+    const text = article?.content
+      ? extractDescription(article.content, 100)
+      : "Check out this article";
+
+    try {
+      // Try to use Web Share API if available
+      if (navigator.share) {
+        await navigator.share({
+          title,
+          text,
+          url: articleUrl,
+        });
+        // Only show success message if sharing completes successfully
+        toast({
+          title: "Shared successfully",
+          description: "The article link has been shared",
+        });
+      } else {
+        // Fallback if Web Share API is not available
+        toast({
+          title: "Sharing not supported",
+          description: "Your browser doesn't support direct sharing",
+          variant: "destructive",
+        });
+        // Automatically fall back to copying the link
+        await handleCopyLink();
+      }
+    } catch (err: unknown) {
+      // Check if it's an AbortError (user cancelled) and don't show error
+      if (
+        err &&
+        typeof err === "object" &&
+        "name" in err &&
+        err.name !== "AbortError"
+      ) {
+        console.error("Error sharing:", err);
+        // Only show error for non-cancellation errors
+        toast({
+          title: "Sharing failed",
+          description: "Failed to share the article",
+          variant: "destructive",
+        });
+      }
+      // For AbortError, do nothing as user intentionally cancelled
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
@@ -1014,8 +1128,30 @@ export default function ArticlePage() {
       : null) ||
     ((article as any)._location ? (article as any)._location.name : null);
 
+  // Create meta information for sharing
+  const articleUrl = createSlugUrl("/articles/", article?.slug || "", id);
+  const articleFullUrl =
+    typeof window !== "undefined" ? window.location.href : "";
+  const firstImage =
+    article?.images && article.images.length > 0
+      ? article.images[0].imageUrl
+      : undefined;
+  const description = article?.content
+    ? extractDescription(article.content)
+    : "";
+
   return (
     <>
+      {/* Add meta tags for social sharing when article is loaded */}
+      {article && (
+        <MetaHead
+          title={article.title || "News Article"}
+          description={description}
+          imageUrl={firstImage}
+          url={articleUrl}
+        />
+      )}
+
       <div className="min-h-screen bg-background">
         <NavigationBar />
 
@@ -1414,7 +1550,7 @@ export default function ArticlePage() {
                 By: {article.channel?.name || "Unknown Channel"}
               </button>
 
-              {/* Article metrics */}
+              {/* Article metrics with Share button */}
               <div className="flex items-center gap-5 mt-3 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg">
                 <div className="flex items-center">
                   <Eye className="h-5 w-5 mr-2 text-slate-600 dark:text-slate-300" />
@@ -1439,6 +1575,28 @@ export default function ArticlePage() {
                     {commentCount} comments
                   </span>
                 </div>
+
+                {/* Replace the Share button with a dropdown menu */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto flex items-center text-primary"
+                    >
+                      <Share className="h-5 w-5 mr-2" />
+                      <span className="text-sm font-medium">Share</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleCopyLink}>
+                      Copy link
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleShareVia}>
+                      Share post via...
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </header>
