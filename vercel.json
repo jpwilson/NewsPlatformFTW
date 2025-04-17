@@ -17,51 +17,46 @@
             }
         }
     ],
-    "routes": [
-        {
-            "src": "/api/debug/(.*)",
-            "dest": "/api/index.ts"
-        },
-        {
-            "src": "/api/user/(.*)",
-            "dest": "/api/index.ts"
-        },
-        {
-            "src": "/api/channels(.*)",
-            "dest": "/api/index.ts"
-        },
-        {
-            "src": "/api/(.*)",
-            "dest": "/api/index.ts"
-        },
-        {
-            "src": "/articles/([^/]+)",
-            "headers": {
-                "user-agent": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
-            },
-            "dest": "/api/prerender-article?path=/articles/$1"
-        },
-        {
-            "src": "/test-preview/articles/([^/]+)",
-            "dest": "/api/prerender-article?path=/articles/$1&forcePrerender=true"
-        },
-        {
-            "handle": "filesystem"
-        },
-        {
-            "src": "/auth-callback",
-            "dest": "/index.html"
-        },
-        {
-            "src": "/assets/(.*)",
-            "dest": "/assets/$1"
-        },
-        {
-            "src": "/(.*)",
-            "dest": "/$1"
-        }
-    ],
     "rewrites": [
+        {
+            "source": "/api/debug/:path*",
+            "destination": "/api/index.ts"
+        },
+        {
+            "source": "/api/user/:path*",
+            "destination": "/api/index.ts"
+        },
+        {
+            "source": "/api/channels/:path*",
+            "destination": "/api/index.ts"
+        },
+        {
+            "source": "/api/:path*",
+            "destination": "/api/index.ts"
+        },
+        {
+            "source": "/articles/:slug",
+            "has": [
+                {
+                    "type": "header",
+                    "key": "user-agent",
+                    "value": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
+                }
+            ],
+            "destination": "/api/prerender-article?path=/articles/:slug"
+        },
+        {
+            "source": "/test-preview/articles/:slug",
+            "destination": "/api/prerender-article?path=/articles/:slug&forcePrerender=true"
+        },
+        {
+            "source": "/auth-callback",
+            "destination": "/index.html"
+        },
+        {
+            "source": "/assets/:path*",
+            "destination": "/assets/:path*"
+        },
         {
             "source": "/(.*)",
             "destination": "/index.html"
