@@ -4554,8 +4554,21 @@ app.get("/test-prerender/:slug", async (req, res) => {
   try {
     console.log(`Test prerender for slug: ${req.params.slug}`);
     
-    // Import the prerender handler
-    const { default: prerenderHandler } = await import('./prerender-article');
+    // Import the prerender handler with a relative path that works in both dev and production
+    let prerenderHandler;
+    try {
+      // First try the standard import that works in development
+      prerenderHandler = (await import('./prerender-article')).default;
+    } catch (importError) {
+      console.log('Error with standard import path, trying alternative path:', importError.message);
+      // Try alternative import path that might work in production
+      try {
+        prerenderHandler = (await import('../api/prerender-article')).default;
+      } catch (secondError) {
+        console.log('Error with alternative import path too:', secondError.message);
+        throw new Error(`Could not import prerender-article module: ${secondError.message}`);
+      }
+    }
     
     // Set mock crawler user agent
     req.headers['user-agent'] = 'Twitterbot';

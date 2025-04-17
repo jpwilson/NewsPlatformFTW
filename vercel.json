@@ -89,11 +89,11 @@
                     "value": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
                 }
             ],
-            "destination": "/api/prerender-article?path=/articles/:slug"
+            "destination": "/api/prerender-article.js?path=/articles/:slug"
         },
         {
             "source": "/articles/:slug/prerender",
-            "destination": "/api/prerender-article?path=/articles/:slug&forcePrerender=true"
+            "destination": "/api/prerender-article.js?path=/articles/:slug&forcePrerender=true"
         },
         {
             "source": "/auth-callback",
