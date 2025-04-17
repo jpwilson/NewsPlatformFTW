@@ -62,6 +62,55 @@ function createDescription(content, maxLength = 160) {
   return truncated.substring(0, lastSpace) + '...';
 }
 
+// Helper function to extract image URL from any format
+function extractImageUrl(article) {
+  // Debug what we're working with
+  console.log('Extracting image URL from article with keys:', Object.keys(article));
+  
+  let imageUrl = null;
+  
+  // Try the image-related fields in article
+  if (article.image_url) {
+    imageUrl = article.image_url;
+    console.log('Found article.image_url:', imageUrl);
+  } else if (article.imageUrl) {
+    imageUrl = article.imageUrl;
+    console.log('Found article.imageUrl:', imageUrl);
+  } else if (article.cover_image) {
+    imageUrl = article.cover_image;
+    console.log('Found article.cover_image:', imageUrl);
+  } else if (article.coverImage) {
+    imageUrl = article.coverImage;
+    console.log('Found article.coverImage:', imageUrl);
+  } else if (article.thumbnail) {
+    imageUrl = article.thumbnail;
+    console.log('Found article.thumbnail:', imageUrl);
+  }
+  
+  // Try images array or article_images array
+  if (!imageUrl) {
+    if (Array.isArray(article.images) && article.images.length > 0) {
+      const firstImage = article.images[0];
+      // The image object could have different field names
+      if (typeof firstImage === 'object') {
+        imageUrl = firstImage.image_url || firstImage.imageUrl || firstImage.url || firstImage.src;
+        console.log('Found image in article.images[0]:', imageUrl);
+      } else if (typeof firstImage === 'string') {
+        imageUrl = firstImage;
+        console.log('Found string in article.images[0]:', imageUrl);
+      }
+    } else if (Array.isArray(article.article_images) && article.article_images.length > 0) {
+      const firstImage = article.article_images[0];
+      if (typeof firstImage === 'object') {
+        imageUrl = firstImage.image_url || firstImage.imageUrl || firstImage.url || firstImage.src;
+        console.log('Found image in article.article_images[0]:', imageUrl);
+      }
+    }
+  }
+  
+  return imageUrl;
+}
+
 export default async function handler(req, res) {
   try {
     console.log('========= DIRECT PRERENDER HANDLER START =========');
@@ -218,48 +267,37 @@ export default async function handler(req, res) {
     console.log('- article.images type:', typeof article.images);
     console.log('- article keys:', Object.keys(article));
     
-    if (article.images && !Array.isArray(article.images)) {
-      console.log('Warning: images is not an array. Converting to array if possible.');
-      try {
-        // Try to convert to array if it's some other structure
-        article.images = Array.isArray(article.images) ? article.images : [article.images];
-      } catch (err) {
-        console.error('Could not convert images to array:', err);
-        article.images = [];
-      }
-    }
-    
     // Get the site URL for absolute URLs
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.headers['x-forwarded-host'] || req.headers.host || 'newsplatform.org';
     const siteUrl = `${protocol}://${host}`;
     
-    // Find the first image if available, with better fallback handling
-    let firstImage = null;
+    // Use our helper function to find an image
+    let firstImage = extractImageUrl(article);
     let imageUrl = null;
     
-    if (Array.isArray(article.images) && article.images.length > 0) {
-      // Try to get the image_url property
-      if (article.images[0].image_url) {
-        firstImage = article.images[0].image_url;
-      } 
-      // Fallback to check for imageUrl property
-      else if (article.images[0].imageUrl) {
-        firstImage = article.images[0].imageUrl;
+    // Check if we should force a specific image (for testing)
+    if (req.query.forceImage === 'true') {
+      console.log('Forcing a sample image for testing purposes');
+      firstImage = 'https://newsplatform.org/api/public-assets/sample-article-image.jpg';
+    }
+    
+    // Ensure URLs are absolute and fix missing protocol
+    if (firstImage) {
+      if (firstImage.startsWith('//')) {
+        imageUrl = `https:${firstImage}`;
+      } else if (firstImage.startsWith('/')) {
+        imageUrl = `${siteUrl}${firstImage}`;
+      } else if (!firstImage.startsWith('http')) {
+        imageUrl = `${siteUrl}/${firstImage}`;
+      } else {
+        imageUrl = firstImage;
       }
-      // Log what we found
-      console.log('First image found:', firstImage);
-    } else {
-      console.log('No images found or images is not an array');
+      console.log('Final image URL:', imageUrl);
     }
     
     // Create a description from the content
     const description = createDescription(article.content);
-    
-    // Ensure URLs are absolute
-    if (firstImage) {
-      imageUrl = firstImage.startsWith('http') ? firstImage : `${siteUrl}${firstImage}`;
-    }
     
     const articleUrl = `${siteUrl}/articles/${article.slug || article.id}`;
     
@@ -283,6 +321,16 @@ export default async function handler(req, res) {
       articleUrl
     });
     
+    // Determine if the request is from a crawler
+    const userAgent = req.headers['user-agent'] || '';
+    const isCrawler = userAgent.match(/(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot)/i);
+
+    console.log('User agent:', userAgent);
+    console.log('Is crawler:', !!isCrawler);
+
+    // Set a long delay for crawlers, short for humans
+    const redirectDelay = isCrawler ? 30 : 1;
+
     // Construct HTML with proper meta tags
     const html = `
       <!DOCTYPE html>
@@ -302,21 +350,53 @@ export default async function handler(req, res) {
           <meta property="og:site_name" content="News Platform" />
           
           <!-- Twitter -->
-          <meta property="twitter:card" content="${imageUrl ? 'summary_large_image' : 'summary'}" />
-          <meta property="twitter:title" content="${title}" />
-          <meta property="twitter:description" content="${escapedDescription}" />
-          ${imageUrl ? `<meta property="twitter:image" content="${imageUrl}" />` : '<!-- No image available for twitter:image -->'}
+          <meta name="twitter:card" content="${imageUrl ? 'summary_large_image' : 'summary'}" />
+          <meta name="twitter:title" content="${title}" />
+          <meta name="twitter:description" content="${escapedDescription}" />
+          ${imageUrl ? `<meta name="twitter:image" content="${imageUrl}" />` : '<!-- No image available for twitter:image -->'}
           
-          <!-- Redirect to the actual app after a moment for regular users -->
-          <meta http-equiv="refresh" content="0;url=${articleUrl}" />
+          <!-- Redirect to the actual app after a delay - longer for crawlers -->
+          <meta http-equiv="refresh" content="${redirectDelay};url=${articleUrl}" />
+          
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+              line-height: 1.6;
+              color: #333;
+              max-width: 800px;
+              margin: 0 auto;
+              padding: 20px;
+            }
+            img {
+              max-width: 100%;
+              height: auto;
+              border-radius: 8px;
+              margin: 20px 0;
+            }
+            .debug-info {
+              margin-top: 30px;
+              padding: 15px;
+              border: 1px solid #ccc;
+              background: #f5f5f5;
+              border-radius: 8px;
+            }
+            h1 {
+              margin-bottom: 10px;
+            }
+            .redirect-notice {
+              font-style: italic;
+              color: #666;
+              margin: 20px 0;
+            }
+          </style>
         </head>
         <body>
           <h1>${title}</h1>
           <p>${escapedDescription}</p>
           ${imageUrl ? `<img src="${imageUrl}" alt="${title}" />` : '<p>No image available</p>'}
-          <p>Redirecting to the article...</p>
+          <p class="redirect-notice">Redirecting to the article in ${redirectDelay} second${redirectDelay !== 1 ? 's' : ''}...</p>
           
-          <div style="margin-top: 30px; padding: 15px; border: 1px solid #ccc; background: #f5f5f5;">
+          <div class="debug-info">
             <h2>Debug Information</h2>
             <p>This page is for social media crawlers to generate link previews.</p>
             <p>Article ID: ${article.id}</p>
@@ -324,6 +404,8 @@ export default async function handler(req, res) {
             <p>Image URL: ${imageUrl || 'None'}</p>
             <p>Site URL: ${siteUrl}</p>
             <p>Channel: ${article.channel?.name || 'Unknown'}</p>
+            <p>User Agent: ${userAgent}</p>
+            <p>Detected as crawler: ${!!isCrawler}</p>
             
             <h3>Environment</h3>
             <p>NODE_ENV: ${process.env.NODE_ENV || 'undefined'}</p>

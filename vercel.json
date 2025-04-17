@@ -65,6 +65,10 @@
             "destination": "/api/direct-prerender.js?slug=:slug"
         },
         {
+            "source": "/test-prerender/:slug/with-image",
+            "destination": "/api/direct-prerender.js?slug=:slug&forceImage=true"
+        },
+        {
             "source": "/api/debug/prerender-test",
             "destination": "/api/index.ts"
         },
