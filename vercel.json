@@ -35,9 +35,35 @@
                     "value": "*"
                 }
             ]
+        },
+        {
+            "source": "/api/debug/prerender-test",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                }
+            ]
+        },
+        {
+            "source": "/test-prerender/(.*)",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                }
+            ]
         }
     ],
     "rewrites": [
+        {
+            "source": "/test-prerender/:slug",
+            "destination": "/api/index.ts"
+        },
+        {
+            "source": "/api/debug/prerender-test",
+            "destination": "/api/index.ts"
+        },
         {
             "source": "/api/debug/:path*",
             "destination": "/api/index.ts"
@@ -64,6 +90,10 @@
                 }
             ],
             "destination": "/api/prerender-article?path=/articles/:slug"
+        },
+        {
+            "source": "/articles/:slug/prerender",
+            "destination": "/api/prerender-article?path=/articles/:slug&forcePrerender=true"
         },
         {
             "source": "/auth-callback",

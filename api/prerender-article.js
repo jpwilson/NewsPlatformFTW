@@ -12,6 +12,8 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+console.log('Prerender module loaded with Supabase URL:', supabaseUrl ? 'defined' : 'undefined');
+
 // Helper function to determine if a request is from a crawler
 function isSocialMediaCrawler(userAgent) {
   const crawlers = [
@@ -33,9 +35,15 @@ function isSocialMediaCrawler(userAgent) {
   
   if (!userAgent) return false;
   
-  return crawlers.some(crawler => 
+  const isBot = crawlers.some(crawler => 
     userAgent.toLowerCase().includes(crawler.toLowerCase())
   );
+
+  if (isBot) {
+    console.log('Detected social media crawler:', userAgent);
+  }
+  
+  return isBot;
 }
 
 // Helper function to extract article ID or slug from URL
@@ -45,7 +53,13 @@ function extractArticleIdFromPath(path) {
   // Handle different path formats
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   const match = cleanPath.match(/\/articles\/([^\/]+)/);
-  return match ? match[1] : null;
+  
+  if (match) {
+    console.log('Extracted article ID/slug from path:', match[1]);
+    return match[1];
+  }
+  
+  return null;
 }
 
 // Helper function to create a clean description from content
@@ -76,6 +90,29 @@ function createDescription(content, maxLength = 160) {
 
 export default async function handler(req, res) {
   try {
+    console.log('========= PRERENDER HANDLER START =========');
+    console.log('Request details:', {
+      url: req.url,
+      path: req.path,
+      query: req.query,
+      headers: {
+        host: req.headers.host,
+        'user-agent': req.headers['user-agent'],
+        'x-forwarded-proto': req.headers['x-forwarded-proto'],
+        'x-forwarded-host': req.headers['x-forwarded-host']
+      }
+    });
+    console.log('Supabase config:', {
+      url: supabaseUrl ? 'defined' : 'undefined',
+      key: supabaseKey ? 'defined' : 'undefined'
+    });
+    
+    console.log('Prerender handler called:', {
+      url: req.url,
+      headers: req.headers,
+      query: req.query
+    });
+
     // Get the path from URL or directly from the request path
     let path;
     if (req.query && req.query.path) {
@@ -89,12 +126,20 @@ export default async function handler(req, res) {
       path = req.path || '';
     }
     
+    // Get the user agent for crawler detection
     const userAgent = req.headers['user-agent'] || '';
     
     // To enable local testing, don't check for crawler user agent in development
     const isDev = process.env.NODE_ENV !== 'production';
     const isTestMode = req.query.forcePrerender === 'true';
     const shouldProcess = isDev || isTestMode || isSocialMediaCrawler(userAgent);
+    
+    console.log('Processing decision:', {
+      isDev,
+      isTestMode,
+      isCrawler: isSocialMediaCrawler(userAgent),
+      shouldProcess
+    });
     
     // Only process article pages and crawler requests (or in test mode)
     if (!path.includes('/articles/') || (!shouldProcess && !isTestMode)) {
@@ -133,19 +178,30 @@ export default async function handler(req, res) {
     
     let { data: article, error } = await query;
     
-    if (error || !article) {
+    if (error) {
       console.error('Error fetching article:', error);
       return res.status(404).end();
     }
     
+    if (!article) {
+      console.error('Article not found:', articleId);
+      return res.status(404).end();
+    }
+    
+    console.log('Article data retrieved:', {
+      id: article.id,
+      title: article.title,
+      imageCount: article.images?.length || 0
+    });
+    
     // Get the site URL for absolute URLs
     const protocol = req.headers['x-forwarded-proto'] || 'https';
-    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost:5001';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'newsplatform.org';
     const siteUrl = `${protocol}://${host}`;
     
     // Find the first image if available
     const firstImage = article.images && article.images.length > 0 
-      ? article.images[0].imageUrl 
+      ? article.images[0].image_url 
       : null;
     
     // Create a description from the content
@@ -171,6 +227,13 @@ export default async function handler(req, res) {
     const title = escapeHtml(article.title || 'News Article');
     const escapedDescription = escapeHtml(description);
     
+    console.log('Preparing HTML response with:', {
+      title,
+      description: description.substring(0, 50) + '...',
+      imageUrl: imageUrl ? 'present' : 'not found',
+      articleUrl
+    });
+    
     // Construct HTML with proper meta tags
     const html = `
       <!DOCTYPE html>
@@ -190,16 +253,16 @@ export default async function handler(req, res) {
           <meta property="og:site_name" content="News Platform" />
           
           <!-- Twitter -->
-          <meta name="twitter:card" content="${imageUrl ? 'summary_large_image' : 'summary'}" />
-          <meta name="twitter:title" content="${title}" />
-          <meta name="twitter:description" content="${escapedDescription}" />
-          ${imageUrl ? `<meta name="twitter:image" content="${imageUrl}" />` : ''}
+          <meta property="twitter:card" content="${imageUrl ? 'summary_large_image' : 'summary'}" />
+          <meta property="twitter:title" content="${title}" />
+          <meta property="twitter:description" content="${escapedDescription}" />
+          ${imageUrl ? `<meta property="twitter:image" content="${imageUrl}" />` : ''}
           
           <!-- Redirect to the actual app after a moment for regular users -->
           <meta http-equiv="refresh" content="0;url=${articleUrl}" />
           
           <!-- Debug info for development -->
-          ${isDev ? `<!-- Debug Mode: Article ID ${article.id}, Slug: ${article.slug} -->` : ''}
+          ${isDev || isTestMode ? `<!-- Debug Mode: Article ID ${article.id}, Slug: ${article.slug} -->` : ''}
         </head>
         <body>
           <h1>${title}</h1>
@@ -224,6 +287,7 @@ export default async function handler(req, res) {
     
     // Return the pre-rendered HTML
     res.setHeader('Content-Type', 'text/html');
+    console.log('Sending prerendered HTML response');
     return res.status(200).send(html);
     
   } catch (err) {

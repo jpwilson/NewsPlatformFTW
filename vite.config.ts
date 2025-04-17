@@ -124,6 +124,16 @@ export default defineConfig(async ({ mode }) => {
               proxy.on('proxyRes', (proxyRes: any, req: any, _res: any) => console.log(`[Vite Proxy -> localhost:3000] Response: ${proxyRes.statusCode} for ${req.url}`));
               proxy.on('error', (err: any, _req: any, _res: any) => console.error('[Vite Proxy Error - /api]:', err));
           }
+        },
+        // Add test-prerender route for local testing
+        '/test-prerender': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+          configure: (proxy: any, _options: any) => {
+              proxy.on('proxyReq', (proxyReq: any, req: any, _res: any) => console.log(`[Vite Proxy -> localhost:3000] Forwarding test-prerender: ${req.method} ${req.url}`));
+              proxy.on('proxyRes', (proxyRes: any, req: any, _res: any) => console.log(`[Vite Proxy -> localhost:3000] Response: ${proxyRes.statusCode} for ${req.url}`));
+              proxy.on('error', (err: any, _req: any, _res: any) => console.error('[Vite Proxy Error - /test-prerender]:', err));
+          }
         }
       },
     },

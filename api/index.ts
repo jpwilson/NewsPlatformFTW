@@ -4524,3 +4524,56 @@ app.get("/api/articles/:idOrSlug", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
+// Add a debug route to test prerender functionality
+app.get("/api/debug/prerender-test", async (req, res) => {
+  try {
+    const path = req.query.path || '/articles/2025-04-17-the-joy-of-container-gardening-beauty-in-every-pot';
+    const userAgent = 'Twitterbot'; // Simulate a Twitter crawler
+    
+    // Import the prerender handler
+    const { default: prerenderHandler } = await import('./prerender-article');
+    
+    // Call the prerender handler directly with custom request object
+    await prerenderHandler(
+      { 
+        headers: { 'user-agent': userAgent },
+        query: { path, forcePrerender: 'true' },
+        url: `https://newsplatform.org${path}`
+      }, 
+      res
+    );
+  } catch (error) {
+    console.error('Error in prerender test:', error);
+    res.status(500).json({ error: 'Prerender test failed', details: error.message });
+  }
+});
+
+// Add a dedicated route for testing the prerender functionality without rewriting rules
+app.get("/test-prerender/:slug", async (req, res) => {
+  try {
+    console.log(`Test prerender for slug: ${req.params.slug}`);
+    
+    // Import the prerender handler
+    const { default: prerenderHandler } = await import('./prerender-article');
+    
+    // Set mock crawler user agent
+    req.headers['user-agent'] = 'Twitterbot';
+    
+    // Set path query parameter 
+    req.query.path = `/articles/${req.params.slug}`;
+    req.query.forcePrerender = 'true';
+    
+    console.log('Calling prerender handler with params:', {
+      slug: req.params.slug,
+      path: req.query.path,
+      userAgent: req.headers['user-agent']
+    });
+    
+    // Call the prerender handler
+    await prerenderHandler(req, res);
+  } catch (error) {
+    console.error('Error in test-prerender endpoint:', error);
+    res.status(500).json({ error: 'Prerender test failed', details: error.message });
+  }
+});
