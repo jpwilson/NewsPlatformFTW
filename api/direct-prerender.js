@@ -272,26 +272,27 @@ export default async function handler(req, res) {
     const host = req.headers['x-forwarded-host'] || req.headers.host || 'newsplatform.org';
     const siteUrl = `${protocol}://${host}`;
     
-    // Use our helper function to find an image
-    let firstImage = extractImageUrl(article);
+    // Use the same image access pattern that the main article page uses
     let imageUrl = null;
     
-    // Check if we should force a specific image (for testing)
-    if (req.query.forceImage === 'true') {
-      console.log('Forcing a sample image for testing purposes');
-      firstImage = 'https://newsplatform.org/api/public-assets/sample-article-image.jpg';
+    // Look for images in article.images (most common case)
+    if (article.images && article.images.length > 0) {
+      // Get first image URL - use the actual field name from your DB structure
+      const firstImage = article.images[0];
+      
+      if (firstImage.imageUrl) {
+        imageUrl = firstImage.imageUrl;
+        console.log('Found image URL in article.images[0].imageUrl:', imageUrl);
+      } else if (firstImage.image_url) {
+        imageUrl = firstImage.image_url;
+        console.log('Found image URL in article.images[0].image_url:', imageUrl);
+      }
     }
     
-    // Ensure URLs are absolute and fix missing protocol
-    if (firstImage) {
-      if (firstImage.startsWith('//')) {
-        imageUrl = `https:${firstImage}`;
-      } else if (firstImage.startsWith('/')) {
-        imageUrl = `${siteUrl}${firstImage}`;
-      } else if (!firstImage.startsWith('http')) {
-        imageUrl = `${siteUrl}/${firstImage}`;
-      } else {
-        imageUrl = firstImage;
+    // Ensure image URLs are absolute
+    if (imageUrl) {
+      if (!imageUrl.startsWith('http')) {
+        imageUrl = `${siteUrl}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
       }
       console.log('Final image URL:', imageUrl);
     }
