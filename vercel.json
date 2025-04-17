@@ -10,6 +10,10 @@
             "use": "@vercel/node"
         },
         {
+            "src": "api/direct-prerender.js",
+            "use": "@vercel/node"
+        },
+        {
             "src": "package.json",
             "use": "@vercel/static-build",
             "config": {
@@ -58,7 +62,7 @@
     "rewrites": [
         {
             "source": "/test-prerender/:slug",
-            "destination": "/api/index.ts"
+            "destination": "/api/direct-prerender.js?slug=:slug"
         },
         {
             "source": "/api/debug/prerender-test",
@@ -93,7 +97,7 @@
         },
         {
             "source": "/articles/:slug/prerender",
-            "destination": "/api/prerender-article.js?path=/articles/:slug&forcePrerender=true"
+            "destination": "/api/direct-prerender.js?slug=:slug"
         },
         {
             "source": "/auth-callback",
