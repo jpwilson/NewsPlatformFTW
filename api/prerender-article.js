@@ -161,11 +161,6 @@ export default async function handler(req, res) {
         image_url,
         caption,
         order
-      ),
-      channel (
-        id,
-        name,
-        slug
       )
     `;
 
