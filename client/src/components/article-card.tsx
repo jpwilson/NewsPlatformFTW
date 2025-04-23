@@ -188,12 +188,14 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
                 <span className="text-sm">{dislikes}</span>
               </div>
 
-              <Link href={`${articleUrl}#comments`}>
-                <div className="flex items-center text-muted-foreground hover:text-primary hover:underline cursor-pointer">
-                  <MessageSquare className="h-4 w-4 mr-1" />
-                  <span className="text-sm">{commentCount}</span>
-                </div>
-              </Link>
+              {commentCount >= 7 && (
+                <Link href={`${articleUrl}#comments`}>
+                  <div className="flex items-center text-muted-foreground hover:text-primary hover:underline cursor-pointer">
+                    <MessageSquare className="h-4 w-4 mr-1" />
+                    <span className="text-sm">{commentCount}</span>
+                  </div>
+                </Link>
+              )}
             </div>
           </CardFooter>
         </div>

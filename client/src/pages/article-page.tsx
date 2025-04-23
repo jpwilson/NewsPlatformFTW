@@ -1569,12 +1569,14 @@ export default function ArticlePage() {
                   </span>
                 </div>
 
-                <div className="flex items-center">
-                  <MessageSquare className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" />
-                  <span className="text-sm font-medium">
-                    {commentCount} comments
-                  </span>
-                </div>
+                {commentCount >= 7 && (
+                  <div className="flex items-center">
+                    <MessageSquare className="h-5 w-5 mr-2 text-blue-600 dark:text-blue-400" />
+                    <span className="text-sm font-medium">
+                      {commentCount} comments
+                    </span>
+                  </div>
+                )}
 
                 {/* Replace the Share button with a dropdown menu */}
                 <DropdownMenu>
