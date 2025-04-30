@@ -48,6 +48,7 @@ import { useSupabaseClient } from "@supabase/auth-helpers-react";
 import imageCompression from "browser-image-compression";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase as defaultSupabase } from "@/lib/supabase"; // Import the default client
+import { RichTextEditor } from "./rich-text-editor";
 
 // Re-export the MapboxLocationPicker, StandaloneLocationPicker, and MapboxLocation for use in other components
 export { MapboxLocation };
@@ -1617,21 +1618,17 @@ export function ArticleEditor({
             <FormItem>
               <FormLabel>Content</FormLabel>
               <FormControl>
-                <Textarea
-                  placeholder={`Write your article content here...
-Use blank lines to create paragraphs.
-Your formatting will be preserved.`}
-                  className="min-h-[300px] max-h-[300px] overflow-y-auto font-sans"
-                  {...field}
-                  onChange={(e) => {
-                    field.onChange(e.target.value);
-                  }}
+                <RichTextEditor
+                  content={field.value}
+                  onChange={field.onChange}
+                  placeholder="Write your article content here..."
                 />
               </FormControl>
-              <p className="text-sm text-muted-foreground mt-1">
-                Tip: Use blank lines to create paragraphs. Your formatting will
-                be preserved.
-              </p>
+              <FormDescription>
+                Write your article content. Use formatting tools to structure
+                your article.
+              </FormDescription>
+              <FormMessage />
             </FormItem>
           )}
         />

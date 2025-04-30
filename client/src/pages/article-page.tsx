@@ -62,6 +62,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RichTextEditor } from "@/components/rich-text-editor";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 type ArticleWithSnakeCase = Article & {
@@ -158,6 +159,25 @@ function extractDescription(
     return truncated.substring(0, lastSpace) + "...";
   }
 }
+
+// Add these utility functions after the other helper functions
+const isPlainText = (content: string | undefined): boolean => {
+  if (!content) return true;
+  // Check if content has any HTML tags
+  return !/<[a-z][\s\S]*>/i.test(content);
+};
+
+const convertPlainTextToHtml = (plainText: string | undefined): string => {
+  if (!plainText) return "";
+
+  // Split on double newlines (paragraphs)
+  const paragraphs = plainText.split(/\n\s*\n/);
+
+  // Wrap each paragraph in <p> tags and join
+  return paragraphs
+    .map((para) => `<p>${para.replace(/\n/g, "<br>")}</p>`)
+    .join("");
+};
 
 export default function ArticlePage() {
   const { id } = useParams<{ id: string }>();
@@ -1726,10 +1746,9 @@ export default function ArticlePage() {
             {/* Article content */}
             {isEditing ? (
               <>
-                <textarea
-                  value={editableContent}
-                  onChange={(e) => setEditableContent(e.target.value)}
-                  className="w-full min-h-[500px] p-4 border border-input bg-background rounded-md"
+                <RichTextEditor
+                  content={editableContent}
+                  onChange={setEditableContent}
                 />
 
                 {/* Image editing section */}
@@ -1805,11 +1824,13 @@ export default function ArticlePage() {
                 </div>
               </>
             ) : (
-              // Use white-space-pre-line to preserve paragraphs and text-justify for justified text
+              // Render HTML content - convert plain text if needed
               <div
-                className="whitespace-pre-line text-justify"
+                className="prose dark:prose-invert max-w-none"
                 dangerouslySetInnerHTML={{
-                  __html: article.content.replace(/\n/g, "<br />"),
+                  __html: isPlainText(article.content)
+                    ? convertPlainTextToHtml(article.content)
+                    : article.content || "",
                 }}
               />
             )}
