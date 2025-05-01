@@ -66,6 +66,7 @@
     "bcrypt": "^5.1.1",
     "better-sqlite3": "^11.8.1",
     "browser-image-compression": "^2.0.2",
+    "canvas": "^3.1.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
