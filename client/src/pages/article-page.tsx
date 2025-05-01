@@ -180,9 +180,11 @@ const convertPlainTextToHtml = (plainText: string | undefined): string => {
 };
 
 export default function ArticlePage() {
+  const [location, setLocation] = useLocation();
   const { id } = useParams<{ id: string }>();
+  // Extract just the numeric ID portion if it contains a slash
+  const articleId = id.includes("/") ? id.split("/")[0] : id;
   const { user } = useAuth();
-  const [, setLocation] = useLocation();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { toast } = useToast();
@@ -229,8 +231,21 @@ export default function ArticlePage() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [showImageModal, setShowImageModal] = useState(false);
 
-  const { data: article, isLoading } = useQuery<ArticleWithSnakeCase>({
-    queryKey: [`/api/articles/${id}`],
+  const {
+    data: article,
+    isLoading,
+    error,
+  } = useQuery<ArticleWithSnakeCase>({
+    queryKey: [`/api/articles/${articleId}`],
+    queryFn: async () => {
+      if (!articleId) return null;
+      const response = await fetch(`/api/articles/${articleId}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch article");
+      }
+      return response.json();
+    },
+    enabled: !!articleId,
   });
 
   // Fetch user's channels if needed for editing
@@ -452,7 +467,7 @@ export default function ArticlePage() {
 
   // Increment view count when the article is loaded
   useEffect(() => {
-    if (id && !isLoading && article) {
+    if (articleId && !isLoading && article) {
       console.log("Recording view for article:", article.slug);
       apiRequest("POST", `/api/articles/${article.slug}/view`, {})
         .then((response) => response.json())
@@ -473,7 +488,7 @@ export default function ArticlePage() {
 
             // Invalidate the specific article query
             queryClient.invalidateQueries({
-              queryKey: [`/api/articles/${id}`],
+              queryKey: [`/api/articles/${articleId}`],
             });
 
             // Invalidate all article lists/feeds
@@ -499,7 +514,7 @@ export default function ArticlePage() {
         })
         .catch((err) => console.error("Failed to increment view count:", err));
     }
-  }, [id, isLoading, article]);
+  }, [articleId, isLoading, article]);
 
   const [likeCount, setLikeCount] = useState(0);
   const [dislikeCount, setDislikeCount] = useState(0);
@@ -609,12 +624,14 @@ export default function ArticlePage() {
     mutationFn: async () => {
       const response = await apiRequest(
         "POST",
-        `/api/articles/${id}/toggle-status`
+        `/api/articles/${articleId}/toggle-status`
       );
       return await response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/articles/${id}`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/articles/${articleId}`],
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
       toast({
         title: `Article ${data.published ? "published" : "moved to drafts"}`,
@@ -635,11 +652,17 @@ export default function ArticlePage() {
   // New mutation for updating the article
   const updateArticleMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest("PATCH", `/api/articles/${id}`, data);
+      const response = await apiRequest(
+        "PATCH",
+        `/api/articles/${articleId}`,
+        data
+      );
       return await response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/articles/${id}`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/articles/${articleId}`],
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
       setIsEditing(false);
       setIsSaving(false);
@@ -661,9 +684,12 @@ export default function ArticlePage() {
   // Mutation for deleting the article
   const deleteArticleMutation = useMutation({
     mutationFn: async () => {
-      console.log(`Attempting to delete article with ID: ${id}`);
+      console.log(`Attempting to delete article with ID: ${articleId}`);
       try {
-        const response = await apiRequest("DELETE", `/api/articles/${id}`);
+        const response = await apiRequest(
+          "DELETE",
+          `/api/articles/${articleId}`
+        );
         // Don't try to parse JSON for 204 No Content responses
         if (response.status === 204) {
           return null; // No content to parse
@@ -885,7 +911,9 @@ export default function ArticlePage() {
       }
 
       // Successfully updated
-      queryClient.invalidateQueries({ queryKey: [`/api/articles/${id}`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/articles/${articleId}`],
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/articles"] });
       setIsEditing(false);
       setIsSaving(false);
@@ -1149,7 +1177,11 @@ export default function ArticlePage() {
     ((article as any)._location ? (article as any)._location.name : null);
 
   // Create meta information for sharing
-  const articleUrl = createSlugUrl("/articles/", article?.slug || "", id);
+  const articleUrl = createSlugUrl(
+    "/articles/",
+    article?.slug || "",
+    articleId
+  );
   const articleFullUrl =
     typeof window !== "undefined" ? window.location.href : "";
   const firstImage =
@@ -1893,9 +1925,10 @@ export default function ArticlePage() {
             )}
           </div>
 
-          {!isEditing && (
+          {/* Comments section (only show for published articles) */}
+          {article && article.status !== "draft" && (
             <CommentSection
-              articleId={article.id}
+              articleId={parseInt(articleId)}
               onCommentsLoaded={setRealTimeCommentCount}
             />
           )}
@@ -1908,7 +1941,7 @@ export default function ArticlePage() {
             <AlertDialogTitle>Authentication Required</AlertDialogTitle>
             <AlertDialogDescription>
               You need to be logged in to{" "}
-              {id ? "like or dislike articles" : "view channel details"}.
+              {articleId ? "like or dislike articles" : "view channel details"}.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

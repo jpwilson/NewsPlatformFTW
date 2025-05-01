@@ -9,21 +9,21 @@
  * @returns A URL-friendly slug
  */
 export function generateSlug(text: string, maxLength = 60): string {
-  if (!text) return '';
-  
+  if (!text) return "";
+
   // Convert to lowercase
   let slug = text.toLowerCase();
-  
+
   // Replace non-alphanumeric characters with hyphens
-  slug = slug.replace(/[^a-z0-9]+/g, '-');
-  
+  slug = slug.replace(/[^a-z0-9]+/g, "-");
+
   // Remove leading and trailing hyphens
-  slug = slug.replace(/^-+|-+$/g, '');
-  
+  slug = slug.replace(/^-+|-+$/g, "");
+
   // Truncate if needed (without cutting words)
   if (maxLength && slug.length > maxLength) {
     // Find the last hyphen before the maxLength
-    const lastHyphen = slug.substring(0, maxLength).lastIndexOf('-');
+    const lastHyphen = slug.substring(0, maxLength).lastIndexOf("-");
     if (lastHyphen > 0) {
       slug = slug.substring(0, lastHyphen);
     } else {
@@ -31,7 +31,7 @@ export function generateSlug(text: string, maxLength = 60): string {
       slug = slug.substring(0, maxLength);
     }
   }
-  
+
   return slug;
 }
 
@@ -51,13 +51,18 @@ export function generateChannelSlug(name: string): string {
  * @param includeDate Whether to include date prefix
  * @returns Slug for the article
  */
-export function generateArticleSlug(title: string, includeDate = false): string {
+export function generateArticleSlug(
+  title: string,
+  includeDate = false
+): string {
   if (includeDate) {
     const date = new Date();
-    const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+    const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1)
+      .toString()
+      .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
     return `${dateStr}-${generateSlug(title)}`;
   }
-  
+
   return generateSlug(title);
 }
 
@@ -75,24 +80,33 @@ export function extractIdFromPath(path: string): string | null {
   if (/^\d+$/.test(idMatch[2])) {
     return idMatch[2];
   }
-  
+
   // Check if there's a numeric ID at the end of the slug
   const idAtEndMatch = idMatch[2].match(/-(\d+)$/);
   if (idAtEndMatch) {
     return idAtEndMatch[1];
   }
-  
+
   return null;
 }
 
 /**
- * Create a URL with just the slug
- * @param baseUrl The base URL path (e.g., "/channels/")
- * @param slug The slug text
- * @param id The numeric ID (used as fallback if no slug exists)
- * @returns URL with just the slug
+ * Create a URL with appropriate format based on the resource type
+ * @param baseUrl The base URL path (e.g., "/articles/" or "/channels/")
+ * @param slug The slug text (optional)
+ * @param id The numeric ID (required)
+ * @returns URL formatted appropriately for the resource type
  */
-export function createSlugUrl(baseUrl: string, slug: string, id: string | number): string {
-  // If no slug is provided, fall back to the ID
+export function createSlugUrl(
+  baseUrl: string,
+  slug: string,
+  id: string | number
+): string {
+  // For articles, use ID-based URLs with optional slug
+  if (baseUrl.includes("/articles/")) {
+    return slug ? `${baseUrl}${id}/${slug}` : `${baseUrl}${id}`;
+  }
+
+  // For other resources (channels, etc.), use the original slug-based format
   return `${baseUrl}${slug || id}`;
-} 
+}
