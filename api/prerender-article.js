@@ -52,11 +52,19 @@ function extractArticleIdFromPath(path) {
   
   // Handle different path formats
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  const match = cleanPath.match(/\/articles\/([^\/]+)/);
   
-  if (match) {
-    console.log('Extracted article ID/slug from path:', match[1]);
-    return match[1];
+  // Check for new ID-based URL format: /articles/{id}/{slug}
+  const idBasedMatch = cleanPath.match(/\/articles\/(\d+)(?:\/.*)?/);
+  if (idBasedMatch) {
+    console.log('Extracted numeric article ID from path:', idBasedMatch[1]);
+    return idBasedMatch[1];
+  }
+  
+  // Fall back to old slug-based format: /articles/{slug}
+  const slugMatch = cleanPath.match(/\/articles\/([^\/]+)/);
+  if (slugMatch) {
+    console.log('Extracted article slug from path:', slugMatch[1]);
+    return slugMatch[1];
   }
   
   return null;
@@ -221,7 +229,8 @@ export default async function handler(req, res) {
       console.log('Final absolute image URL:', absoluteImageUrl);
     }
 
-    const articleUrl = `${siteUrl}/articles/${article.slug || article.id}`;
+    // Construct article URL in the new format with ID/slug
+    const articleUrl = `${siteUrl}/articles/${article.id}${article.slug ? `/${article.slug}` : ''}`;
     const description = createDescription(article.content);
     const escapeHtml = (text) => String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     const title = escapeHtml(article.title || 'News Article');

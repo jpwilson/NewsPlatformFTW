@@ -55,6 +55,17 @@
             "destination": "/api/index.ts"
         },
         {
+            "source": "/articles/:id/:slug?",
+            "has": [
+                {
+                    "type": "header",
+                    "key": "user-agent",
+                    "value": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
+                }
+            ],
+            "destination": "/api/prerender-article.js?path=/articles/:id/:slug"
+        },
+        {
             "source": "/articles/:slug",
             "has": [
                 {
