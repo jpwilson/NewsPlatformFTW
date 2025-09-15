@@ -3,6 +3,7 @@ import { Article, Channel } from "@shared/schema";
 import { ArticleCard } from "@/components/article-card";
 import { ChannelCard } from "@/components/channel-card";
 import { NavigationBar } from "@/components/navigation-bar";
+import { CategoryRibbon } from "@/components/category-ribbon";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -13,6 +14,7 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
+  MapPin,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect } from "react";
@@ -55,6 +57,7 @@ type ArticleWithSnakeCase = Article & {
   viewCount?: number;
   view_count?: number;
   userReaction?: boolean | null;
+  categoryId?: number;
   _count?: {
     comments?: number;
   };
@@ -83,7 +86,6 @@ export default function HomePage() {
   const [orderDirection, setOrderDirection] = useState<OrderDirection>("desc");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategories, setFilterCategories] = useState<string[]>([]);
-  const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [filterChannels, setFilterChannels] = useState<number[]>([]);
   const [filteredArticles, setFilteredArticles] = useState<
     ArticleWithSnakeCase[]
@@ -92,6 +94,11 @@ export default function HomePage() {
     ChannelWithSnakeCase[]
   >([]);
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  const [ribbonCategory, setRibbonCategory] = useState<string | null>(null);
+  const [ribbonCategoryIds, setRibbonCategoryIds] = useState<number[]>([]);
+  const [userLocation, setUserLocation] = useState<{ city?: string; country?: string } | undefined>();
+  const [locationSearchTerm, setLocationSearchTerm] = useState("");
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [availableLocations, setAvailableLocations] = useState<string[]>([]);
 
   // Get all articles
@@ -106,6 +113,13 @@ export default function HomePage() {
     ChannelWithSnakeCase[]
   >({
     queryKey: ["/api/channels"],
+  });
+
+  // Get all categories for mapping
+  const { data: categoriesData } = useQuery<
+    { id: number; name: string; parentId: number | null }[]
+  >({
+    queryKey: ["/api/categories"],
   });
 
   // Filter out user's own channels
@@ -161,7 +175,7 @@ export default function HomePage() {
             .map((article) => article.location)
             .filter((location): location is string => !!location)
         )
-      );
+      ).sort(); // Sort alphabetically for better UX
 
       setAvailableCategories(categories);
       setAvailableLocations(locations);
@@ -173,6 +187,43 @@ export default function HomePage() {
     if (!articles) return;
 
     let filtered = [...articles];
+
+    // Apply ribbon category filter first (if selected)
+    if (ribbonCategory && ribbonCategoryIds.length > 0 && categoriesData) {
+      // Get all category IDs including children
+      const allCategoryIds = new Set<number>();
+      
+      const addCategoryAndChildren = (categoryId: number) => {
+        allCategoryIds.add(categoryId);
+        // Find all children of this category
+        categoriesData
+          .filter(cat => cat.parentId === categoryId)
+          .forEach(child => addCategoryAndChildren(child.id));
+      };
+      
+      ribbonCategoryIds.forEach(id => addCategoryAndChildren(id));
+      
+      // Filter articles by these category IDs
+      filtered = filtered.filter((article) => {
+        // First check if article has a category ID
+        if (article.categoryId) {
+          return allCategoryIds.has(article.categoryId);
+        }
+        // Otherwise check by category name
+        const categoryName = article.category;
+        const category = categoriesData.find(cat => cat.name === categoryName);
+        return category && allCategoryIds.has(category.id);
+      });
+
+      // Special handling for "politics" filter - filter News & Politics articles
+      if (ribbonCategory === "politics") {
+        filtered = filtered.filter((article) =>
+          article.title.toLowerCase().includes("politic") ||
+          article.content.toLowerCase().includes("politic") ||
+          article.category.toLowerCase().includes("politic")
+        );
+      }
+    }
 
     // Apply search filter
     if (searchTerm) {
@@ -192,10 +243,12 @@ export default function HomePage() {
     }
 
     // Apply location filter
-    if (filterLocations.length > 0) {
+    if (locationSearchTerm) {
+      const searchLower = locationSearchTerm.toLowerCase();
       filtered = filtered.filter(
         (article) =>
-          article.location && filterLocations.includes(article.location)
+          article.location && 
+          article.location.toLowerCase().includes(searchLower)
       );
     }
 
@@ -261,8 +314,11 @@ export default function HomePage() {
     orderDirection,
     searchTerm,
     filterCategories,
-    filterLocations,
+    locationSearchTerm,
     filterChannels,
+    ribbonCategory,
+    ribbonCategoryIds,
+    categoriesData,
   ]);
 
   // Handle category toggle
@@ -274,14 +330,6 @@ export default function HomePage() {
     );
   };
 
-  // Handle location toggle
-  const toggleLocation = (location: string) => {
-    setFilterLocations((prev) =>
-      prev.includes(location)
-        ? prev.filter((l) => l !== location)
-        : [...prev, location]
-    );
-  };
 
   // Handle channel toggle
   const toggleChannel = (channelId: number) => {
@@ -301,7 +349,7 @@ export default function HomePage() {
   const clearFilters = () => {
     setSearchTerm("");
     setFilterCategories([]);
-    setFilterLocations([]);
+    setLocationSearchTerm("");
     setFilterChannels([]);
   };
 
@@ -327,12 +375,30 @@ export default function HomePage() {
   const activeFilterCount =
     (searchTerm ? 1 : 0) +
     filterCategories.length +
-    filterLocations.length +
+    (locationSearchTerm ? 1 : 0) +
     filterChannels.length;
 
   return (
     <div className="min-h-screen bg-background">
       <NavigationBar selectedChannelId={user ? selectedChannelId : undefined} />
+      
+      <CategoryRibbon
+        selectedCategory={ribbonCategory}
+        onCategorySelect={(categoryId, dbIds) => {
+          setRibbonCategory(categoryId);
+          setRibbonCategoryIds(dbIds);
+          // Clear other filters when selecting a ribbon category
+          if (categoryId) {
+            setFilterCategories([]);
+            setSearchTerm("");
+          }
+        }}
+        userLocation={userLocation}
+        onLocationClick={() => {
+          // TODO: Implement location picker
+          console.log("Location picker not yet implemented");
+        }}
+      />
 
       <div className="container mx-auto p-4 lg:p-8">
         {/* Main content area with Articles and Channels - moved up to wrap headers too */}
@@ -342,13 +408,19 @@ export default function HomePage() {
             {/* Header section */}
             <div>
               <h1 className="text-4xl font-bold">
-                {user ? "Your Feed" : "Popular Articles"}
+                {ribbonCategory 
+                  ? ribbonCategory.charAt(0).toUpperCase() + ribbonCategory.slice(1) + " News"
+                  : user 
+                    ? "Your Feed" 
+                    : "Popular Articles"}
               </h1>
               <div className="flex justify-between items-center mt-2">
                 <p className="text-muted-foreground">
-                  {user
-                    ? "Latest articles from your favorite channels"
-                    : "Want to interact or write your own articles? Sign up or log in!"}
+                  {ribbonCategory
+                    ? `Showing ${ribbonCategory} articles`
+                    : user
+                      ? "Latest articles from your favorite channels"
+                      : "Want to interact or write your own articles? Sign up or log in!"}
                 </p>
 
                 {/* Article control buttons - now contained in article column */}
@@ -467,34 +539,64 @@ export default function HomePage() {
                         </div>
 
                         {/* Locations */}
-                        {availableLocations.length > 0 && (
-                          <div className="space-y-2">
-                            <Label>Locations</Label>
-                            <ScrollArea className="h-32">
-                              <div className="space-y-2">
-                                {availableLocations.map((location) => (
-                                  <div
-                                    key={location}
-                                    className="flex items-center space-x-2"
-                                  >
-                                    <Checkbox
-                                      id={`location-${location}`}
-                                      checked={filterLocations.includes(
-                                        location
-                                      )}
-                                      onCheckedChange={() =>
-                                        toggleLocation(location)
-                                      }
-                                    />
-                                    <Label htmlFor={`location-${location}`}>
+                        <div className="space-y-2">
+                          <Label htmlFor="location-search">Location</Label>
+                          <div className="relative">
+                            <MapPin className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              id="location-search"
+                              placeholder="Search by location..."
+                              className="pl-8"
+                              value={locationSearchTerm}
+                              onChange={(e) => {
+                                setLocationSearchTerm(e.target.value);
+                                setShowLocationSuggestions(true);
+                              }}
+                              onFocus={() => setShowLocationSuggestions(true)}
+                              onBlur={() => {
+                                // Delay to allow clicking on suggestions
+                                setTimeout(() => setShowLocationSuggestions(false), 200);
+                              }}
+                            />
+                            
+                            {/* Typeahead suggestions */}
+                            {showLocationSuggestions && locationSearchTerm && (
+                              <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border bg-popover p-1 shadow-md z-50">
+                                {availableLocations
+                                  .filter(location => 
+                                    location.toLowerCase().includes(locationSearchTerm.toLowerCase())
+                                  )
+                                  .slice(0, 8) // Show max 8 suggestions
+                                  .map((location) => (
+                                    <button
+                                      key={location}
+                                      className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                                      onClick={() => {
+                                        setLocationSearchTerm(location);
+                                        setShowLocationSuggestions(false);
+                                      }}
+                                    >
+                                      <MapPin className="h-3 w-3" />
                                       {location}
-                                    </Label>
-                                  </div>
-                                ))}
+                                    </button>
+                                  ))
+                                }
+                                {availableLocations.filter(location => 
+                                  location.toLowerCase().includes(locationSearchTerm.toLowerCase())
+                                ).length === 0 && (
+                                  <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                                    No locations found
+                                  </p>
+                                )}
                               </div>
-                            </ScrollArea>
+                            )}
                           </div>
-                        )}
+                          {locationSearchTerm && (
+                            <p className="text-xs text-muted-foreground">
+                              Filtering articles from "{locationSearchTerm}"
+                            </p>
+                          )}
+                        </div>
 
                         {/* Channels */}
                         {channels && channels.length > 0 && (
@@ -603,21 +705,20 @@ export default function HomePage() {
                   </Badge>
                 ))}
 
-                {filterLocations.map((location) => (
+                {locationSearchTerm && (
                   <Badge
-                    key={location}
                     variant="secondary"
                     className="flex items-center gap-1"
                   >
-                    Location: {location}
+                    Location: {locationSearchTerm}
                     <button
                       className="ml-1 hover:text-destructive"
-                      onClick={() => toggleLocation(location)}
+                      onClick={() => setLocationSearchTerm("")}
                     >
                       ×
                     </button>
                   </Badge>
-                ))}
+                )}
 
                 {filterChannels.map((channelId) => {
                   const channel = channels?.find((c) => c.id === channelId);
