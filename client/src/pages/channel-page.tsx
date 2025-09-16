@@ -23,7 +23,10 @@ import {
   MessageSquare,
   ThumbsUp,
   ChevronDown,
+  Camera,
+  Image,
 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useState, useEffect } from "react";
 import {
   Select,
@@ -572,11 +575,41 @@ export default function ChannelPage() {
 
       {/* Only show channel content to logged in users */}
       {user && (
-        <div className="container mx-auto px-4 py-6">
+        <div className="w-full">
+          {/* Banner Image */}
+          <div className="relative w-full h-48 lg:h-64 bg-gradient-to-br from-primary/20 to-primary/5">
+            {channel.bannerImage ? (
+              <img
+                src={channel.bannerImage}
+                alt={`${channel.name} banner`}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <div className="text-center text-muted-foreground/50">
+                  <Image className="h-12 w-12 mx-auto mb-2" />
+                  <p className="text-sm">No banner image</p>
+                </div>
+              </div>
+            )}
+            
+            {/* Profile Image Overlay */}
+            <div className="absolute -bottom-12 left-4 lg:left-8">
+              <Avatar className="h-24 w-24 border-4 border-background shadow-xl">
+                <AvatarImage src={channel.profileImage} alt={channel.name} />
+                <AvatarFallback className="bg-primary/10 text-2xl font-bold">
+                  {channel.name.substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+          </div>
+
+          {/* Content Container */}
+          <div className="container mx-auto px-4 pt-16 pb-6">
           <div className="grid lg:grid-cols-[2fr_1fr] gap-8">
             <div>
               <div className="flex justify-between items-start mb-8">
-                <div>
+                <div className="flex-1">
                   {isEditing ? (
                     <div className="space-y-4 w-full max-w-[800px]">
                       <div>
@@ -871,6 +904,7 @@ export default function ChannelPage() {
                 </div>
               )}
             </div>
+          </div>
           </div>
         </div>
       )}

@@ -11,15 +11,16 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Users, UserRound, Calendar } from "lucide-react";
+import { Users, UserRound, Calendar, FileText } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { AuthDialog } from "./auth-dialog";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { createSlugUrl } from "@/lib/slug-utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-// Extended Channel type that includes subscriberCount
+// Extended Channel type that includes subscriberCount and article count
 type ExtendedChannel = Channel & {
   subscriberCount?: number;
   subscriber_count?: number;
@@ -27,6 +28,11 @@ type ExtendedChannel = Channel & {
   created_at?: string;
   createdAt?: string;
   user_id?: number;
+  articleCount?: number;
+  article_count?: number;
+  _count?: {
+    articles?: number;
+  };
 };
 
 export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
@@ -131,6 +137,19 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
     }
   };
 
+  // Get the article count from various sources
+  const getArticleCount = () => {
+    if (typeof channel.articleCount === "number") {
+      return channel.articleCount;
+    } else if (typeof channel.article_count === "number") {
+      return channel.article_count;
+    } else if (channel._count?.articles !== undefined) {
+      return channel._count.articles;
+    } else {
+      return 0;
+    }
+  };
+
   // Format the creation date
   const formatCreationDate = () => {
     const dateStr = channel.created_at || channel.createdAt;
@@ -145,24 +164,43 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
   return (
     <>
       <Card
-        className="mb-4 cursor-pointer hover:shadow-md transition-shadow"
+        className="mb-4 cursor-pointer hover:shadow-lg transition-all duration-200 shadow-sm"
         onClick={handleCardClick}
       >
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold">{channel.name}</h3>
-            <div className="flex items-center gap-1 text-muted-foreground">
-              <Users className="h-4 w-4" />
-              <span className="text-sm">
-                {getSubscriberCount()} subscribers
-              </span>
+        <CardHeader className="pb-3">
+          <div className="flex items-start gap-3">
+            {/* Profile Image */}
+            <Avatar className="h-12 w-12 flex-shrink-0">
+              <AvatarImage src={channel.profileImage} alt={channel.name} />
+              <AvatarFallback className="bg-primary/10">
+                {channel.name.substring(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            
+            {/* Channel Info */}
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-lg leading-tight truncate">
+                {channel.name}
+              </h3>
+              
+              {/* Stats Row */}
+              <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <Users className="h-3.5 w-3.5" />
+                  <span>{getSubscriberCount().toLocaleString()} subscribers</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>{getArticleCount()} articles</span>
+                </div>
+              </div>
             </div>
           </div>
         </CardHeader>
 
         <CardContent>
           {channel.description && (
-            <p className="text-sm text-muted-foreground mb-4 line-clamp-3 overflow-hidden">
+            <p className="text-sm text-muted-foreground mb-4 line-clamp-2 leading-relaxed">
               {channel.description}
             </p>
           )}
@@ -170,18 +208,18 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
           {user &&
           (user.id === channel.userId || user.id === channel.user_id) ? (
             // Channel owner can't subscribe to their own channel
-            <div className="text-xs text-muted-foreground text-center p-2">
+            <div className="text-xs text-muted-foreground text-center p-2 bg-muted/30 rounded-md">
               Your channel
             </div>
           ) : isSubscribed ? (
             // User is already subscribed - show subscribed state
-            <div className="text-center text-sm text-muted-foreground">
-              Subscribed
+            <div className="text-center text-sm text-muted-foreground p-2 bg-primary/5 rounded-md font-medium">
+              ✓ Subscribed
             </div>
           ) : (
             // User is not subscribed - show subscribe button
             <Button
-              variant="outline"
+              variant="default"
               size="sm"
               className="w-full"
               onClick={(e) => {
