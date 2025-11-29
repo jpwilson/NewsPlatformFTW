@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Article, Channel } from "@shared/schema";
+import { ArticleWithSnakeCase } from "@/types/article";
 import { NavigationBar } from "@/components/navigation-bar";
 import { CommentSection } from "@/components/comment-section";
 import { useParams, useLocation } from "wouter";
@@ -41,6 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Link } from "wouter";
 import { createSlugUrl } from "@/lib/slug-utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   HierarchicalCategorySelect,
   CategoryWithChildren,
@@ -1208,19 +1210,46 @@ export default function ArticlePage() {
         <NavigationBar />
 
         <article className="container mx-auto p-4 lg:p-8 max-w-4xl">
-          <header className="mb-8 border-b pb-6">
+          <header className="mb-8 border-b pb-6 relative">
             <div className="flex justify-between items-start">
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editableTitle}
-                  onChange={(e) => setEditableTitle(e.target.value)}
-                  className="text-4xl font-bold mb-4 w-full p-2 border border-input bg-background rounded-md"
-                />
-              ) : (
-                <h1 className="text-4xl font-bold mb-4">{article.title}</h1>
-              )}
+              <div className="flex-1 pr-4">
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={editableTitle}
+                    onChange={(e) => setEditableTitle(e.target.value)}
+                    className="text-4xl font-bold mb-4 w-full p-2 border border-input bg-background rounded-md"
+                  />
+                ) : (
+                  <h1 className="text-4xl font-bold mb-4">{article.title}</h1>
+                )}
+              </div>
 
+              {/* Channel Profile Image and Name */}
+              {article?.channel && (
+                <div className="flex flex-col items-center gap-2 min-w-fit">
+                  <button
+                    onClick={handleChannelClick}
+                    className="flex flex-col items-center gap-2 hover:opacity-80 transition-opacity"
+                  >
+                    <Avatar className="h-16 w-16 border-2 border-border">
+                      <AvatarImage 
+                        src={article.channel.profileImage || article.channel.profile_image || undefined} 
+                        alt={article.channel.name} 
+                      />
+                      <AvatarFallback className="bg-primary/10 text-lg font-semibold">
+                        {article.channel.name.substring(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="text-sm font-medium text-primary hover:underline text-center">
+                      {article.channel.name}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between items-start mt-4">
               {/* Owner actions */}
               {isOwner && (
                 <div className="flex gap-2">
@@ -1595,12 +1624,6 @@ export default function ArticlePage() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={handleChannelClick}
-                className="text-primary hover:underline w-fit font-medium"
-              >
-                By: {article.channel?.name || "Unknown Channel"}
-              </button>
 
               {/* Article metrics with Share button */}
               <div className="flex items-center gap-5 mt-3 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg">

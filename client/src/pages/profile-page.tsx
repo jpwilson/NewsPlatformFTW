@@ -30,8 +30,14 @@ import {
   Users,
   Calendar,
   PlusCircle,
+  Camera,
+  Image,
+  Edit,
 } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Label } from "@/components/ui/label";
+import { supabase } from "@/lib/supabase";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -52,10 +58,14 @@ import {
 import { getQueryFn } from "../lib/queryClient";
 import { createSlugUrl } from "@/lib/slug-utils";
 
-// Extended User type to include created_at
+// Extended User type to include created_at and profile images
 type ExtendedUser = User & {
   created_at?: string | null;
   description?: string | null;
+  profileImage?: string | null;
+  profile_image?: string | null;
+  bannerImage?: string | null;
+  banner_image?: string | null;
 };
 
 // Extended Channel type to include subscription info
@@ -99,12 +109,18 @@ const formatDate = (dateString: string | Date | null | undefined): string => {
 };
 
 export default function ProfilePage() {
-  const { userId } = useParams<{ userId: string }>();
+  const { username: routeUsername } = useParams<{ username: string }>();
   const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editedUsername, setEditedUsername] = useState("");
   const [description, setDescription] = useState("");
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
+  const [uploadingBannerImage, setUploadingBannerImage] = useState(false);
+  const profileImageInputRef = useRef<HTMLInputElement>(null);
+  const bannerImageInputRef = useRef<HTMLInputElement>(null);
   const MAX_DESCRIPTION_LENGTH = 300;
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -116,14 +132,14 @@ export default function ProfilePage() {
   // This ensures consistent hook usage regardless of auth state
 
   // Determine if viewing own profile or another user's profile
-  const isOwnProfile = user && (!userId || userId === user.id.toString());
+  const isOwnProfile = user && !routeUsername;
 
   // Fetch profile data (either current user or another user)
   const { data: profileUser, isLoading: loadingProfile } =
     useQuery<ExtendedUser>({
-      queryKey: ["/api/users", isOwnProfile ? user?.id : userId],
+      queryKey: isOwnProfile ? ["/api/users", user?.id] : [`/api/users/by-username/${routeUsername}`],
       initialData: isOwnProfile ? (user as ExtendedUser) : undefined,
-      enabled: !!user && (!isOwnProfile || !!userId),
+      enabled: !!user || !!routeUsername,
     });
 
   // Fetch user's subscribed channels
@@ -132,7 +148,7 @@ export default function ProfilePage() {
       queryKey: [
         isOwnProfile
           ? "/api/user/subscriptions"
-          : `/api/users/${userId}/subscriptions`,
+          : `/api/users/${profileUser?.id}/subscriptions`,
       ],
       enabled: !!user && !!isOwnProfile, // Only fetch subscriptions for own profile when user is logged in
     });
@@ -146,7 +162,7 @@ export default function ProfilePage() {
       const userChannels =
         channels?.filter(
           (c) =>
-            c.userId === (isOwnProfile ? user?.id : parseInt(userId || "0"))
+            c.userId === (isOwnProfile ? user?.id : profileUser?.id)
         ) || [];
 
       // Fetch article counts for each channel

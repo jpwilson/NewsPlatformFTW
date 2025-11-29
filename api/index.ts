@@ -627,12 +627,12 @@ app.get("/api/channels", async (req, res) => {
 
     console.log(`Successfully fetched ${channels?.length || 0} channels`);
 
-    // Enrich each channel with subscriber count
+    // Enrich each channel with subscriber count and article count
     const enrichedChannels = await Promise.all(
       (channels || []).map(async (channel) => {
         // Get subscriber count using a more direct approach that works in all environments
         try {
-          const { count, error: countError } = await supabase
+          const { count: subscriberCount, error: countError } = await supabase
             .from("subscriptions")
             .select("*", { count: "exact", head: true })
             .eq("channel_id", channel.id);
@@ -642,33 +642,45 @@ app.get("/api/channels", async (req, res) => {
               `Error fetching subscriber count for channel ${channel.id}:`,
               countError
             );
-            return {
-              ...channel,
-              subscriberCount: channel.admin_subscriber_count || 0,
-            };
+          }
+
+          // Get article count (only published articles)
+          const { count: articleCount, error: articleError } = await supabase
+            .from("articles")
+            .select("*", { count: "exact", head: true })
+            .eq("channel_id", channel.id)
+            .eq("status", "published");
+
+          if (articleError) {
+            console.error(
+              `Error fetching article count for channel ${channel.id}:`,
+              articleError
+            );
           }
 
           // Add admin_subscriber_count to the real count
-          const realCount = count || 0;
+          const realCount = subscriberCount || 0;
           const adminCount = channel.admin_subscriber_count || 0;
           const totalCount = realCount + adminCount;
 
           console.log(
-            `Channel ${channel.id} (${channel.name}) has ${realCount} real subscribers + ${adminCount} admin subscribers = ${totalCount} total`
+            `Channel ${channel.id} (${channel.name}) has ${realCount} real subscribers + ${adminCount} admin subscribers = ${totalCount} total, ${articleCount || 0} articles`
           );
 
           return {
             ...channel,
             subscriberCount: totalCount,
+            articleCount: articleCount || 0,
           };
-        } catch (countError) {
+        } catch (error) {
           console.error(
-            `Unexpected error fetching subscriber count for channel ${channel.id}:`,
-            countError
+            `Unexpected error fetching data for channel ${channel.id}:`,
+            error
           );
           return {
             ...channel,
             subscriberCount: channel.admin_subscriber_count || 0,
+            articleCount: 0,
           };
         }
       })
@@ -3276,7 +3288,7 @@ app.get("/api/channels/:id/drafts", async (req, res) => {
 app.patch("/api/channels/:id", async (req, res) => {
   try {
     const idParam = req.params.id;
-    const { name, description, category } = req.body;
+    const { name, description, category, profileImage, bannerImage } = req.body;
     console.log(`Updating channel with param ${idParam}:`, req.body);
 
     // Extract the Authorization header (if any)
@@ -3365,14 +3377,18 @@ app.patch("/api/channels/:id", async (req, res) => {
         .json({ error: "Not authorized to update this channel" });
     }
 
+    // Build update object with only provided fields
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (category !== undefined) updateData.category = category;
+    if (profileImage !== undefined) updateData.profile_image = profileImage;
+    if (bannerImage !== undefined) updateData.banner_image = bannerImage;
+
     // Update the channel
     const { data: updatedChannel, error } = await supabase
       .from("channels")
-      .update({
-        name: name || channel.name,
-        description: description || channel.description,
-        category: category || channel.category,
-      })
+      .update(updateData)
       .eq("id", channelId)
       .select()
       .single();
@@ -3956,6 +3972,57 @@ app.delete("/api/articles/:id", async (req, res) => {
   }
 });
 
+// Get user information by ID
+app.get("/api/users/:id", async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    // Fetch user from database - only select existing columns
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("id, username, description, created_at")
+      .eq("id", userId)
+      .single();
+
+    if (error || !user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Return user info (excluding sensitive data)
+    res.json(user);
+  } catch (error) {
+    console.error("Error fetching user:", error);
+    res.status(500).json({ message: "Failed to fetch user information" });
+  }
+});
+
+// Get user information by username
+app.get("/api/users/by-username/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    // Fetch user from database - only select existing columns
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("id, username, description, created_at")
+      .eq("username", username)
+      .single();
+
+    if (error || !user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Return user info (excluding sensitive data)
+    res.json(user);
+  } catch (error) {
+    console.error("Error fetching user by username:", error);
+    res.status(500).json({ message: "Failed to fetch user information" });
+  }
+});
+
 // Update user information by ID
 app.patch("/api/users/:id", async (req, res) => {
   try {
@@ -3982,12 +4049,15 @@ app.patch("/api/users/:id", async (req, res) => {
         .json({ message: "Not authorized to update this user" });
     }
 
-    // Extract update fields from request body (only allow description for now)
-    const { description } = req.body;
+    // Extract update fields from request body
+    const { description, username, profileImage, bannerImage } = req.body;
 
     // Construct update object
     const updates: any = {};
     if (description !== undefined) updates.description = description;
+    if (username !== undefined) updates.username = username;
+    if (profileImage !== undefined) updates.profile_image = profileImage;
+    if (bannerImage !== undefined) updates.banner_image = bannerImage;
 
     // Update the user
     const { data: updatedUser, error: updateError } = await supabase

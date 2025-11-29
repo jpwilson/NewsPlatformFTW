@@ -94,10 +94,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       // Fetch all channels first using storage
       const channels = await storage.listChannels();
       
-      // Enrich each channel with subscriber count
+      // Enrich each channel with subscriber count and article count
       const enrichedChannels = await Promise.all(channels.map(async (channel) => {
         // Get subscriber count
-        const { count, error: countError } = await supabase
+        const { count: subscriberCount, error: countError } = await supabase
           .from("subscriptions")
           .select("*", { count: 'exact', head: true })
           .eq("channel_id", channel.id);
@@ -106,9 +106,21 @@ export async function registerRoutes(app: Express): Promise<void> {
           console.error(`Error fetching subscriber count for channel ${channel.id}:`, countError);
         }
         
+        // Get article count (only published articles)
+        const { count: articleCount, error: articleError } = await supabase
+          .from("articles")
+          .select("*", { count: 'exact', head: true })
+          .eq("channel_id", channel.id)
+          .eq("status", "published");
+          
+        if (articleError) {
+          console.error(`Error fetching article count for channel ${channel.id}:`, articleError);
+        }
+        
         return {
           ...channel,
-          subscriberCount: count || 0
+          subscriberCount: subscriberCount || 0,
+          articleCount: articleCount || 0
         };
       }));
       
@@ -229,11 +241,14 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       
       // Update the channel
-      const updateData = req.body;
+      const updateData: any = {};
       
-      // Prevent updating userId/user_id
-      delete updateData.userId;
-      delete updateData.user_id;
+      // Map camelCase to snake_case for database fields
+      if (req.body.name !== undefined) updateData.name = req.body.name;
+      if (req.body.description !== undefined) updateData.description = req.body.description;
+      if (req.body.category !== undefined) updateData.category = req.body.category;
+      if (req.body.profileImage !== undefined) updateData.profile_image = req.body.profileImage;
+      if (req.body.bannerImage !== undefined) updateData.banner_image = req.body.bannerImage;
       
       const { data: updatedChannel, error: updateError } = await supabase
         .from("channels")
@@ -846,8 +861,27 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Get user information by ID
   app.get("/api/users/:id", async (req, res) => {
     try {
-      const user = await storage.getUser(parseInt(req.params.id));
-      if (!user) return res.status(404).json({ message: "User not found" });
+      const userId = parseInt(req.params.id);
+      console.log("Fetching user with ID:", userId);
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      // Fetch user from database with Supabase
+      const { data: user, error } = await supabase
+        .from("users")
+        .select("id, username, description, created_at")
+        .eq("id", userId)
+        .single();
+      
+      console.log("Supabase query result:", { user, error });
+        
+      if (error || !user) {
+        console.error("Error fetching user from Supabase:", error);
+        return res.status(404).json({ message: "User not found" });
+      }
+      
       res.json(user);
     } catch (error) {
       console.error("Error fetching user:", error);

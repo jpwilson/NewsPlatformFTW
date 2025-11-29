@@ -164,14 +164,14 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
   return (
     <>
       <Card
-        className="mb-4 cursor-pointer hover:shadow-lg transition-all duration-200 shadow-sm"
+        className="mb-4 cursor-pointer hover:shadow-lg transition-all duration-200 shadow-sm dark:shadow-md dark:shadow-white/10 dark:border-white/20"
         onClick={handleCardClick}
       >
         <CardHeader className="pb-3">
           <div className="flex items-start gap-3">
             {/* Profile Image */}
             <Avatar className="h-12 w-12 flex-shrink-0">
-              <AvatarImage src={channel.profileImage} alt={channel.name} />
+              <AvatarImage src={channel.profileImage || undefined} alt={channel.name} />
               <AvatarFallback className="bg-primary/10">
                 {channel.name.substring(0, 2).toUpperCase()}
               </AvatarFallback>
@@ -187,11 +187,13 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
               <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
                   <Users className="h-3.5 w-3.5" />
-                  <span>{getSubscriberCount().toLocaleString()} subscribers</span>
+                  <span>{getSubscriberCount().toLocaleString()}</span>
+                  <span className="hidden sm:inline">subscribers</span>
                 </div>
                 <div className="flex items-center gap-1">
                   <FileText className="h-3.5 w-3.5" />
-                  <span>{getArticleCount()} articles</span>
+                  <span>{getArticleCount()}</span>
+                  <span className="hidden sm:inline">articles</span>
                 </div>
               </div>
             </div>
@@ -221,7 +223,7 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
             <Button
               variant="default"
               size="sm"
-              className="w-full"
+              className="w-full dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90 font-medium"
               onClick={(e) => {
                 e.stopPropagation(); // Prevent card click event
                 handleSubscribe();

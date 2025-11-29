@@ -81,6 +81,7 @@ function Router() {
       <Route path="/auth" component={AuthPage} />
       <Route path="/auth-callback" component={AuthCallback} />
       <Route path="/profile" component={ProfilePage} />
+      <Route path="/users/:username" component={ProfilePage} />
       <Route path="/admin">
         <AdminRouteGuard>
           <AdminPage />

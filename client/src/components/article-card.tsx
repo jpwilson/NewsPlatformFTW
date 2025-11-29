@@ -117,98 +117,199 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
 
   return (
     <>
-      <Card className="flex overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
-        <div className={cn("flex-1", hasImage ? "w-2/3" : "w-full")}>
-          <CardHeader>
-            <div className="space-y-2">
+      <Card className="overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
+        {/* Mobile Layout */}
+        <div className="md:hidden">
+          {firstImage && (
+            <div className="flex gap-3 p-4">
+              {/* Left side: Title and metadata */}
+              <div className="flex-1">
+                <Link href={articleUrl}>
+                  <h3 className="text-lg font-semibold hover:underline cursor-pointer line-clamp-2 mb-2">
+                    {article.title}
+                  </h3>
+                </Link>
+                <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  <span>{formatDate(article.created_at || article.createdAt)}</span>
+                  {article.location && <span>📍 {article.location}</span>}
+                  <button
+                    onClick={handleChannelClick}
+                    className="text-primary hover:underline w-fit"
+                  >
+                    By: {article.channel?.name || "Unknown Channel"}
+                  </button>
+                  {article.category && article.category.trim() !== "" && (
+                    <div className="mt-1">
+                      <span className="px-2 py-0.5 bg-muted rounded-md text-xs inline-block">
+                        🏷️ {article.category}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Right side: Image */}
+              <div className="w-32 h-32 flex-shrink-0">
+                <img
+                  src={firstImage.imageUrl}
+                  alt={firstImage.caption || "Article image"}
+                  className="w-full h-full object-cover rounded-lg"
+                />
+              </div>
+            </div>
+          )}
+          {!firstImage && (
+            <div className="p-4">
               <Link href={articleUrl}>
-                <h3 className="text-xl font-semibold hover:underline cursor-pointer">
+                <h3 className="text-lg font-semibold hover:underline cursor-pointer mb-2">
                   {article.title}
                 </h3>
               </Link>
-              <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <span>
-                    {formatDate(article.created_at || article.createdAt)}
-                  </span>
-                  {article.location && <span>📍 {article.location}</span>}
-                </div>
+              <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                <span>{formatDate(article.created_at || article.createdAt)}</span>
+                {article.location && <span>📍 {article.location}</span>}
                 <button
                   onClick={handleChannelClick}
                   className="text-primary hover:underline w-fit"
                 >
                   By: {article.channel?.name || "Unknown Channel"}
                 </button>
-                {/* Display all categories */}
-                {article.categories && article.categories.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {article.categories.map((cat, index) => (
-                      <span
-                        key={`${cat.id}-${index}`}
-                        className="px-2 py-0.5 bg-muted rounded-md text-xs"
-                      >
-                        🏷️ {cat.name}
-                      </span>
-                    ))}
+                {article.category && article.category.trim() !== "" && (
+                  <div className="mt-1">
+                    <span className="px-2 py-0.5 bg-muted rounded-md text-xs inline-block">
+                      🏷️ {article.category}
+                    </span>
                   </div>
-                ) : (
-                  article.category &&
-                  article.category.trim() !== "" && (
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      <span className="px-2 py-0.5 bg-muted rounded-md text-xs">
-                        🏷️ {article.category}
-                      </span>
-                    </div>
-                  )
                 )}
               </div>
             </div>
-          </CardHeader>
-
-          <CardContent>
-            <p className="text-muted-foreground line-clamp-3">
+          )}
+          {/* Full width text below */}
+          <div className="px-4 pb-4">
+            <p className="text-sm text-muted-foreground line-clamp-2">
               {article.content.replace(/<[^>]+>/g, "")}
             </p>
-          </CardContent>
-
-          <CardFooter>
-            <div className="flex items-center gap-5">
-              <div className="flex items-center text-muted-foreground">
-                <Eye className="h-4 w-4 mr-1" />
-                <span className="text-sm">{views}</span>
+          </div>
+          {/* Stats footer */}
+          <div className="px-4 pb-4">
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <div className="flex items-center">
+                <Eye className="h-3.5 w-3.5 mr-1" />
+                <span>{views}</span>
               </div>
-
-              <div className="flex items-center text-muted-foreground">
-                <ThumbsUp className="h-4 w-4 mr-1" />
-                <span className="text-sm">{likes}</span>
+              <div className="flex items-center">
+                <ThumbsUp className="h-3.5 w-3.5 mr-1" />
+                <span>{likes}</span>
               </div>
-
-              <div className="flex items-center text-muted-foreground">
-                <ThumbsDown className="h-4 w-4 mr-1" />
-                <span className="text-sm">{dislikes}</span>
+              <div className="flex items-center">
+                <ThumbsDown className="h-3.5 w-3.5 mr-1" />
+                <span>{dislikes}</span>
               </div>
-
               {commentCount >= 7 && (
                 <Link href={`${articleUrl}#comments`}>
-                  <div className="flex items-center text-muted-foreground hover:text-primary hover:underline cursor-pointer">
-                    <MessageSquare className="h-4 w-4 mr-1" />
-                    <span className="text-sm">{commentCount}</span>
+                  <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
+                    <MessageSquare className="h-3.5 w-3.5 mr-1" />
+                    <span>{commentCount}</span>
                   </div>
                 </Link>
               )}
             </div>
-          </CardFooter>
+          </div>
         </div>
 
-        {firstImage && (
-          <div className="w-1/3 relative">
-            <img
-              src={firstImage.imageUrl}
-              alt={firstImage.caption || "Article image"}
-              className="absolute inset-0 w-full h-full object-cover rounded-r-lg"
-            />
+        {/* Desktop Layout - unchanged */}
+        <div className="hidden md:flex">
+          <div className={cn("flex-1", hasImage && "w-2/3")}>
+            <CardHeader>
+              <div className="space-y-2">
+                <Link href={articleUrl}>
+                  <h3 className="text-xl font-semibold hover:underline cursor-pointer">
+                    {article.title}
+                  </h3>
+                </Link>
+                <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <span>
+                      {formatDate(article.created_at || article.createdAt)}
+                    </span>
+                    {article.location && <span>📍 {article.location}</span>}
+                  </div>
+                  <button
+                    onClick={handleChannelClick}
+                    className="text-primary hover:underline w-fit"
+                  >
+                    By: {article.channel?.name || "Unknown Channel"}
+                  </button>
+                  {/* Display all categories */}
+                  {article.categories && article.categories.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {article.categories.map((cat, index) => (
+                        <span
+                          key={`${cat.id}-${index}`}
+                          className="px-2 py-0.5 bg-muted rounded-md text-xs"
+                        >
+                          🏷️ {cat.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    article.category &&
+                    article.category.trim() !== "" && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        <span className="px-2 py-0.5 bg-muted rounded-md text-xs">
+                          🏷️ {article.category}
+                        </span>
+                      </div>
+                    )
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent>
+              <p className="text-muted-foreground line-clamp-3">
+                {article.content.replace(/<[^>]+>/g, "")}
+              </p>
+            </CardContent>
+
+            <CardFooter>
+              <div className="flex items-center gap-5">
+                <div className="flex items-center text-muted-foreground">
+                  <Eye className="h-4 w-4 mr-1" />
+                  <span className="text-sm">{views}</span>
+                </div>
+
+                <div className="flex items-center text-muted-foreground">
+                  <ThumbsUp className="h-4 w-4 mr-1" />
+                  <span className="text-sm">{likes}</span>
+                </div>
+
+                <div className="flex items-center text-muted-foreground">
+                  <ThumbsDown className="h-4 w-4 mr-1" />
+                  <span className="text-sm">{dislikes}</span>
+                </div>
+
+                {commentCount >= 7 && (
+                  <Link href={`${articleUrl}#comments`}>
+                    <div className="flex items-center text-muted-foreground hover:text-primary hover:underline cursor-pointer">
+                      <MessageSquare className="h-4 w-4 mr-1" />
+                      <span className="text-sm">{commentCount}</span>
+                    </div>
+                  </Link>
+                )}
+              </div>
+            </CardFooter>
           </div>
-        )}
+
+          {firstImage && (
+            <div className="w-1/3 relative">
+              <img
+                src={firstImage.imageUrl}
+                alt={firstImage.caption || "Article image"}
+                className="absolute inset-0 w-full h-full object-cover rounded-r-lg"
+              />
+            </div>
+          )}
+        </div>
       </Card>
 
       <AlertDialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>

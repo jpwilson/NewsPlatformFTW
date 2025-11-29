@@ -36,11 +36,15 @@ export type ArticleWithSnakeCase = Article & {
     comments?: number;
     likes?: number;
   };
-  channel?: { 
-    id: number; 
+  channel?: {
+    id: number;
     name: string;
     user_id?: number;
     userId?: number;
     slug?: string;
+    profileImage?: string | null;
+    profile_image?: string | null;
+    bannerImage?: string | null;
+    banner_image?: string | null;
   };
 }; 

@@ -1,9 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Log the environment variables for debugging (remove in production)
-console.log('VITE_SUPABASE_URL exists:', !!import.meta.env.VITE_SUPABASE_URL);
-console.log('VITE_SUPABASE_ANON_KEY exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
-console.log('VITE_SUPABASE_URL value:', import.meta.env.VITE_SUPABASE_URL || 'undefined');
+// Environment variables check (debugging removed)
 
 // Explicitly cast to string to ensure TypeScript is happy
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;

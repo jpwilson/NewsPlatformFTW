@@ -27,7 +27,8 @@ import {
   Image,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { supabase } from "@/lib/supabase";
 import {
   Select,
   SelectContent,
@@ -92,6 +93,10 @@ export default function ChannelPage() {
   const [editedDescription, setEditedDescription] = useState("");
   const [editedCategory, setEditedCategory] = useState("");
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
+  const [uploadingBannerImage, setUploadingBannerImage] = useState(false);
+  const profileImageInputRef = useRef<HTMLInputElement>(null);
+  const bannerImageInputRef = useRef<HTMLInputElement>(null);
 
   // Redirect to home if auth dialog is closed without login
   useEffect(() => {
@@ -163,12 +168,26 @@ export default function ChannelPage() {
   });
 
   // Fetch channel owner information
-  const { data: ownerInfo, isLoading: loadingOwner } = useQuery<
+  const { data: ownerInfo, isLoading: loadingOwner, error: ownerError } = useQuery<
     Omit<User, "password">
   >({
     queryKey: [`/api/users/${channel?.user_id || channel?.userId}`],
     enabled: !!(channel?.user_id || channel?.userId),
   });
+  
+  // Debug owner info
+  useEffect(() => {
+    if (channel) {
+      console.log("Channel owner ID:", channel?.user_id || channel?.userId);
+    }
+    if (ownerInfo) {
+      console.log("Owner info fetched:", ownerInfo);
+    }
+    if (ownerError) {
+      console.error("Error fetching owner info:", ownerError);
+    }
+  }, [channel, ownerInfo, ownerError]);
+
 
   const isOwner = user?.id === (channel?.user_id || channel?.userId);
   // Use the server-provided isSubscribed flag from channel data when available
@@ -198,6 +217,127 @@ export default function ChannelPage() {
       setEditedCategory(channel.category || "");
     }
   }, [channel]);
+
+  // Handle profile image upload
+  const handleProfileImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingProfileImage(true);
+    try {
+      // Generate unique filename
+      const timestamp = Date.now();
+      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const filename = `channels/${id}/profile_${timestamp}_${sanitizedFilename}`;
+
+      // Upload to Supabase Storage (try channel-images first, fallback to article-images)
+      let uploadData;
+      let uploadError;
+      
+      // Try channel-images bucket first
+      ({ data: uploadData, error: uploadError } = await supabase.storage
+        .from("channel-images")
+        .upload(filename, file));
+      
+      // If bucket doesn't exist, use article-images bucket
+      if (uploadError && uploadError.message?.includes("not found")) {
+        ({ data: uploadData, error: uploadError } = await supabase.storage
+          .from("article-images")
+          .upload(filename, file));
+      }
+
+      if (uploadError || !uploadData) throw uploadError || new Error("Upload failed");
+
+      // Get public URL from the correct bucket
+      const bucketName = uploadData.path.includes("article-images") ? "article-images" : "channel-images";
+      const { data: { publicUrl } } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(uploadData.path);
+
+      // Update channel with new profile image
+      await apiRequest("PATCH", `/api/channels/${id}`, {
+        profileImage: publicUrl
+      });
+
+      // Refresh channel data
+      queryClient.invalidateQueries({ queryKey: [`/api/channels/${id}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      
+      toast({
+        title: "Profile image updated",
+        description: "Your channel's profile image has been updated successfully.",
+      });
+    } catch (error) {
+      console.error("Error uploading profile image:", error);
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload profile image. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingProfileImage(false);
+    }
+  };
+
+  // Handle banner image upload
+  const handleBannerImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadingBannerImage(true);
+    try {
+      // Generate unique filename
+      const timestamp = Date.now();
+      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+      const filename = `channels/${id}/banner_${timestamp}_${sanitizedFilename}`;
+
+      // Upload to Supabase Storage (try channel-images first, fallback to article-images)
+      let uploadData;
+      let uploadError;
+      
+      // Try channel-images bucket first
+      ({ data: uploadData, error: uploadError } = await supabase.storage
+        .from("channel-images")
+        .upload(filename, file));
+      
+      // If bucket doesn't exist, use article-images bucket
+      if (uploadError && uploadError.message?.includes("not found")) {
+        ({ data: uploadData, error: uploadError } = await supabase.storage
+          .from("article-images")
+          .upload(filename, file));
+      }
+
+      if (uploadError || !uploadData) throw uploadError || new Error("Upload failed");
+
+      // Get public URL from the correct bucket
+      const bucketName = uploadData.path.includes("article-images") ? "article-images" : "channel-images";
+      const { data: { publicUrl } } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(uploadData.path);
+
+      // Update channel with new banner image
+      await apiRequest("PATCH", `/api/channels/${id}`, {
+        bannerImage: publicUrl
+      });
+
+      // Refresh channel data
+      queryClient.invalidateQueries({ queryKey: [`/api/channels/${id}`] });
+      
+      toast({
+        title: "Banner image updated",
+        description: "Your channel's banner image has been updated successfully.",
+      });
+    } catch (error) {
+      console.error("Error uploading banner image:", error);
+      toast({
+        title: "Upload failed",
+        description: "Failed to upload banner image. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingBannerImage(false);
+    }
+  };
 
   // Update channel mutation
   const updateChannelMutation = useMutation({
@@ -596,7 +736,7 @@ export default function ChannelPage() {
             {/* Profile Image Overlay */}
             <div className="absolute -bottom-12 left-4 lg:left-8">
               <Avatar className="h-24 w-24 border-4 border-background shadow-xl">
-                <AvatarImage src={channel.profileImage} alt={channel.name} />
+                <AvatarImage src={channel.profileImage || undefined} alt={channel.name} />
                 <AvatarFallback className="bg-primary/10 text-2xl font-bold">
                   {channel.name.substring(0, 2).toUpperCase()}
                 </AvatarFallback>
@@ -646,6 +786,88 @@ export default function ChannelPage() {
                           </span>
                         </div>
                       </div>
+                      
+                      {/* Profile Image Upload */}
+                      <div>
+                        <Label>Profile Image</Label>
+                        <div className="flex items-center gap-4 mt-2">
+                          <Avatar className="h-20 w-20">
+                            <AvatarImage src={channel.profileImage || undefined} alt={channel.name} />
+                            <AvatarFallback className="bg-primary/10">
+                              {channel.name.substring(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <input
+                              ref={profileImageInputRef}
+                              type="file"
+                              accept="image/*"
+                              onChange={handleProfileImageUpload}
+                              className="hidden"
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => profileImageInputRef.current?.click()}
+                              disabled={uploadingProfileImage}
+                            >
+                              {uploadingProfileImage ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              ) : (
+                                <Camera className="h-4 w-4 mr-2" />
+                              )}
+                              Change Profile Image
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Banner Image Upload */}
+                      <div>
+                        <Label>Banner Image</Label>
+                        <div className="mt-2">
+                          <div className="relative w-full h-32 bg-gradient-to-br from-primary/20 to-primary/5 rounded-lg overflow-hidden">
+                            {channel.bannerImage ? (
+                              <img
+                                src={channel.bannerImage}
+                                alt="Banner preview"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <div className="text-center text-muted-foreground/50">
+                                  <Image className="h-8 w-8 mx-auto mb-1" />
+                                  <p className="text-xs">No banner image</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            ref={bannerImageInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleBannerImageUpload}
+                            className="hidden"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => bannerImageInputRef.current?.click()}
+                            disabled={uploadingBannerImage}
+                          >
+                            {uploadingBannerImage ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <Camera className="h-4 w-4 mr-2" />
+                            )}
+                            Change Banner Image
+                          </Button>
+                        </div>
+                      </div>
+                      
                       <div>
                         <Label htmlFor="channel-category">
                           Category (optional)
@@ -824,15 +1046,18 @@ export default function ChannelPage() {
                   <div className="col-span-2 mt-3 border-t pt-3">
                     <div className="text-sm mt-2">
                       <span className="text-muted-foreground">Created by</span>{" "}
-                      <Link
-                        href={`/profile`}
-                        className="text-primary hover:underline font-medium"
-                      >
-                        {ownerInfo?.username ||
-                          `User #${
-                            channel?.user_id || channel?.userId || "unknown"
-                          }`}
-                      </Link>
+                      {ownerInfo?.username ? (
+                        <Link
+                          href={`/users/${ownerInfo.username}`}
+                          className="text-primary hover:underline font-medium"
+                        >
+                          {ownerInfo.username}
+                        </Link>
+                      ) : loadingOwner ? (
+                        <span className="text-muted-foreground">Loading...</span>
+                      ) : (
+                        <span className="text-muted-foreground">Unknown User</span>
+                      )}
                     </div>
                     <div className="text-sm mt-1">
                       <span className="text-muted-foreground">
