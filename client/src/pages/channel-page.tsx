@@ -225,33 +225,28 @@ export default function ChannelPage() {
 
     setUploadingProfileImage(true);
     try {
-      // Generate unique filename
+      if (!supabase?.storage) {
+        throw new Error("Storage service is not available");
+      }
+
+      // Create sanitized filename
       const timestamp = Date.now();
       const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
       const filename = `channels/${id}/profile_${timestamp}_${sanitizedFilename}`;
 
-      // Upload to Supabase Storage (try channel-images first, fallback to article-images)
-      let uploadData;
-      let uploadError;
-      
-      // Try channel-images bucket first
-      ({ data: uploadData, error: uploadError } = await supabase.storage
-        .from("channel-images")
-        .upload(filename, file));
-      
-      // If bucket doesn't exist, use article-images bucket
-      if (uploadError && uploadError.message?.includes("not found")) {
-        ({ data: uploadData, error: uploadError } = await supabase.storage
-          .from("article-images")
-          .upload(filename, file));
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("article-images")
+        .upload(filename, file);
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        throw uploadError;
       }
 
-      if (uploadError || !uploadData) throw uploadError || new Error("Upload failed");
-
-      // Get public URL from the correct bucket
-      const bucketName = uploadData.path.includes("article-images") ? "article-images" : "channel-images";
+      // Get public URL
       const { data: { publicUrl } } = supabase.storage
-        .from(bucketName)
+        .from("article-images")
         .getPublicUrl(uploadData.path);
 
       // Update channel with new profile image
@@ -262,7 +257,7 @@ export default function ChannelPage() {
       // Refresh channel data
       queryClient.invalidateQueries({ queryKey: [`/api/channels/${id}`] });
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
-      
+
       toast({
         title: "Profile image updated",
         description: "Your channel's profile image has been updated successfully.",
@@ -286,33 +281,28 @@ export default function ChannelPage() {
 
     setUploadingBannerImage(true);
     try {
-      // Generate unique filename
+      if (!supabase?.storage) {
+        throw new Error("Storage service is not available");
+      }
+
+      // Create sanitized filename
       const timestamp = Date.now();
       const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
       const filename = `channels/${id}/banner_${timestamp}_${sanitizedFilename}`;
 
-      // Upload to Supabase Storage (try channel-images first, fallback to article-images)
-      let uploadData;
-      let uploadError;
-      
-      // Try channel-images bucket first
-      ({ data: uploadData, error: uploadError } = await supabase.storage
-        .from("channel-images")
-        .upload(filename, file));
-      
-      // If bucket doesn't exist, use article-images bucket
-      if (uploadError && uploadError.message?.includes("not found")) {
-        ({ data: uploadData, error: uploadError } = await supabase.storage
-          .from("article-images")
-          .upload(filename, file));
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("article-images")
+        .upload(filename, file);
+
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        throw uploadError;
       }
 
-      if (uploadError || !uploadData) throw uploadError || new Error("Upload failed");
-
-      // Get public URL from the correct bucket
-      const bucketName = uploadData.path.includes("article-images") ? "article-images" : "channel-images";
+      // Get public URL
       const { data: { publicUrl } } = supabase.storage
-        .from(bucketName)
+        .from("article-images")
         .getPublicUrl(uploadData.path);
 
       // Update channel with new banner image
@@ -322,7 +312,8 @@ export default function ChannelPage() {
 
       // Refresh channel data
       queryClient.invalidateQueries({ queryKey: [`/api/channels/${id}`] });
-      
+      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+
       toast({
         title: "Banner image updated",
         description: "Your channel's banner image has been updated successfully.",
