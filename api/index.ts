@@ -4755,8 +4755,22 @@ app.post("/api/articles/:id/images", async (req, res) => {
 // Market data endpoint - proxy for stock prices to avoid CORS
 app.get("/api/market/stocks", async (req, res) => {
   try {
-    const symbols = ["TSLA", "MSTR"];
+    const symbols = ["TSLA", "NVDA", "AAPL", "GOOGL", "META", "AMZN", "MSTR"];
+
+    // Map symbols to readable labels
+    const symbolLabels: Record<string, string> = {
+      TSLA: "Tesla",
+      NVDA: "NVIDIA",
+      AAPL: "Apple",
+      GOOGL: "Alphabet",
+      META: "Meta",
+      AMZN: "Amazon",
+      MSTR: "MicroStrategy",
+    };
+
     const results = [];
+
+    console.log("[Stock API] Fetching stock data for symbols:", symbols);
 
     for (const symbol of symbols) {
       try {
@@ -4765,7 +4779,7 @@ app.get("/api/market/stocks", async (req, res) => {
         );
 
         if (!response.ok) {
-          console.error(`Failed to fetch ${symbol}: ${response.status}`);
+          console.error(`[Stock API] Failed to fetch ${symbol}: ${response.status}`);
           continue;
         }
 
@@ -4773,7 +4787,7 @@ app.get("/api/market/stocks", async (req, res) => {
         const quote = data?.chart?.result?.[0];
 
         if (!quote) {
-          console.error(`No data available for ${symbol}`);
+          console.error(`[Stock API] No data available for ${symbol}`);
           continue;
         }
 
@@ -4783,22 +4797,26 @@ app.get("/api/market/stocks", async (req, res) => {
         const change = currentPrice - previousClose;
         const changePercent = (change / previousClose) * 100;
 
-        results.push({
+        const stockData = {
           symbol: symbol,
-          label: symbol === "TSLA" ? "Tesla" : "MicroStrategy",
+          label: symbolLabels[symbol] || symbol,
           price: currentPrice,
           change: change,
           changePercent: changePercent,
           currency: "$",
-        });
+        };
+
+        console.log(`[Stock API] Successfully fetched ${symbol}:`, stockData);
+        results.push(stockData);
       } catch (error) {
-        console.error(`Error fetching ${symbol}:`, error);
+        console.error(`[Stock API] Error fetching ${symbol}:`, error);
       }
     }
 
+    console.log(`[Stock API] Returning ${results.length} stocks out of ${symbols.length} requested`);
     res.json(results);
   } catch (error) {
-    console.error("Error fetching stock data:", error);
+    console.error("[Stock API] Error fetching stock data:", error);
     res.status(500).json({ error: "Failed to fetch stock data" });
   }
 });
