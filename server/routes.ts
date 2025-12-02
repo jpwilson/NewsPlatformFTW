@@ -202,12 +202,17 @@ export async function registerRoutes(app: Express): Promise<void> {
         console.error("Error fetching subscriber count:", countError);
       }
       
-      // Add subscriber count to the channel data
+      // Add subscriber count and transform snake_case to camelCase
       const channelWithCount = {
         ...channel,
+        profileImage: channel.profile_image,
+        bannerImage: channel.banner_image,
+        userId: channel.user_id,
+        createdAt: channel.created_at,
+        updatedAt: channel.updated_at,
         subscriberCount: subscriberCount || 0
       };
-      
+
       res.json(channelWithCount);
     } catch (error) {
       console.error("Error fetching channel:", error);
@@ -256,10 +261,20 @@ export async function registerRoutes(app: Express): Promise<void> {
         .eq("id", id)
         .select()
         .single();
-      
+
       if (updateError) throw updateError;
-      
-      res.json(updatedChannel);
+
+      // Transform snake_case to camelCase for the response
+      const transformedChannel = {
+        ...updatedChannel,
+        profileImage: updatedChannel.profile_image,
+        bannerImage: updatedChannel.banner_image,
+        userId: updatedChannel.user_id,
+        createdAt: updatedChannel.created_at,
+        updatedAt: updatedChannel.updated_at,
+      };
+
+      res.json(transformedChannel);
     } catch (error) {
       console.error("Error updating channel:", error);
       res.status(500).json({ error: "Failed to update channel" });
