@@ -254,17 +254,28 @@ export default function ChannelPage() {
         throw uploadError;
       }
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
+      // Get signed URL (valid for 1 year)
+      const { data: urlData } = await supabase.storage
         .from("article-images")
-        .getPublicUrl(uploadData.path);
+        .createSignedUrl(uploadData.path, 31536000);
+
+      let imageUrl: string;
+      if (!urlData?.signedUrl) {
+        // Fallback to regular public URL if signed URL fails
+        const { data: { publicUrl } } = supabase.storage
+          .from("article-images")
+          .getPublicUrl(uploadData.path);
+        imageUrl = publicUrl;
+      } else {
+        imageUrl = urlData.signedUrl;
+      }
 
       console.log("Profile upload - uploadData.path:", uploadData.path);
-      console.log("Profile upload - publicUrl:", publicUrl);
+      console.log("Profile upload - imageUrl:", imageUrl);
 
       // Update channel with new profile image
       const response = await apiRequest("PATCH", `/api/channels/${id}`, {
-        profileImage: publicUrl
+        profileImage: imageUrl
       });
 
       if (!response.ok) {
@@ -322,17 +333,28 @@ export default function ChannelPage() {
         throw uploadError;
       }
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
+      // Get signed URL (valid for 1 year)
+      const { data: urlData } = await supabase.storage
         .from("article-images")
-        .getPublicUrl(uploadData.path);
+        .createSignedUrl(uploadData.path, 31536000);
+
+      let imageUrl: string;
+      if (!urlData?.signedUrl) {
+        // Fallback to regular public URL if signed URL fails
+        const { data: { publicUrl } } = supabase.storage
+          .from("article-images")
+          .getPublicUrl(uploadData.path);
+        imageUrl = publicUrl;
+      } else {
+        imageUrl = urlData.signedUrl;
+      }
 
       console.log("Banner upload - uploadData.path:", uploadData.path);
-      console.log("Banner upload - publicUrl:", publicUrl);
+      console.log("Banner upload - imageUrl:", imageUrl);
 
       // Update channel with new banner image
       const response = await apiRequest("PATCH", `/api/channels/${id}`, {
-        bannerImage: publicUrl
+        bannerImage: imageUrl
       });
 
       if (!response.ok) {
