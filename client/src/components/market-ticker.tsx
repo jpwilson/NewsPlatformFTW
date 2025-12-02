@@ -77,8 +77,16 @@ export function MarketTicker() {
         console.error("Error fetching forex:", e);
       }
 
-      // Note: Stock APIs are blocked by CORS when called from browser
-      // Will need backend proxy for TSLA, MSTR in future update
+      // Fetch stock prices from backend proxy
+      try {
+        const stockRes = await fetch("/api/market/stocks");
+        if (stockRes.ok) {
+          const stockData = await stockRes.json();
+          items.push(...stockData);
+        }
+      } catch (e) {
+        console.error("Error fetching stocks:", e);
+      }
 
       setTickers(items);
       setIsLoading(false);

@@ -4752,6 +4752,57 @@ app.post("/api/articles/:id/images", async (req, res) => {
   }
 });
 
+// Market data endpoint - proxy for stock prices to avoid CORS
+app.get("/api/market/stocks", async (req, res) => {
+  try {
+    const symbols = ["TSLA", "MSTR"];
+    const results = [];
+
+    for (const symbol of symbols) {
+      try {
+        const response = await fetch(
+          `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
+        );
+
+        if (!response.ok) {
+          console.error(`Failed to fetch ${symbol}: ${response.status}`);
+          continue;
+        }
+
+        const data = await response.json();
+        const quote = data?.chart?.result?.[0];
+
+        if (!quote) {
+          console.error(`No data available for ${symbol}`);
+          continue;
+        }
+
+        const meta = quote.meta;
+        const currentPrice = meta.regularMarketPrice;
+        const previousClose = meta.chartPreviousClose;
+        const change = currentPrice - previousClose;
+        const changePercent = (change / previousClose) * 100;
+
+        results.push({
+          symbol: symbol,
+          label: symbol === "TSLA" ? "Tesla" : "MicroStrategy",
+          price: currentPrice,
+          change: change,
+          changePercent: changePercent,
+          currency: "$",
+        });
+      } catch (error) {
+        console.error(`Error fetching ${symbol}:`, error);
+      }
+    }
+
+    res.json(results);
+  } catch (error) {
+    console.error("Error fetching stock data:", error);
+    res.status(500).json({ error: "Failed to fetch stock data" });
+  }
+});
+
 // The handler function that routes requests to our Express app
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestId = Math.random().toString(36).substring(2, 15);
