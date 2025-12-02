@@ -77,41 +77,8 @@ export function MarketTicker() {
         console.error("Error fetching forex:", e);
       }
 
-      // Fetch stock prices (using a simple proxy)
-      // Note: For production, you'll want to use a proper API like Finnhub or Alpha Vantage
-      try {
-        const stockSymbols = ["TSLA", "MSTR"];
-
-        for (const symbol of stockSymbols) {
-          // Using Yahoo Finance alternative API (free, no key)
-          const stockRes = await fetch(
-            `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
-          );
-          const stockData = await stockRes.json();
-
-          if (stockData?.chart?.result?.[0]) {
-            const result = stockData.chart.result[0];
-            const meta = result.meta;
-            const quote = result.indicators.quote[0];
-
-            const currentPrice = meta.regularMarketPrice || quote.close[quote.close.length - 1];
-            const previousClose = meta.previousClose || quote.close[0];
-            const change = currentPrice - previousClose;
-            const changePercent = (change / previousClose) * 100;
-
-            items.push({
-              symbol,
-              label: symbol === "TSLA" ? "Tesla" : "MicroStrategy",
-              price: currentPrice,
-              change,
-              changePercent,
-              currency: "$",
-            });
-          }
-        }
-      } catch (e) {
-        console.error("Error fetching stocks:", e);
-      }
+      // Note: Stock APIs are blocked by CORS when called from browser
+      // Will need backend proxy for TSLA, MSTR in future update
 
       setTickers(items);
       setIsLoading(false);
@@ -146,10 +113,15 @@ export function MarketTicker() {
               <span className="font-semibold text-sm">{ticker.symbol}</span>
               <span className="text-sm">
                 {ticker.currency}
-                {ticker.price.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: ticker.symbol.startsWith("BTC") ? 0 : 2,
-                })}
+                {ticker.symbol.startsWith("BTC")
+                  ? ticker.price.toLocaleString(undefined, {
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
+                    })
+                  : ticker.price.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
               </span>
               {ticker.changePercent !== 0 && (
                 <span
