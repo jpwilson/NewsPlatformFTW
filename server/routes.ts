@@ -213,6 +213,15 @@ export async function registerRoutes(app: Express): Promise<void> {
         subscriberCount: subscriberCount || 0
       };
 
+      console.log("GET /api/channels/:id - Response:", {
+        id: channelWithCount.id,
+        name: channelWithCount.name,
+        profile_image: channel.profile_image,
+        banner_image: channel.banner_image,
+        profileImage: channelWithCount.profileImage,
+        bannerImage: channelWithCount.bannerImage,
+      });
+
       res.json(channelWithCount);
     } catch (error) {
       console.error("Error fetching channel:", error);
@@ -247,14 +256,16 @@ export async function registerRoutes(app: Express): Promise<void> {
       
       // Update the channel
       const updateData: any = {};
-      
+
       // Map camelCase to snake_case for database fields
       if (req.body.name !== undefined) updateData.name = req.body.name;
       if (req.body.description !== undefined) updateData.description = req.body.description;
       if (req.body.category !== undefined) updateData.category = req.body.category;
       if (req.body.profileImage !== undefined) updateData.profile_image = req.body.profileImage;
       if (req.body.bannerImage !== undefined) updateData.banner_image = req.body.bannerImage;
-      
+
+      console.log("PATCH /api/channels/:id - updateData:", JSON.stringify(updateData, null, 2));
+
       const { data: updatedChannel, error: updateError } = await supabase
         .from("channels")
         .update(updateData)
@@ -263,6 +274,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         .single();
 
       if (updateError) throw updateError;
+
+      console.log("PATCH /api/channels/:id - updatedChannel from DB:", {
+        id: updatedChannel.id,
+        profile_image: updatedChannel.profile_image,
+        banner_image: updatedChannel.banner_image,
+      });
 
       // Transform snake_case to camelCase for the response
       const transformedChannel = {
@@ -273,6 +290,12 @@ export async function registerRoutes(app: Express): Promise<void> {
         createdAt: updatedChannel.created_at,
         updatedAt: updatedChannel.updated_at,
       };
+
+      console.log("PATCH /api/channels/:id - transformedChannel response:", {
+        id: transformedChannel.id,
+        profileImage: transformedChannel.profileImage,
+        bannerImage: transformedChannel.bannerImage,
+      });
 
       res.json(transformedChannel);
     } catch (error) {
