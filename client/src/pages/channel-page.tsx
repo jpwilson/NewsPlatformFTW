@@ -118,7 +118,7 @@ export default function ChannelPage() {
   }, [user]);
 
   // Fetch current channel
-  const { data: channel, isLoading: loadingChannel } =
+  const { data: channel, isLoading: loadingChannel, refetch: refetchChannel } =
     useQuery<ExtendedChannel>({
       queryKey: [`/api/channels/${id}`],
     });
@@ -250,13 +250,16 @@ export default function ChannelPage() {
         .getPublicUrl(uploadData.path);
 
       // Update channel with new profile image
-      await apiRequest("PATCH", `/api/channels/${id}`, {
+      const response = await apiRequest("PATCH", `/api/channels/${id}`, {
         profileImage: publicUrl
       });
 
-      // Refresh channel data
-      queryClient.invalidateQueries({ queryKey: [`/api/channels/${id}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      if (!response.ok) {
+        throw new Error("Failed to update channel");
+      }
+
+      // Force refetch channel data
+      await refetchChannel();
 
       toast({
         title: "Profile image updated",
@@ -306,13 +309,16 @@ export default function ChannelPage() {
         .getPublicUrl(uploadData.path);
 
       // Update channel with new banner image
-      await apiRequest("PATCH", `/api/channels/${id}`, {
+      const response = await apiRequest("PATCH", `/api/channels/${id}`, {
         bannerImage: publicUrl
       });
 
-      // Refresh channel data
-      queryClient.invalidateQueries({ queryKey: [`/api/channels/${id}`] });
-      queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
+      if (!response.ok) {
+        throw new Error("Failed to update channel");
+      }
+
+      // Force refetch channel data
+      await refetchChannel();
 
       toast({
         title: "Banner image updated",
