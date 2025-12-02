@@ -78,6 +78,10 @@ type ExtendedChannel = Channel & {
   subscriberCount?: number;
   realSubscriberCount?: number;
   isSubscribed?: boolean;
+  bannerImage?: string | null;
+  banner_image?: string | null;
+  profileImage?: string | null;
+  profile_image?: string | null;
 };
 
 export default function ChannelPage() {
@@ -128,6 +132,12 @@ export default function ChannelPage() {
     if (channel) {
       console.log("Channel data loaded:", channel);
       console.log("created_at value:", channel.created_at);
+      console.log("===== IMAGE FIELDS DEBUG =====");
+      console.log("channel.bannerImage:", channel.bannerImage);
+      console.log("channel.banner_image:", channel.banner_image);
+      console.log("channel.profileImage:", channel.profileImage);
+      console.log("channel.profile_image:", channel.profile_image);
+      console.log("==============================");
     }
   }, [channel]);
 
