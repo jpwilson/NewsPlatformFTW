@@ -2724,6 +2724,19 @@ app.get("/api/channels/:id", async (req, res) => {
       updatedAt: channel.updated_at,
     };
 
+    console.log(`[GET /api/channels/${id}] Raw channel from DB:`, {
+      id: channel.id,
+      name: channel.name,
+      profile_image: channel.profile_image,
+      banner_image: channel.banner_image,
+    });
+    console.log(`[GET /api/channels/${id}] Transformed response:`, {
+      id: transformedChannel.id,
+      name: transformedChannel.name,
+      profileImage: transformedChannel.profileImage,
+      bannerImage: transformedChannel.bannerImage,
+    });
+
     res.json(transformedChannel);
   } catch (error) {
     console.error(`Error fetching channel ID ${req.params.id}:`, error);
@@ -3395,6 +3408,9 @@ app.patch("/api/channels/:id", async (req, res) => {
     if (profileImage !== undefined) updateData.profile_image = profileImage;
     if (bannerImage !== undefined) updateData.banner_image = bannerImage;
 
+    console.log(`[PATCH /api/channels/${channelId}] Request body:`, { name, description, category, profileImage, bannerImage });
+    console.log(`[PATCH /api/channels/${channelId}] Update data to send to DB:`, updateData);
+
     // Update the channel
     const { data: updatedChannel, error } = await supabase
       .from("channels")
@@ -3409,6 +3425,13 @@ app.patch("/api/channels/:id", async (req, res) => {
     }
 
     console.log(`Channel ${channelId} updated successfully`);
+    console.log(`[PATCH /api/channels/${channelId}] Data returned from DB:`, {
+      id: updatedChannel.id,
+      name: updatedChannel.name,
+      profile_image: updatedChannel.profile_image,
+      banner_image: updatedChannel.banner_image,
+      user_id: updatedChannel.user_id,
+    });
 
     // Transform snake_case to camelCase for the response
     const transformedChannel = {
@@ -3419,6 +3442,13 @@ app.patch("/api/channels/:id", async (req, res) => {
       createdAt: updatedChannel.created_at,
       updatedAt: updatedChannel.updated_at,
     };
+
+    console.log(`[PATCH /api/channels/${channelId}] Transformed response:`, {
+      id: transformedChannel.id,
+      name: transformedChannel.name,
+      profileImage: transformedChannel.profileImage,
+      bannerImage: transformedChannel.bannerImage,
+    });
 
     return res.json(transformedChannel);
   } catch (error) {
