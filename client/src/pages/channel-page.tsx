@@ -249,6 +249,9 @@ export default function ChannelPage() {
         .from("article-images")
         .getPublicUrl(uploadData.path);
 
+      console.log("Profile upload - uploadData.path:", uploadData.path);
+      console.log("Profile upload - publicUrl:", publicUrl);
+
       // Update channel with new profile image
       const response = await apiRequest("PATCH", `/api/channels/${id}`, {
         profileImage: publicUrl
@@ -258,8 +261,14 @@ export default function ChannelPage() {
         throw new Error("Failed to update channel");
       }
 
+      const updatedChannelData = await response.json();
+      console.log("Profile upload - API response:", updatedChannelData);
+      console.log("Profile upload - response profileImage:", updatedChannelData.profileImage);
+      console.log("Profile upload - response profile_image:", updatedChannelData.profile_image);
+
       // Force refetch channel data
-      await refetchChannel();
+      const refetchResult = await refetchChannel();
+      console.log("Profile upload - refetched channel:", refetchResult.data);
 
       toast({
         title: "Profile image updated",
@@ -308,6 +317,9 @@ export default function ChannelPage() {
         .from("article-images")
         .getPublicUrl(uploadData.path);
 
+      console.log("Banner upload - uploadData.path:", uploadData.path);
+      console.log("Banner upload - publicUrl:", publicUrl);
+
       // Update channel with new banner image
       const response = await apiRequest("PATCH", `/api/channels/${id}`, {
         bannerImage: publicUrl
@@ -317,8 +329,14 @@ export default function ChannelPage() {
         throw new Error("Failed to update channel");
       }
 
+      const updatedChannelData = await response.json();
+      console.log("Banner upload - API response:", updatedChannelData);
+      console.log("Banner upload - response bannerImage:", updatedChannelData.bannerImage);
+      console.log("Banner upload - response banner_image:", updatedChannelData.banner_image);
+
       // Force refetch channel data
-      await refetchChannel();
+      const refetchResult = await refetchChannel();
+      console.log("Banner upload - refetched channel:", refetchResult.data);
 
       toast({
         title: "Banner image updated",
