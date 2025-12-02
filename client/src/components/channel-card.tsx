@@ -177,7 +177,7 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
         {/* Banner Image Strip */}
         {bannerUrl && (
           <div
-            className="w-full h-24 bg-gradient-to-br from-primary/20 to-primary/5"
+            className="w-full h-32 bg-gradient-to-br from-primary/20 to-primary/5"
             style={{
               backgroundImage: `url(${bannerUrl})`,
               backgroundSize: 'cover',

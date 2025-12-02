@@ -4,6 +4,7 @@ import { ArticleCard } from "@/components/article-card";
 import { ChannelCard } from "@/components/channel-card";
 import { NavigationBar } from "@/components/navigation-bar";
 import { CategoryRibbon } from "@/components/category-ribbon";
+import { MarketTicker } from "@/components/market-ticker";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -381,7 +382,10 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       <NavigationBar selectedChannelId={user ? selectedChannelId : undefined} />
-      
+
+      {/* Market Ticker */}
+      <MarketTicker />
+
       <CategoryRibbon
         selectedCategory={ribbonCategory}
         onCategorySelect={(categoryId, dbIds) => {
