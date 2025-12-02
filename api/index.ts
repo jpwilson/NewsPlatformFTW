@@ -2714,7 +2714,17 @@ app.get("/api/channels/:id", async (req, res) => {
       }
     }
 
-    res.json(channel);
+    // Transform snake_case to camelCase for the response
+    const transformedChannel = {
+      ...channel,
+      profileImage: channel.profile_image,
+      bannerImage: channel.banner_image,
+      userId: channel.user_id,
+      createdAt: channel.created_at,
+      updatedAt: channel.updated_at,
+    };
+
+    res.json(transformedChannel);
   } catch (error) {
     console.error(`Error fetching channel ID ${req.params.id}:`, error);
     return res.status(500).json({ error: "Failed to fetch channel details" });
@@ -3399,7 +3409,18 @@ app.patch("/api/channels/:id", async (req, res) => {
     }
 
     console.log(`Channel ${channelId} updated successfully`);
-    return res.json(updatedChannel);
+
+    // Transform snake_case to camelCase for the response
+    const transformedChannel = {
+      ...updatedChannel,
+      profileImage: updatedChannel.profile_image,
+      bannerImage: updatedChannel.banner_image,
+      userId: updatedChannel.user_id,
+      createdAt: updatedChannel.created_at,
+      updatedAt: updatedChannel.updated_at,
+    };
+
+    return res.json(transformedChannel);
   } catch (error) {
     console.error("Error in channel update endpoint:", error);
     return res.status(500).json({ error: "Server error" });
