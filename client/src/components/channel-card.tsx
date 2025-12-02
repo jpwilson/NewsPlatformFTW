@@ -171,13 +171,13 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
   return (
     <>
       <Card
-        className="mb-4 cursor-pointer hover:shadow-lg transition-all duration-200 shadow-sm dark:shadow-md dark:shadow-white/10 dark:border-white/20 overflow-hidden"
+        className="mb-4 cursor-pointer hover:shadow-lg transition-all duration-200 shadow-sm dark:shadow-md dark:shadow-white/10 dark:border-white/20 overflow-hidden flex flex-col"
         onClick={handleCardClick}
       >
         {/* Banner Image Strip */}
         {bannerUrl && (
           <div
-            className="w-full h-16 bg-gradient-to-br from-primary/20 to-primary/5"
+            className="w-full h-24 bg-gradient-to-br from-primary/20 to-primary/5"
             style={{
               backgroundImage: `url(${bannerUrl})`,
               backgroundSize: 'cover',
@@ -186,7 +186,7 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
           />
         )}
 
-        <CardHeader className="pb-3">
+        <CardHeader className="pb-3 flex-shrink-0">
           <div className="flex items-start gap-3">
             {/* Profile Image */}
             <Avatar className="h-12 w-12 flex-shrink-0">
@@ -219,13 +219,14 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
           </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="flex flex-col flex-grow">
           {channel.description && (
             <p className="text-sm text-muted-foreground mb-4 line-clamp-2 leading-relaxed">
               {channel.description}
             </p>
           )}
 
+          <div className="mt-auto">
           {user &&
           (user.id === channel.userId || user.id === channel.user_id) ? (
             // Channel owner can't subscribe to their own channel
@@ -252,6 +253,7 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
               Subscribe
             </Button>
           )}
+          </div>
         </CardContent>
       </Card>
 
