@@ -798,7 +798,7 @@ export default function ChannelPage() {
                             <input
                               ref={profileImageInputRef}
                               type="file"
-                              accept="image/*"
+                              accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
                               onChange={handleProfileImageUpload}
                               className="hidden"
                             />
@@ -843,7 +843,7 @@ export default function ChannelPage() {
                           <input
                             ref={bannerImageInputRef}
                             type="file"
-                            accept="image/*"
+                            accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
                             onChange={handleBannerImageUpload}
                             className="hidden"
                           />
