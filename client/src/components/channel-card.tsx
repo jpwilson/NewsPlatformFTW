@@ -30,6 +30,10 @@ type ExtendedChannel = Channel & {
   user_id?: number;
   articleCount?: number;
   article_count?: number;
+  bannerImage?: string | null;
+  banner_image?: string | null;
+  profileImage?: string | null;
+  profile_image?: string | null;
   _count?: {
     articles?: number;
   };
@@ -161,17 +165,32 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
     }
   };
 
+  const bannerUrl = channel.bannerImage || channel.banner_image;
+  const profileUrl = channel.profileImage || channel.profile_image;
+
   return (
     <>
       <Card
-        className="mb-4 cursor-pointer hover:shadow-lg transition-all duration-200 shadow-sm dark:shadow-md dark:shadow-white/10 dark:border-white/20"
+        className="mb-4 cursor-pointer hover:shadow-lg transition-all duration-200 shadow-sm dark:shadow-md dark:shadow-white/10 dark:border-white/20 overflow-hidden"
         onClick={handleCardClick}
       >
+        {/* Banner Image Strip */}
+        {bannerUrl && (
+          <div
+            className="w-full h-16 bg-gradient-to-br from-primary/20 to-primary/5"
+            style={{
+              backgroundImage: `url(${bannerUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center'
+            }}
+          />
+        )}
+
         <CardHeader className="pb-3">
           <div className="flex items-start gap-3">
             {/* Profile Image */}
             <Avatar className="h-12 w-12 flex-shrink-0">
-              <AvatarImage src={channel.profileImage || undefined} alt={channel.name} />
+              <AvatarImage src={profileUrl || undefined} alt={channel.name} />
               <AvatarFallback className="bg-primary/10">
                 {channel.name.substring(0, 2).toUpperCase()}
               </AvatarFallback>
