@@ -79,13 +79,25 @@ export function MarketTicker() {
 
       // Fetch stock prices from backend proxy
       try {
+        console.log("[Ticker] Fetching stocks from /api/market/stocks");
         const stockRes = await fetch("/api/market/stocks");
+        console.log("[Ticker] Stock API response status:", stockRes.status);
+
         if (stockRes.ok) {
           const stockData = await stockRes.json();
-          items.push(...stockData);
+          console.log("[Ticker] Stock data received:", stockData);
+          if (Array.isArray(stockData) && stockData.length > 0) {
+            items.push(...stockData);
+            console.log("[Ticker] Added", stockData.length, "stocks to ticker");
+          } else {
+            console.warn("[Ticker] Stock data is empty or not an array:", stockData);
+          }
+        } else {
+          const errorText = await stockRes.text();
+          console.error("[Ticker] Stock API returned error:", stockRes.status, errorText);
         }
       } catch (e) {
-        console.error("Error fetching stocks:", e);
+        console.error("[Ticker] Error fetching stocks:", e);
       }
 
       setTickers(items);
