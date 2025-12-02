@@ -61,6 +61,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ImageCropModal } from "@/components/image-crop-modal";
 
 type SortField =
   | "title"
@@ -101,6 +102,8 @@ export default function ChannelPage() {
   const [uploadingBannerImage, setUploadingBannerImage] = useState(false);
   const profileImageInputRef = useRef<HTMLInputElement>(null);
   const bannerImageInputRef = useRef<HTMLInputElement>(null);
+  const [profileCropModalOpen, setProfileCropModalOpen] = useState(false);
+  const [profileImageSrc, setProfileImageSrc] = useState<string>("");
 
   // Redirect to home if auth dialog is closed without login
   useEffect(() => {
@@ -228,11 +231,25 @@ export default function ChannelPage() {
     }
   }, [channel]);
 
-  // Handle profile image upload
-  const handleProfileImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle profile image selection - show crop modal
+  const handleProfileImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Read file and show crop modal
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProfileImageSrc(reader.result as string);
+      setProfileCropModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input so same file can be selected again
+    event.target.value = "";
+  };
+
+  // Handle cropped profile image upload
+  const handleProfileCropComplete = async (croppedImage: Blob) => {
     setUploadingProfileImage(true);
     try {
       if (!supabase?.storage) {
@@ -241,13 +258,12 @@ export default function ChannelPage() {
 
       // Create sanitized filename
       const timestamp = Date.now();
-      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const filename = `channels/${id}/profile_${timestamp}_${sanitizedFilename}`;
+      const filename = `channels/${id}/profile_${timestamp}.jpg`;
 
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("article-images")
-        .upload(filename, file);
+        .upload(filename, croppedImage);
 
       if (uploadError) {
         console.error("Upload error:", uploadError);
@@ -758,6 +774,17 @@ export default function ChannelPage() {
         open={authDialogOpen}
         onOpenChange={setAuthDialogOpen}
         description="You need to be logged in to view channel details."
+      />
+
+      {/* Profile Image Crop Modal */}
+      <ImageCropModal
+        open={profileCropModalOpen}
+        onOpenChange={setProfileCropModalOpen}
+        imageSrc={profileImageSrc}
+        onCropComplete={handleProfileCropComplete}
+        aspect={1}
+        cropShape="round"
+        title="Crop Profile Image"
       />
 
       {/* Only show channel content to logged in users */}
