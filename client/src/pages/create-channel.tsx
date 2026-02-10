@@ -33,7 +33,7 @@ export default function CreateChannel() {
     select: (channels) => {
       console.log("All channels:", channels);
       const filteredChannels = channels.filter((c) => {
-        const matches = c.userId === user?.id || c.user_id === user?.id;
+        const matches = c.userId === user?.id || (c as any).user_id === user?.id;
         return matches;
       });
       console.log(

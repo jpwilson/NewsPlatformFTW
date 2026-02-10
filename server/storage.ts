@@ -78,7 +78,7 @@ export class MemStorage implements IStorage {
 
   async createUser(user: InsertUser): Promise<User> {
     const id = this.currentId++;
-    const newUser = { ...user, id };
+    const newUser = { ...user, id } as User;
     this.users.set(id, newUser);
     return newUser;
   }
@@ -93,7 +93,7 @@ export class MemStorage implements IStorage {
 
   async createChannel(channel: InsertChannel): Promise<Channel> {
     const id = this.currentId++;
-    const newChannel = { ...channel, id };
+    const newChannel = { ...channel, id } as Channel;
     this.channels.set(id, newChannel);
     return newChannel;
   }
@@ -108,11 +108,11 @@ export class MemStorage implements IStorage {
 
   async createArticle(article: InsertArticle): Promise<Article> {
     const id = this.currentId++;
-    const newArticle = { 
-      ...article, 
-      id, 
-      createdAt: new Date().toISOString() 
-    };
+    const newArticle = {
+      ...article,
+      id,
+      createdAt: new Date().toISOString()
+    } as unknown as Article;
     this.articles.set(id, newArticle);
     return newArticle;
   }
@@ -140,11 +140,11 @@ export class MemStorage implements IStorage {
 
   async createComment(comment: InsertComment): Promise<Comment> {
     const id = this.currentId++;
-    const newComment = { 
-      ...comment, 
+    const newComment = {
+      ...comment,
       id,
       createdAt: new Date().toISOString()
-    };
+    } as unknown as Comment;
     this.comments.set(id, newComment);
     return newComment;
   }
@@ -157,14 +157,14 @@ export class MemStorage implements IStorage {
 
   async createReaction(reaction: InsertReaction): Promise<Reaction> {
     const id = this.currentId++;
-    const newReaction = { ...reaction, id };
+    const newReaction = { ...reaction, id } as Reaction;
     this.reactions.set(id, newReaction);
     return newReaction;
   }
 
   async createSubscription(subscription: InsertSubscription): Promise<Subscription> {
     const id = this.currentId++;
-    const newSubscription = { ...subscription, id };
+    const newSubscription = { ...subscription, id } as Subscription;
     this.subscriptions.set(id, newSubscription);
     return newSubscription;
   }
@@ -180,7 +180,7 @@ export class MemStorage implements IStorage {
 
   async createNote(note: InsertNote): Promise<Note> {
     const id = this.currentId++;
-    const newNote = { ...note, id };
+    const newNote = { ...note, id } as Note;
     this.notes.set(id, newNote);
     return newNote;
   }

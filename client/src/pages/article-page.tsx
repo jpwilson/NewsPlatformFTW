@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { Article, Channel } from "@shared/schema";
-import { ArticleWithSnakeCase } from "@/types/article";
 import { NavigationBar } from "@/components/navigation-bar";
 import { CommentSection } from "@/components/comment-section";
 import { useParams, useLocation } from "wouter";
@@ -73,7 +72,7 @@ type ArticleWithSnakeCase = Article & {
   user_id?: number;
   title?: string;
   content?: string;
-  channel?: { id: number; name: string; slug?: string };
+  channel?: { id: number; name: string; slug?: string; profileImage?: string | null; profile_image?: string | null };
   createdAt?: string | Date;
   lastEdited?: string | Date;
   last_edited?: string | Date;

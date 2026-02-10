@@ -48,7 +48,7 @@ export function setupApp(app: express.Application): void {
   });
 
   // Register all API routes
-  registerRoutes(app);
+  registerRoutes(app as any);
 
   // Add error handling middleware
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

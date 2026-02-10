@@ -25,6 +25,7 @@ import {
 import { eq, and } from 'drizzle-orm';
 import { IStorage } from './storage';
 import { supabase } from './supabase';
+// @ts-ignore -- no @types/bcrypt installed
 import bcrypt from 'bcrypt';
 
 // Implement the storage interface using Drizzle with PostgreSQL

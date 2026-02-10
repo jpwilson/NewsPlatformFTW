@@ -20,6 +20,7 @@ import ProfilePage from "./pages/profile-page";
 import EditArticle from "@/pages/edit-article";
 import ManageSubscribersPage from "@/pages/manage-subscribers";
 import AdminPage from "@/pages/admin-page";
+import ApiDocsPage from "@/pages/api-docs-page";
 import { Analytics } from "@vercel/analytics/react";
 import { HelmetProvider } from "react-helmet-async";
 import { useEffect } from "react";
@@ -82,6 +83,7 @@ function Router() {
       <Route path="/auth-callback" component={AuthCallback} />
       <Route path="/profile" component={ProfilePage} />
       <Route path="/users/:username" component={ProfilePage} />
+      <Route path="/api" component={ApiDocsPage} />
       <Route path="/admin">
         <AdminRouteGuard>
           <AdminPage />

@@ -35,7 +35,7 @@ export function setupAuth(app: Express) {
     secret: process.env.SESSION_SECRET!,
     resave: false,
     saveUninitialized: false,
-    store: storage.sessionStore,
+    store: (storage as any).sessionStore,
   };
 
   app.set("trust proxy", 1);
@@ -101,11 +101,10 @@ export function setupAuth(app: Express) {
           clientID: process.env.GOOGLE_CLIENT_ID,
           clientSecret: process.env.GOOGLE_CLIENT_SECRET,
           callbackURL: "/api/auth/google/callback",
-          prompt: "select_account",
           accessType: "offline",
           includeGrantedScopes: true
-        },
-        async (accessToken, refreshToken, profile, done) => {
+        } as any,
+        async (accessToken: string, refreshToken: string, profile: any, done: any) => {
           // For now, just log the profile info to verify it's working
           console.log("Google profile:", profile);
           return done(null, { id: "temp-user", username: profile.displayName });

@@ -10,7 +10,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 // All categories in order
-const ALL_CATEGORIES = [
+const ALL_CATEGORIES: Array<{
+  id: string;
+  label: string;
+  dbIds: number[];
+  special?: string;
+  icon?: React.ComponentType<{ className?: string }>;
+}> = [
   { 
     id: "politics",
     label: "Politics", 
@@ -155,7 +161,7 @@ export function CategoryRibbon({
     const isSelected = selectedCategory === category.id;
     const Icon = category.icon;
 
-    if (category.special === "location") {
+    if (category.special === "location" && Icon) {
       return (
         <Button
           key={category.id}

@@ -128,6 +128,18 @@ export const channelCategories = pgTable('channel_categories', {
   pk: primaryKey({ columns: [t.channelId, t.categoryId] })
 }));
 
+export const apiKeys = pgTable('api_keys', {
+  id: text('id').primaryKey(),
+  keyPrefix: text('key_prefix').notNull(),
+  keyHash: text('key_hash').notNull(),
+  userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+  lastUsedAt: timestamp('last_used_at'),
+  isRevoked: boolean('is_revoked').default(false),
+  expiresAt: timestamp('expires_at'),
+});
+
 export const articleImages = pgTable('article_images', {
   id: serial('id').primaryKey(),
   articleId: integer('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
@@ -198,6 +210,7 @@ export const insertLocationSchema = createInsertSchema(locations);
 export const insertArticleCategorySchema = createInsertSchema(articleCategories);
 export const insertChannelCategorySchema = createInsertSchema(channelCategories);
 export const insertArticleImageSchema = createInsertSchema(articleImages);
+export const insertApiKeySchema = createInsertSchema(apiKeys);
 
 // Export types
 export type User = typeof users.$inferSelect;
@@ -212,6 +225,7 @@ export type Location = typeof locations.$inferSelect;
 export type ArticleCategory = typeof articleCategories.$inferSelect;
 export type ChannelCategory = typeof channelCategories.$inferSelect;
 export type ArticleImage = typeof articleImages.$inferSelect;
+export type ApiKey = typeof apiKeys.$inferSelect;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertChannel = z.infer<typeof insertChannelSchema>;
@@ -225,6 +239,7 @@ export type InsertLocation = z.infer<typeof insertLocationSchema>;
 export type InsertArticleCategory = z.infer<typeof insertArticleCategorySchema>;
 export type InsertChannelCategory = z.infer<typeof insertChannelCategorySchema>;
 export type InsertArticleImage = z.infer<typeof insertArticleImageSchema>;
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
 
 // Database functions for atomic updates
 export const dbFunctions = {

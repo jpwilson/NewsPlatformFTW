@@ -13,21 +13,11 @@ interface ImageVisibilityStore {
   toggleImageVisibility: () => void;
 }
 
-type SetState = (
-  partial:
-    | ImageVisibilityStore
-    | Partial<ImageVisibilityStore>
-    | ((
-        state: ImageVisibilityStore
-      ) => ImageVisibilityStore | Partial<ImageVisibilityStore>),
-  replace?: boolean
-) => void;
-
 export const useImageVisibility = create<ImageVisibilityStore>(
-  (set: SetState) => ({
+  (set) => ({
     showImages: true,
     toggleImageVisibility: () =>
-      set((state: ImageVisibilityStore) => ({ showImages: !state.showImages })),
+      set((state) => ({ showImages: !state.showImages })),
   })
 );
 

@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
 import { storage } from "./storage-supabase";
@@ -7,6 +7,9 @@ import { z } from "zod";
 import { supabase } from "./supabase";
 import passport from "passport";
 import { isDev } from "./constants";
+import { generateApiKey, hashApiKey, authenticateApiKey } from "./api-auth";
+import { normalizeContent } from "./markdown-to-html";
+import { downloadAndUploadImage } from "./image-downloader";
 
 declare global {
   namespace Express {
@@ -939,9 +942,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (error) throw error;
       
       // Transform into a hierarchical structure
-      const categoryMap = new Map();
-      const rootCategories = [];
-      
+      const categoryMap = new Map<number, any>();
+      const rootCategories: any[] = [];
+
       // First pass: create all category objects and store in map
       categories.forEach(category => {
         categoryMap.set(category.id, { ...category, children: [] });
@@ -982,9 +985,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (error) throw error;
       
       // Transform into a hierarchical structure
-      const locationMap = new Map();
-      const rootLocations = [];
-      
+      const locationMap = new Map<number, any>();
+      const rootLocations: any[] = [];
+
       // First pass: create all location objects and store in map
       locations.forEach(location => {
         locationMap.set(location.id, { ...location, children: [] });
@@ -1130,6 +1133,370 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error handling view count:", error);
       res.status(500).json({ error: "Failed to update view count" });
+    }
+  });
+
+  // ===================================================================
+  // Content API v1 — Programmatic article creation (dev mode)
+  // ===================================================================
+
+  // Unified auth for dev mode: check X-API-Key, fall back to session auth
+  async function authenticateDevRequest(
+    req: Request
+  ): Promise<{ userId?: number; error?: string }> {
+    const apiKeyHeader = req.headers["x-api-key"] as string | undefined;
+    if (apiKeyHeader) {
+      return authenticateApiKey(apiKeyHeader, supabase);
+    }
+    if (req.isAuthenticated() && req.user) {
+      return { userId: (req.user as any).id };
+    }
+    return { error: "Authentication required" };
+  }
+
+  // --- API Key Management ---
+
+  app.post("/api/v1/api-keys", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    try {
+      const { name, expiresInDays } = req.body;
+      if (!name?.trim()) {
+        return res.status(400).json({ error: "Key name is required" });
+      }
+
+      const { key, hash, prefix } = generateApiKey();
+      const expiresAt = expiresInDays
+        ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString()
+        : null;
+
+      const { data: apiKeyRow, error } = await supabase
+        .from("api_keys")
+        .insert([{
+          key_prefix: prefix,
+          key_hash: hash,
+          user_id: req.user!.id,
+          name: name.trim(),
+          expires_at: expiresAt,
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(500).json({ error: "Failed to create API key" });
+      }
+
+      return res.status(201).json({
+        id: apiKeyRow.id,
+        key,
+        prefix,
+        name: apiKeyRow.name,
+        createdAt: apiKeyRow.created_at,
+        expiresAt: apiKeyRow.expires_at,
+      });
+    } catch (error) {
+      console.error("Error in POST /api/v1/api-keys:", error);
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  app.get("/api/v1/api-keys", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    try {
+      const { data: keys, error } = await supabase
+        .from("api_keys")
+        .select("id, key_prefix, name, created_at, last_used_at, expires_at, is_revoked")
+        .eq("user_id", req.user!.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        return res.status(500).json({ error: "Failed to list API keys" });
+      }
+
+      return res.json(keys.map((k: any) => ({
+        id: k.id,
+        prefix: k.key_prefix,
+        name: k.name,
+        createdAt: k.created_at,
+        lastUsedAt: k.last_used_at,
+        expiresAt: k.expires_at,
+        isRevoked: k.is_revoked,
+      })));
+    } catch (error) {
+      console.error("Error in GET /api/v1/api-keys:", error);
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  app.delete("/api/v1/api-keys/:id", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    try {
+      const keyId = req.params.id;
+      const { data: existing } = await supabase
+        .from("api_keys")
+        .select("id, user_id")
+        .eq("id", keyId)
+        .single();
+
+      if (!existing) {
+        return res.status(404).json({ error: "API key not found" });
+      }
+      if (existing.user_id !== req.user!.id) {
+        return res.status(403).json({ error: "Not authorized to revoke this key" });
+      }
+
+      await supabase.from("api_keys").update({ is_revoked: true }).eq("id", keyId);
+      return res.json({ message: "API key revoked" });
+    } catch (error) {
+      console.error("Error in DELETE /api/v1/api-keys/:id:", error);
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  // --- Content API Endpoints ---
+
+  // Helper: create a single article (shared by single and batch endpoints)
+  async function createSingleArticleDev(articleData: any, userId: number): Promise<any> {
+    const {
+      title, content, contentFormat = "markdown", channelId,
+      categoryIds = [], location, locationLat, locationLng,
+      published = true, images = [],
+    } = articleData;
+
+    if (!title?.trim()) throw new Error("Title is required");
+    if (!content?.trim()) throw new Error("Content is required");
+    if (!channelId) throw new Error("channelId is required");
+    if (categoryIds.length > 3) throw new Error("Maximum 3 categories allowed");
+    if (images.length > 5) throw new Error("Maximum 5 images allowed");
+
+    const htmlContent = normalizeContent(content, contentFormat);
+
+    // Verify channel ownership
+    const { data: channel } = await supabase
+      .from("channels").select("id, user_id").eq("id", channelId).single();
+    if (!channel) throw new Error("Channel not found");
+    if (channel.user_id !== userId) throw new Error("Not authorized for this channel");
+
+    // Duplicate check
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: existing } = await supabase
+      .from("articles").select("id").eq("channel_id", channelId)
+      .eq("title", title.trim()).gte("created_at", oneDayAgo);
+    if (existing && existing.length > 0) {
+      const err: any = new Error(`Duplicate: "${title}" already published in last 24h`);
+      err.status = 409;
+      err.existingArticleId = existing[0].id;
+      throw err;
+    }
+
+    // Generate slug with collision handling
+    const baseSlug = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "").substring(0, 60);
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    let fullSlug = `${dateStr}-${baseSlug}`;
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const candidate = attempt === 0 ? fullSlug : `${fullSlug}-${attempt + 1}`;
+      const { data: ex } = await supabase.from("articles").select("id").eq("slug", candidate).single();
+      if (!ex) { fullSlug = candidate; break; }
+    }
+
+    const articleRecord: any = {
+      title: title.trim(), content: htmlContent, channel_id: channelId,
+      user_id: userId, category: "", slug: fullSlug, published,
+      status: published ? "published" : "draft", view_count: 0,
+      location: location || null, location_name: location || null,
+      location_lat: locationLat || null, location_lng: locationLng || null,
+    };
+    if (locationLat && locationLng) {
+      articleRecord.geom = `SRID=4326;POINT(${locationLng} ${locationLat})`;
+    }
+
+    const { data: article, error: createError } = await supabase
+      .from("articles").insert([articleRecord]).select().single();
+    if (createError || !article) throw new Error(`Failed to create article: ${createError?.message}`);
+
+    // Categories
+    const categoryResults = [];
+    for (let i = 0; i < categoryIds.length; i++) {
+      const { error: catError } = await supabase.from("article_categories").insert([{
+        article_id: article.id, category_id: categoryIds[i], is_primary: i === 0,
+      }]);
+      if (!catError) categoryResults.push(categoryIds[i]);
+    }
+    if (categoryIds.length > 0) {
+      const { data: catData } = await supabase.from("categories").select("name").eq("id", categoryIds[0]).single();
+      if (catData) await supabase.from("articles").update({ category: catData.name }).eq("id", article.id);
+    }
+
+    // Images
+    const processedImages = [];
+    for (let i = 0; i < images.length; i++) {
+      const result = await downloadAndUploadImage(images[i], article.id, i, supabase);
+      if (result) {
+        const { data: imgRecord } = await supabase.from("article_images").insert([{
+          article_id: article.id, image_url: result.imageUrl, caption: result.caption, order: result.order,
+        }]).select().single();
+        if (imgRecord) processedImages.push(imgRecord);
+      }
+    }
+
+    return {
+      id: article.id, title: article.title, slug: article.slug,
+      channelId: article.channel_id, status: article.status,
+      published: article.published, createdAt: article.created_at,
+      url: `/articles/${article.id}/${article.slug}`,
+      images: processedImages, categories: categoryResults,
+    };
+  }
+
+  // Create single article
+  app.post("/api/v1/content/articles", async (req, res) => {
+    try {
+      const { userId, error: authError } = await authenticateDevRequest(req);
+      if (authError || !userId) {
+        return res.status(401).json({ error: authError || "Authentication required" });
+      }
+      const result = await createSingleArticleDev(req.body, userId);
+      return res.status(201).json(result);
+    } catch (error: any) {
+      if (error.status === 409) {
+        return res.status(409).json({ error: "Duplicate article detected", message: error.message });
+      }
+      const status = error.message?.includes("Not authorized") ? 403
+        : error.message?.includes("not found") ? 404 : 400;
+      return res.status(status).json({ error: error.message });
+    }
+  });
+
+  // Batch create articles
+  app.post("/api/v1/content/articles/batch", async (req, res) => {
+    try {
+      const { userId, error: authError } = await authenticateDevRequest(req);
+      if (authError || !userId) {
+        return res.status(401).json({ error: authError || "Authentication required" });
+      }
+
+      const { articles } = req.body;
+      if (!Array.isArray(articles) || articles.length === 0) {
+        return res.status(400).json({ error: "articles array is required" });
+      }
+      if (articles.length > 10) {
+        return res.status(400).json({ error: "Maximum 10 articles per batch" });
+      }
+
+      const created: any[] = [];
+      const failed: any[] = [];
+      for (let i = 0; i < articles.length; i++) {
+        try {
+          const result = await createSingleArticleDev(articles[i], userId);
+          created.push({ index: i, ...result });
+        } catch (err: any) {
+          failed.push({ index: i, title: articles[i]?.title || "Unknown", error: err.message });
+        }
+      }
+
+      return res.status(201).json({
+        created, failed,
+        summary: { total: articles.length, succeeded: created.length, failed: failed.length },
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  // Get article details
+  app.get("/api/v1/content/articles/:id", async (req, res) => {
+    try {
+      const { userId, error: authError } = await authenticateDevRequest(req);
+      if (authError || !userId) {
+        return res.status(401).json({ error: authError || "Authentication required" });
+      }
+
+      const articleId = req.params.id;
+      const isNumeric = /^\d+$/.test(articleId);
+      let query = supabase.from("articles").select("*");
+      query = isNumeric ? query.eq("id", parseInt(articleId)) : query.eq("slug", articleId);
+
+      const { data: article } = await query.single();
+      if (!article) return res.status(404).json({ error: "Article not found" });
+      if (article.user_id !== userId) return res.status(403).json({ error: "Not authorized" });
+
+      const { data: channel } = await supabase.from("channels").select("id, name, slug").eq("id", article.channel_id).single();
+      const { data: images } = await supabase.from("article_images").select("*").eq("article_id", article.id).order("order");
+      const { data: categories } = await supabase.from("article_categories").select("category_id, is_primary, categories(id, name)").eq("article_id", article.id);
+
+      return res.json({
+        id: article.id, title: article.title, slug: article.slug,
+        channelId: article.channel_id, channelName: channel?.name || null,
+        status: article.status, published: article.published,
+        createdAt: article.created_at, viewCount: article.view_count,
+        url: `/articles/${article.id}/${article.slug}`,
+        images: images || [], categories: categories || [],
+      });
+    } catch (error) {
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  // List user's channels
+  app.get("/api/v1/content/channels", async (req, res) => {
+    try {
+      const { userId, error: authError } = await authenticateDevRequest(req);
+      if (authError || !userId) {
+        return res.status(401).json({ error: authError || "Authentication required" });
+      }
+
+      const { data: channels } = await supabase
+        .from("channels").select("*").eq("user_id", userId).order("created_at", { ascending: false });
+
+      const enriched = await Promise.all(
+        (channels || []).map(async (ch: any) => {
+          const { count: articleCount } = await supabase
+            .from("articles").select("*", { count: "exact", head: true }).eq("channel_id", ch.id).eq("published", true);
+          const { count: subscriberCount } = await supabase
+            .from("subscriptions").select("*", { count: "exact", head: true }).eq("channel_id", ch.id);
+          return {
+            id: ch.id, name: ch.name, slug: ch.slug, description: ch.description,
+            category: ch.category, articleCount: articleCount || 0,
+            subscriberCount: (subscriberCount || 0) + (ch.admin_subscriber_count || 0),
+          };
+        })
+      );
+
+      return res.json(enriched);
+    } catch (error) {
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
+
+  // List categories (hierarchical)
+  app.get("/api/v1/content/categories", async (req, res) => {
+    try {
+      const { userId, error: authError } = await authenticateDevRequest(req);
+      if (authError || !userId) {
+        return res.status(401).json({ error: authError || "Authentication required" });
+      }
+
+      const { data: categories } = await supabase.from("categories").select("*").order("name");
+
+      const categoryMap = new Map<number, any>();
+      const roots: any[] = [];
+      for (const cat of categories || []) {
+        categoryMap.set(cat.id, { ...cat, children: [] });
+      }
+      for (const cat of categories || []) {
+        const node = categoryMap.get(cat.id);
+        if (cat.parent_id && categoryMap.has(cat.parent_id)) {
+          categoryMap.get(cat.parent_id).children.push(node);
+        } else {
+          roots.push(node);
+        }
+      }
+
+      return res.json(roots);
+    } catch (error) {
+      return res.status(500).json({ error: "Server error" });
     }
   });
 }

@@ -387,7 +387,7 @@ export default function HomePage() {
       <MarketTicker />
 
       <CategoryRibbon
-        selectedCategory={ribbonCategory}
+        selectedCategory={ribbonCategory ?? undefined}
         onCategorySelect={(categoryId, dbIds) => {
           setRibbonCategory(categoryId);
           setRibbonCategoryIds(dbIds);
