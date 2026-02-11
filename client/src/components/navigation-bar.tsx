@@ -17,7 +17,6 @@ import {
   Menu,
   Users,
   ChevronRight,
-  Zap,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Channel } from "@shared/schema";
@@ -239,13 +238,6 @@ export function NavigationBar({
                     >
                       <span>Profile</span>
                     </Link>
-                    <Link
-                      href="/api"
-                      className="flex items-center gap-2 py-2"
-                    >
-                      <Zap className="h-5 w-5" />
-                      <span>API</span>
-                    </Link>
                   </div>
                 )}
 
@@ -440,12 +432,6 @@ export function NavigationBar({
                       >
                         <DropdownMenuItem asChild>
                           <Link href="/profile">Profile</Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link href="/api" className="flex items-center">
-                            <Zap className="h-4 w-4 mr-2" />
-                            API
-                          </Link>
                         </DropdownMenuItem>
                         {isAdmin && (
                           <>
