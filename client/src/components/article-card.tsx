@@ -244,7 +244,7 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                 </div>
               </div>
               {/* Right side: Image filling the right third */}
-              <div className="w-1/3 relative flex-shrink-0">
+              <div className="w-2/5 relative flex-shrink-0">
                 <img
                   src={firstImage.imageUrl}
                   alt={firstImage.caption || "Article image"}

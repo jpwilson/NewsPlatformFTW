@@ -149,6 +149,8 @@
     position: relative;
     z-index: 1;
     transition: color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Override ghost button's rectangular hover/active background */
+    background: transparent !important;
   }
 
   .category-pill-hover::after {
