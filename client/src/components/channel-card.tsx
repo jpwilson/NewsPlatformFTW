@@ -198,7 +198,7 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
             
             {/* Channel Info */}
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-lg leading-tight truncate">
+              <h3 className="font-display font-semibold text-lg leading-tight truncate">
                 {channel.name}
               </h3>
               

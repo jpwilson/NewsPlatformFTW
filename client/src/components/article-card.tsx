@@ -45,7 +45,7 @@ type ArticleWithSnakeCase = Article & {
   images?: Array<{ imageUrl: string; caption?: string }>;
 };
 
-export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
+export function ArticleCard({ article, variant = "horizontal" }: { article: ArticleWithSnakeCase; variant?: "horizontal" | "vertical" }) {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
@@ -118,14 +118,85 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
   return (
     <>
       <Card className="overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200">
+        {/* Vertical Layout for grid view */}
+        {variant === "vertical" && (
+          <div className="hidden md:flex flex-col h-full">
+            {firstImage && (
+              <div className="w-full h-48 overflow-hidden">
+                <img
+                  src={firstImage.imageUrl}
+                  alt={firstImage.caption || "Article image"}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            )}
+            <div className="flex flex-col flex-1 p-5">
+              <Link href={articleUrl}>
+                <h3 className="text-lg font-display font-bold hover:underline cursor-pointer line-clamp-2 mb-2">
+                  {article.title}
+                </h3>
+              </Link>
+              <div className="flex flex-col gap-1 text-xs text-muted-foreground mb-3">
+                <span>{formatDate(article.created_at || article.createdAt)}</span>
+                <button
+                  onClick={handleChannelClick}
+                  className="text-primary hover:underline w-fit"
+                >
+                  By: {article.channel?.name || "Unknown Channel"}
+                </button>
+                {article.categories && article.categories.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {article.categories.map((cat, index) => (
+                      <span key={`${cat.id}-${index}`} className="px-2 py-0.5 bg-muted rounded-md text-xs">
+                        {cat.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  article.category && article.category.trim() !== "" && (
+                    <span className="px-2 py-0.5 bg-muted rounded-md text-xs w-fit mt-1">
+                      {article.category}
+                    </span>
+                  )
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground line-clamp-2 mb-3 flex-1">
+                {article.content.replace(/<[^>]+>/g, "")}
+              </p>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t">
+                <div className="flex items-center">
+                  <Eye className="h-3.5 w-3.5 mr-1" />
+                  <span>{views}</span>
+                </div>
+                <div className="flex items-center">
+                  <ThumbsUp className="h-3.5 w-3.5 mr-1" />
+                  <span>{likes}</span>
+                </div>
+                <div className="flex items-center">
+                  <ThumbsDown className="h-3.5 w-3.5 mr-1" />
+                  <span>{dislikes}</span>
+                </div>
+                {commentCount >= 7 && (
+                  <Link href={`${articleUrl}#comments`}>
+                    <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
+                      <MessageSquare className="h-3.5 w-3.5 mr-1" />
+                      <span>{commentCount}</span>
+                    </div>
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mobile Layout */}
-        <div className="md:hidden">
+        <div className={cn("md:hidden", variant === "vertical" ? "" : "")}>
           {firstImage && (
             <div className="flex gap-3 p-4">
               {/* Left side: Title and metadata */}
               <div className="flex-1">
                 <Link href={articleUrl}>
-                  <h3 className="text-lg font-semibold hover:underline cursor-pointer line-clamp-2 mb-2">
+                  <h3 className="text-lg font-display font-semibold hover:underline cursor-pointer line-clamp-2 mb-2">
                     {article.title}
                   </h3>
                 </Link>
@@ -216,13 +287,13 @@ export function ArticleCard({ article }: { article: ArticleWithSnakeCase }) {
           </div>
         </div>
 
-        {/* Desktop Layout - unchanged */}
-        <div className="hidden md:flex">
+        {/* Desktop Layout - horizontal (hidden when vertical variant is used) */}
+        <div className={cn("hidden", variant === "vertical" ? "" : "md:flex")}>
           <div className={cn("flex-1", hasImage && "w-2/3")}>
             <CardHeader>
               <div className="space-y-2">
                 <Link href={articleUrl}>
-                  <h3 className="text-xl font-semibold hover:underline cursor-pointer">
+                  <h3 className="text-xl font-display font-bold hover:underline cursor-pointer">
                     {article.title}
                   </h3>
                 </Link>

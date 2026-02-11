@@ -791,7 +791,7 @@ export default function ChannelPage() {
       {user && (
         <div className="w-full">
           {/* Banner Image */}
-          <div className="relative w-full h-56 lg:h-72 bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 overflow-hidden">
+          <div className="relative w-full h-56 lg:h-72 bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5">
             {channel.bannerImage ? (
               <img
                 src={channel.bannerImage}
@@ -806,12 +806,10 @@ export default function ChannelPage() {
                 </div>
               </div>
             )}
-            {/* Gradient overlay at bottom for smooth blend */}
-            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
 
             {/* Profile Image Overlay */}
-            <div className="absolute -bottom-12 left-4 lg:left-8 z-10">
-              <Avatar className="h-28 w-28 border-4 border-background shadow-xl ring-2 ring-background">
+            <div className="absolute -bottom-14 left-4 lg:left-8 z-10">
+              <Avatar className="h-28 w-28 border-4 border-background shadow-xl">
                 <AvatarImage src={channel.profileImage || undefined} alt={channel.name} />
                 <AvatarFallback className="bg-primary/10 text-3xl font-bold">
                   {channel.name.substring(0, 2).toUpperCase()}
@@ -821,7 +819,7 @@ export default function ChannelPage() {
           </div>
 
           {/* Content Container */}
-          <div className="container mx-auto px-4 pt-16 pb-6">
+          <div className="container mx-auto px-4 pt-20 pb-6">
           <div className="grid lg:grid-cols-[2fr_1fr] gap-8">
             <div>
               <div className="flex justify-between items-start mb-8">
@@ -960,7 +958,7 @@ export default function ChannelPage() {
                     </div>
                   ) : (
                     <>
-                      <h1 className="text-4xl font-bold mb-2">
+                      <h1 className="text-4xl font-display font-bold mb-2">
                         {channel.name}
                       </h1>
                       {channel.created_at && (

@@ -411,20 +411,18 @@ export default function HomePage() {
           <div className="lg:col-span-2 space-y-4">
             {/* Header section */}
             <div>
-              <h1 className="text-4xl font-bold">
-                {ribbonCategory 
+              <h1 className="text-4xl font-display font-bold">
+                {ribbonCategory
                   ? ribbonCategory.charAt(0).toUpperCase() + ribbonCategory.slice(1) + " News"
-                  : user 
-                    ? "Your Feed" 
-                    : "Popular Articles"}
+                  : "Latest Articles"}
               </h1>
               <div className="flex justify-between items-center mt-2">
                 <p className="text-muted-foreground">
                   {ribbonCategory
                     ? `Showing ${ribbonCategory} articles`
                     : user
-                      ? "Latest articles from your favorite channels"
-                      : "Want to interact or write your own articles? Sign up or log in!"}
+                      ? "Fresh stories from your favorite channels"
+                      : "Discover stories from across the platform"}
                 </p>
 
                 {/* Article control buttons - now contained in article column */}
@@ -766,9 +764,11 @@ export default function HomePage() {
                   : "No articles yet"}
               </div>
             ) : (
-              filteredArticles.map((article) => (
-                <ArticleCard key={article.id} article={article} />
-              ))
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {filteredArticles.map((article) => (
+                  <ArticleCard key={article.id} article={article} variant="vertical" />
+                ))}
+              </div>
             )}
           </div>
 
@@ -776,8 +776,8 @@ export default function HomePage() {
           <div className="hidden lg:block space-y-6">
             <div className="pt-2">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-[1.16em] font-[520]">
-                  Popular Channels
+                <h2 className="text-xl font-display font-bold">
+                  Trending Channels
                 </h2>
                 <Link href="/channels">
                   <Button size="sm" className="text-xs h-7">

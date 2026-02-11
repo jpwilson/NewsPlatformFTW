@@ -197,7 +197,7 @@ export function CategoryRibbon({
   };
 
   return (
-    <div className="sticky top-0 z-10 w-full glass-nav">
+    <div className="sticky top-0 z-10 w-full bg-background border-b border-border">
       <div className="relative">
         {/* Container for centering on large screens */}
         <div className="mx-auto max-w-7xl">
