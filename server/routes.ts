@@ -1252,6 +1252,130 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
+  // --- API Access Management (admin-only) ---
+
+  // Helper: check if the current session user is admin
+  async function isDevAdmin(req: Request): Promise<boolean> {
+    if (!req.isAuthenticated()) return false;
+    const userId = (req.user as any).id;
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("supabase_uid")
+      .eq("id", userId)
+      .maybeSingle();
+    if (!dbUser?.supabase_uid) return false;
+    const { data: admin } = await supabase
+      .from("admin_users")
+      .select("user_id")
+      .eq("user_id", dbUser.supabase_uid)
+      .maybeSingle();
+    return !!admin;
+  }
+
+  // Helper: get Supabase UUID for the current dev session user
+  async function getDevSupabaseUid(req: Request): Promise<string | null> {
+    if (!req.isAuthenticated()) return null;
+    const userId = (req.user as any).id;
+    const { data } = await supabase
+      .from("users")
+      .select("supabase_uid")
+      .eq("id", userId)
+      .maybeSingle();
+    return data?.supabase_uid || null;
+  }
+
+  app.get("/api/v1/api-access-users", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!(await isDevAdmin(req))) return res.status(403).json({ error: "Admin access required" });
+
+    const { data: grants } = await supabase
+      .from("api_access_users")
+      .select("user_id, created_at, granted_by")
+      .order("created_at", { ascending: false });
+
+    const results = [];
+    for (const grant of grants || []) {
+      const { data: authUser } = await supabase
+        .from("users")
+        .select("id, username")
+        .eq("supabase_uid", grant.user_id)
+        .maybeSingle();
+      results.push({
+        supabaseUid: grant.user_id,
+        username: authUser?.username || "Unknown",
+        localUserId: authUser?.id,
+        grantedAt: grant.created_at,
+      });
+    }
+    return res.json(results);
+  });
+
+  app.post("/api/v1/api-access-users", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!(await isDevAdmin(req))) return res.status(403).json({ error: "Admin access required" });
+
+    const { username } = req.body;
+    if (!username?.trim()) return res.status(400).json({ error: "Username is required" });
+
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("id, username, supabase_uid")
+      .eq("username", username.trim())
+      .maybeSingle();
+
+    if (!dbUser || !dbUser.supabase_uid) return res.status(404).json({ error: "User not found" });
+
+    const { data: existing } = await supabase
+      .from("api_access_users")
+      .select("user_id")
+      .eq("user_id", dbUser.supabase_uid)
+      .maybeSingle();
+
+    if (existing) return res.status(409).json({ error: "User already has API access" });
+
+    const grantedBy = await getDevSupabaseUid(req);
+    const { error } = await supabase
+      .from("api_access_users")
+      .insert([{ user_id: dbUser.supabase_uid, granted_by: grantedBy }]);
+
+    if (error) return res.status(500).json({ error: "Failed to grant API access" });
+
+    return res.status(201).json({
+      supabaseUid: dbUser.supabase_uid,
+      username: dbUser.username,
+      localUserId: dbUser.id,
+    });
+  });
+
+  app.delete("/api/v1/api-access-users/:userId", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!(await isDevAdmin(req))) return res.status(403).json({ error: "Admin access required" });
+
+    const { error } = await supabase
+      .from("api_access_users")
+      .delete()
+      .eq("user_id", req.params.userId);
+
+    if (error) return res.status(500).json({ error: "Failed to revoke API access" });
+    return res.json({ message: "API access revoked" });
+  });
+
+  app.get("/api/users/search", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    if (!(await isDevAdmin(req))) return res.status(403).json({ error: "Admin access required" });
+
+    const q = ((req.query.q as string) || "").trim();
+    if (!q) return res.json([]);
+
+    const { data: users } = await supabase
+      .from("users")
+      .select("id, username")
+      .ilike("username", `%${q}%`)
+      .limit(10);
+
+    return res.json(users || []);
+  });
+
   // --- Content API Endpoints ---
 
   // Helper: create a single article (shared by single and batch endpoints)

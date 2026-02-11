@@ -74,7 +74,17 @@ Deno.serve(async (req) => {
     const isAdmin = !!adminEntry; // True if adminEntry is not null
     console.log(`User ${user.id} admin status: ${isAdmin}`);
 
-    return new Response(JSON.stringify({ isAdmin }), {
+    // Check if the user has API access (separate from admin)
+    const { data: apiAccessEntry } = await adminSupabase
+      .from('api_access_users')
+      .select('user_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    const hasApiAccess = isAdmin || !!apiAccessEntry;
+    console.log(`User ${user.id} API access: ${hasApiAccess}`);
+
+    return new Response(JSON.stringify({ isAdmin, hasApiAccess }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })

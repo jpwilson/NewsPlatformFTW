@@ -6,7 +6,7 @@ import { AuthProvider } from "@/hooks/use-auth";
 import { SelectedChannelProvider } from "@/hooks/use-selected-channel";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ProtectedRoute } from "./lib/protected-route";
-import { AdminRouteGuard } from "@/components/admin-route-guard";
+import { AdminRouteGuard, ApiAccessRouteGuard } from "@/components/admin-route-guard";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
 import HomePage from "@/pages/home-page";
@@ -20,6 +20,7 @@ import ProfilePage from "./pages/profile-page";
 import EditArticle from "@/pages/edit-article";
 import ManageSubscribersPage from "@/pages/manage-subscribers";
 import AdminPage from "@/pages/admin-page";
+import ApiKeysPage from "@/pages/api-keys-page";
 import ApiDocsPage from "@/pages/api-docs-page";
 import { Analytics } from "@vercel/analytics/react";
 import { HelmetProvider } from "react-helmet-async";
@@ -84,6 +85,11 @@ function Router() {
       <Route path="/profile" component={ProfilePage} />
       <Route path="/users/:username" component={ProfilePage} />
       <Route path="/api" component={ApiDocsPage} />
+      <Route path="/api-keys">
+        <ApiAccessRouteGuard>
+          <ApiKeysPage />
+        </ApiAccessRouteGuard>
+      </Route>
       <Route path="/admin">
         <AdminRouteGuard>
           <AdminPage />

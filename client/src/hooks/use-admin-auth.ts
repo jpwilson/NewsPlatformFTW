@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'; // Import your configured Supabase cl
 // Define the expected shape of the JSON response from the /api/is-admin endpoint
 interface IsAdminResponse {
   isAdmin: boolean;
+  hasApiAccess?: boolean;
   error?: string; // Optional error message from the function itself
 }
 
@@ -97,11 +98,13 @@ export function useAdminAuth() {
 
   // Use the data from the query if available, otherwise stick with initialData's default
   const isAdmin = data?.isAdmin ?? false;
+  const hasApiAccess = data?.hasApiAccess ?? false;
   // Prioritize error from the query data itself (returned by the function), then query-level error
   const error = data?.error || (queryError ? queryError.message : null);
 
   return {
     isAdmin,
+    hasApiAccess,
     isLoading,
     error,
   };

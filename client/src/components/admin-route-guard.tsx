@@ -44,3 +44,25 @@ export function AdminRouteGuard({
   console.log("AdminRouteGuard: User is admin. Rendering protected content.");
   return <>{children}</>;
 }
+
+export function ApiAccessRouteGuard({
+  children,
+}: AdminRouteGuardProps): JSX.Element | null {
+  const { hasApiAccess, isLoading, error } = useAdminAuth();
+  const [, setLocation] = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <LoadingSpinner size={48} />
+      </div>
+    );
+  }
+
+  if (error || !hasApiAccess) {
+    setLocation("/");
+    return null;
+  }
+
+  return <>{children}</>;
+}

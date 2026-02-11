@@ -54,7 +54,7 @@ export function NavigationBar({
   selectedChannelId?: string | number;
 }) {
   const { user, logoutMutation } = useAuth();
-  const { isAdmin } = useAdminAuth();
+  const { isAdmin, hasApiAccess } = useAdminAuth();
   const [location, setLocation] = useLocation();
   const { selectedChannelId: contextChannelId, setSelectedChannelId } =
     useSelectedChannel();
@@ -253,6 +253,18 @@ export function NavigationBar({
                   </div>
                 )}
 
+                {/* API Keys link - for users with API access who aren't admins */}
+                {user && hasApiAccess && !isAdmin && (
+                  <div className="pb-4">
+                    <Link
+                      href="/api-keys"
+                      className="flex items-center gap-2 py-2"
+                    >
+                      <span>API Keys</span>
+                    </Link>
+                  </div>
+                )}
+
                 {/* Add theme toggle to mobile menu for logged-in users */}
                 {user && (
                   <div className="pb-4 flex items-center gap-2 py-2">
@@ -434,11 +446,14 @@ export function NavigationBar({
                           <Link href="/profile">Profile</Link>
                         </DropdownMenuItem>
                         {isAdmin && (
-                          <>
-                            <DropdownMenuItem asChild>
-                              <Link href="/admin">Admin</Link>
-                            </DropdownMenuItem>
-                          </>
+                          <DropdownMenuItem asChild>
+                            <Link href="/admin">Admin</Link>
+                          </DropdownMenuItem>
+                        )}
+                        {hasApiAccess && !isAdmin && (
+                          <DropdownMenuItem asChild>
+                            <Link href="/api-keys">API Keys</Link>
+                          </DropdownMenuItem>
                         )}
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={handleLogout}>
