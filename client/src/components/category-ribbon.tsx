@@ -165,7 +165,7 @@ export function CategoryRibbon({
       return (
         <Button
           key={category.id}
-          variant={isSelected ? "default" : "ghost"}
+          variant="ghost"
           size="sm"
           className={cn(
             "whitespace-nowrap gap-1.5 font-medium category-pill-hover",
@@ -183,7 +183,7 @@ export function CategoryRibbon({
     return (
       <Button
         key={category.id}
-        variant={isSelected ? "default" : "ghost"}
+        variant="ghost"
         size="sm"
         className={cn(
           "whitespace-nowrap font-medium category-pill-hover",

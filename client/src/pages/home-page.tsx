@@ -776,11 +776,11 @@ export default function HomePage() {
           <div className="hidden lg:block space-y-6">
             <div className="pt-2">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-display font-bold">
+                <h2 className="text-2xl font-display font-bold">
                   Trending Channels
                 </h2>
                 <Link href="/channels">
-                  <Button size="sm" className="text-xs h-7">
+                  <Button size="sm" className="text-sm h-8">
                     Explore Channels
                   </Button>
                 </Link>

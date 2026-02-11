@@ -192,9 +192,9 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
         {/* Mobile Layout */}
         <div className={cn("md:hidden", variant === "vertical" ? "" : "")}>
           {firstImage && (
-            <div className="flex gap-3 p-4">
-              {/* Left side: Title and metadata */}
-              <div className="flex-1">
+            <div className="flex">
+              {/* Left side: Title, metadata, text, and stats */}
+              <div className="flex-1 flex flex-col p-4">
                 <Link href={articleUrl}>
                   <h3 className="text-lg font-display font-semibold hover:underline cursor-pointer line-clamp-2 mb-2">
                     {article.title}
@@ -212,18 +212,43 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                   {article.category && article.category.trim() !== "" && (
                     <div className="mt-1">
                       <span className="px-2 py-0.5 bg-muted rounded-md text-xs inline-block">
-                        🏷️ {article.category}
+                        {article.category}
                       </span>
                     </div>
                   )}
                 </div>
+                <p className="text-sm text-muted-foreground line-clamp-2 mt-3 flex-1">
+                  {article.content.replace(/<[^>]+>/g, "")}
+                </p>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground mt-3 pt-2 border-t">
+                  <div className="flex items-center">
+                    <Eye className="h-3.5 w-3.5 mr-1" />
+                    <span>{views}</span>
+                  </div>
+                  <div className="flex items-center">
+                    <ThumbsUp className="h-3.5 w-3.5 mr-1" />
+                    <span>{likes}</span>
+                  </div>
+                  <div className="flex items-center">
+                    <ThumbsDown className="h-3.5 w-3.5 mr-1" />
+                    <span>{dislikes}</span>
+                  </div>
+                  {commentCount >= 7 && (
+                    <Link href={`${articleUrl}#comments`}>
+                      <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
+                        <MessageSquare className="h-3.5 w-3.5 mr-1" />
+                        <span>{commentCount}</span>
+                      </div>
+                    </Link>
+                  )}
+                </div>
               </div>
-              {/* Right side: Image */}
-              <div className="w-32 h-32 flex-shrink-0">
+              {/* Right side: Image filling the right third */}
+              <div className="w-1/3 relative flex-shrink-0">
                 <img
                   src={firstImage.imageUrl}
                   alt={firstImage.caption || "Article image"}
-                  className="w-full h-full object-cover rounded-lg"
+                  className="absolute inset-0 w-full h-full object-cover rounded-r-lg"
                 />
               </div>
             </div>
@@ -231,7 +256,7 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
           {!firstImage && (
             <div className="p-4">
               <Link href={articleUrl}>
-                <h3 className="text-lg font-semibold hover:underline cursor-pointer mb-2">
+                <h3 className="text-lg font-display font-semibold hover:underline cursor-pointer mb-2">
                   {article.title}
                 </h3>
               </Link>
@@ -247,44 +272,38 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                 {article.category && article.category.trim() !== "" && (
                   <div className="mt-1">
                     <span className="px-2 py-0.5 bg-muted rounded-md text-xs inline-block">
-                      🏷️ {article.category}
+                      {article.category}
                     </span>
                   </div>
                 )}
               </div>
+              <p className="text-sm text-muted-foreground line-clamp-2 mt-3">
+                {article.content.replace(/<[^>]+>/g, "")}
+              </p>
+              <div className="flex items-center gap-4 text-xs text-muted-foreground mt-3 pt-2 border-t">
+                <div className="flex items-center">
+                  <Eye className="h-3.5 w-3.5 mr-1" />
+                  <span>{views}</span>
+                </div>
+                <div className="flex items-center">
+                  <ThumbsUp className="h-3.5 w-3.5 mr-1" />
+                  <span>{likes}</span>
+                </div>
+                <div className="flex items-center">
+                  <ThumbsDown className="h-3.5 w-3.5 mr-1" />
+                  <span>{dislikes}</span>
+                </div>
+                {commentCount >= 7 && (
+                  <Link href={`${articleUrl}#comments`}>
+                    <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
+                      <MessageSquare className="h-3.5 w-3.5 mr-1" />
+                      <span>{commentCount}</span>
+                    </div>
+                  </Link>
+                )}
+              </div>
             </div>
           )}
-          {/* Full width text below */}
-          <div className="px-4 pb-4">
-            <p className="text-sm text-muted-foreground line-clamp-2">
-              {article.content.replace(/<[^>]+>/g, "")}
-            </p>
-          </div>
-          {/* Stats footer */}
-          <div className="px-4 pb-4">
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <div className="flex items-center">
-                <Eye className="h-3.5 w-3.5 mr-1" />
-                <span>{views}</span>
-              </div>
-              <div className="flex items-center">
-                <ThumbsUp className="h-3.5 w-3.5 mr-1" />
-                <span>{likes}</span>
-              </div>
-              <div className="flex items-center">
-                <ThumbsDown className="h-3.5 w-3.5 mr-1" />
-                <span>{dislikes}</span>
-              </div>
-              {commentCount >= 7 && (
-                <Link href={`${articleUrl}#comments`}>
-                  <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
-                    <MessageSquare className="h-3.5 w-3.5 mr-1" />
-                    <span>{commentCount}</span>
-                  </div>
-                </Link>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* Desktop Layout - horizontal (hidden when vertical variant is used) */}
