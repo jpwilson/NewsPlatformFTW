@@ -131,7 +131,7 @@ export default function AdminPage() {
   return (
     <>
       {/* Simple admin header with just the logo */}
-      <header className="border-b sticky top-0 z-50 bg-background">
+      <header className="sticky top-0 z-50 glass-nav">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 cursor-pointer">
             <Newspaper className="h-6 w-6" />

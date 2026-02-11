@@ -168,8 +168,10 @@ export function CategoryRibbon({
           variant={isSelected ? "default" : "ghost"}
           size="sm"
           className={cn(
-            "whitespace-nowrap gap-1.5 font-medium transition-all",
-            !userLocation && "text-muted-foreground"
+            "whitespace-nowrap gap-1.5 font-medium transition-all duration-200",
+            !userLocation && "text-muted-foreground",
+            !isSelected && "hover:bg-white/10 dark:hover:bg-white/[0.07] hover:backdrop-blur-sm hover:shadow-[0_0_12px_rgba(255,255,255,0.06)]",
+            isSelected && "shadow-[0_0_12px_rgba(var(--primary),0.15)]"
           )}
           onClick={() => handleCategoryClick(category)}
         >
@@ -184,7 +186,11 @@ export function CategoryRibbon({
         key={category.id}
         variant={isSelected ? "default" : "ghost"}
         size="sm"
-        className="whitespace-nowrap font-medium transition-all"
+        className={cn(
+          "whitespace-nowrap font-medium transition-all duration-200",
+          !isSelected && "hover:bg-white/10 dark:hover:bg-white/[0.07] hover:backdrop-blur-sm hover:shadow-[0_0_12px_rgba(255,255,255,0.06)]",
+          isSelected && "shadow-[0_0_12px_rgba(var(--primary),0.15)]"
+        )}
         onClick={() => handleCategoryClick(category)}
       >
         {category.label}
@@ -193,7 +199,7 @@ export function CategoryRibbon({
   };
 
   return (
-    <div className="sticky top-0 z-10 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <div className="sticky top-0 z-10 w-full glass-nav">
       <div className="relative">
         {/* Container for centering on large screens */}
         <div className="mx-auto max-w-7xl">
