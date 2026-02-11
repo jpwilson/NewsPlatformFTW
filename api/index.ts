@@ -25,10 +25,106 @@ if (!supabaseServiceKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
 
-// Import Content API utilities
-import { generateApiKey, hashApiKey, authenticateApiKey } from "../server/api-auth";
-import { normalizeContent } from "../server/markdown-to-html";
-import { downloadAndUploadImage } from "../server/image-downloader";
+// Content API utilities (inlined to avoid cross-directory import issues with @vercel/node)
+import { createHash, randomBytes } from "crypto";
+
+function generateApiKey(): { key: string; hash: string; prefix: string } {
+  const rawBytes = randomBytes(32);
+  const key = `nk_${rawBytes.toString("hex")}`;
+  const hash = createHash("sha256").update(key).digest("hex");
+  const prefix = key.substring(0, 11);
+  return { key, hash, prefix };
+}
+
+function hashApiKey(key: string): string {
+  return createHash("sha256").update(key).digest("hex");
+}
+
+async function authenticateApiKey(
+  apiKeyHeader: string,
+  sb: any
+): Promise<{ userId?: number; error?: string }> {
+  if (!apiKeyHeader || !apiKeyHeader.startsWith("nk_")) {
+    return { error: "Invalid API key format" };
+  }
+  const keyHash = hashApiKey(apiKeyHeader);
+  const { data: apiKeyRow, error } = await sb
+    .from("api_keys").select("id, user_id, is_revoked, expires_at").eq("key_hash", keyHash).single();
+  if (error || !apiKeyRow) return { error: "Invalid API key" };
+  if (apiKeyRow.is_revoked) return { error: "API key has been revoked" };
+  if (apiKeyRow.expires_at && new Date(apiKeyRow.expires_at) < new Date()) return { error: "API key has expired" };
+  sb.from("api_keys").update({ last_used_at: new Date().toISOString() }).eq("id", apiKeyRow.id).then(() => {});
+  return { userId: apiKeyRow.user_id };
+}
+
+function markdownToHtml(markdown: string): string {
+  let html = markdown.replace(/\r\n/g, "\n");
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
+    `<pre><code>${code.trimEnd().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</code></pre>`);
+  html = html.replace(/`([^`]+)`/g, (_m, code) =>
+    `<code>${code.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}</code>`);
+  const blocks = html.split(/\n{2,}/);
+  const output: string[] = [];
+  const fmt = (t: string) => {
+    let r = t;
+    r = r.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+    r = r.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    r = r.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    r = r.replace(/__(.+?)__/g, "<strong>$1</strong>");
+    r = r.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    r = r.replace(/_(.+?)_/g, "<em>$1</em>");
+    return r;
+  };
+  for (const block of blocks) {
+    const t = block.trim();
+    if (!t) continue;
+    if (t.startsWith("<pre><code>")) { output.push(t); continue; }
+    const hm = t.match(/^(#{1,6})\s+(.+)$/m);
+    if (hm && t.split("\n").length === 1) { output.push(`<h${hm[1].length}>${fmt(hm[2])}</h${hm[1].length}>`); continue; }
+    if (/^[-*_]{3,}$/.test(t)) { output.push("<hr>"); continue; }
+    if (t.startsWith("> ")) { output.push(`<blockquote><p>${fmt(t.split("\n").map(l=>l.replace(/^>\s?/,"")).join("\n"))}</p></blockquote>`); continue; }
+    if (/^[-*+]\s/.test(t)) { output.push(`<ul>${t.split("\n").filter(l=>l.trim()).map(i=>`<li>${fmt(i.replace(/^[-*+]\s+/,""))}</li>`).join("")}</ul>`); continue; }
+    if (/^\d+\.\s/.test(t)) { output.push(`<ol>${t.split("\n").filter(l=>l.trim()).map(i=>`<li>${fmt(i.replace(/^\d+\.\s+/,""))}</li>`).join("")}</ol>`); continue; }
+    output.push(`<p>${fmt(t.replace(/\n/g, " "))}</p>`);
+  }
+  return output.join("\n");
+}
+
+function normalizeContent(content: string, format?: string): string {
+  if (format === "html") return content;
+  if (format === "markdown") return markdownToHtml(content);
+  if (/<[a-z][\s\S]*>/i.test(content.trim())) return content;
+  return markdownToHtml(content);
+}
+
+async function downloadAndUploadImage(imageInput: any, articleId: number, index: number, sb: any): Promise<any> {
+  const { url, caption = "", order } = imageInput;
+  try {
+    const parsedUrl = new URL(url);
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) return null;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "NewsPlatform-ContentAPI/1.0" } });
+    clearTimeout(timeoutId);
+    if (!response.ok) return null;
+    const contentType = (response.headers.get("content-type") || "").split(";")[0].trim();
+    const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    if (!validTypes.includes(contentType)) return null;
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length > 10 * 1024 * 1024) return null;
+    const extMap: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp" };
+    const ext = extMap[contentType] || "jpg";
+    const filename = `api_${articleId}_${Date.now()}_${index}.${ext}`;
+    const { data: uploadData, error: uploadError } = await sb.storage.from("article-images").upload(filename, buffer, { contentType, upsert: false });
+    if (uploadError || !uploadData) return null;
+    const { data: urlData } = await sb.storage.from("article-images").createSignedUrl(uploadData.path, 365 * 24 * 60 * 60);
+    const imageUrl = urlData?.signedUrl || sb.storage.from("article-images").getPublicUrl(uploadData.path).data.publicUrl;
+    return { imageUrl, originalUrl: url, caption, order: order ?? index };
+  } catch (error) {
+    console.error(`Error processing image from ${url}:`, error);
+    return null;
+  }
+}
 
 // Unified auth: try X-API-Key first, then fall back to Bearer JWT
 async function authenticateRequest(
