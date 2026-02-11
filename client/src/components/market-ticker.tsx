@@ -110,7 +110,7 @@ export function MarketTicker() {
 
   if (isLoading || tickers.length === 0) {
     return (
-      <div className="bg-muted/20 backdrop-blur-sm border-y border-white/[0.06] py-2 px-4">
+      <div className="glass-ticker py-2 px-4">
         <div className="text-sm text-muted-foreground animate-pulse">
           Loading market data...
         </div>
@@ -122,7 +122,7 @@ export function MarketTicker() {
   const duplicatedTickers = [...tickers, ...tickers, ...tickers];
 
   return (
-    <div className="bg-muted/20 backdrop-blur-sm border-y border-white/[0.06] overflow-hidden relative">
+    <div className="glass-ticker overflow-hidden relative">
       <div className="ticker-container">
         <div className="ticker-scroll">
           {duplicatedTickers.map((ticker, index) => (

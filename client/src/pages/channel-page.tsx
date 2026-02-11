@@ -791,7 +791,7 @@ export default function ChannelPage() {
       {user && (
         <div className="w-full">
           {/* Banner Image */}
-          <div className="relative w-full h-48 lg:h-64 bg-gradient-to-br from-primary/20 to-primary/5">
+          <div className="relative w-full h-56 lg:h-72 bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5 overflow-hidden">
             {channel.bannerImage ? (
               <img
                 src={channel.bannerImage}
@@ -806,12 +806,14 @@ export default function ChannelPage() {
                 </div>
               </div>
             )}
-            
+            {/* Gradient overlay at bottom for smooth blend */}
+            <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
+
             {/* Profile Image Overlay */}
-            <div className="absolute -bottom-12 left-4 lg:left-8">
-              <Avatar className="h-24 w-24 border-4 border-background shadow-xl">
+            <div className="absolute -bottom-12 left-4 lg:left-8 z-10">
+              <Avatar className="h-28 w-28 border-4 border-background shadow-xl ring-2 ring-background">
                 <AvatarImage src={channel.profileImage || undefined} alt={channel.name} />
-                <AvatarFallback className="bg-primary/10 text-2xl font-bold">
+                <AvatarFallback className="bg-primary/10 text-3xl font-bold">
                   {channel.name.substring(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
@@ -1081,7 +1083,7 @@ export default function ChannelPage() {
 
                 <TabsContent
                   value="published"
-                  className="rounded-lg border bg-card mt-2"
+                  className="glass-card mt-2"
                 >
                   {renderArticles(articles)}
                 </TabsContent>
@@ -1089,7 +1091,7 @@ export default function ChannelPage() {
                 {isOwner && (
                   <TabsContent
                     value="drafts"
-                    className="rounded-lg border bg-card mt-2"
+                    className="glass-card mt-2"
                   >
                     {renderArticles(drafts, true)}
                   </TabsContent>
@@ -1098,82 +1100,82 @@ export default function ChannelPage() {
             </div>
 
             <div className="space-y-6">
-              <div className="rounded-lg border bg-card p-6">
-                <h2 className="text-xl font-semibold mb-4">Channel Stats</h2>
+              <div className="glass-stats-card p-6">
+                <h2 className="text-lg font-semibold mb-4">Channel Stats</h2>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-2xl font-bold">
+                  <div className="text-center p-3 rounded-lg bg-muted/30">
+                    <div className="text-3xl font-bold">
                       {articles?.length || 0}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-xs text-muted-foreground mt-1">
                       Articles
                     </div>
                   </div>
-                  <div>
-                    <div className="text-2xl font-bold">
+                  <div className="text-center p-3 rounded-lg bg-muted/30">
+                    <div className="text-3xl font-bold">
                       {channel?.subscriberCount || 0}
                     </div>
-                    <div className="text-sm text-muted-foreground">
+                    <div className="text-xs text-muted-foreground mt-1">
                       Subscribers
                     </div>
                   </div>
-                  <div className="col-span-2 mt-3 border-t pt-3">
-                    <div className="text-sm mt-2">
-                      <span className="text-muted-foreground">Created by</span>{" "}
-                      {ownerInfo?.username ? (
-                        <Link
-                          href={`/users/${ownerInfo.username}`}
-                          className="text-primary hover:underline font-medium"
-                        >
-                          {ownerInfo.username}
-                        </Link>
-                      ) : loadingOwner ? (
-                        <span className="text-muted-foreground">Loading...</span>
-                      ) : (
-                        <span className="text-muted-foreground">Unknown User</span>
-                      )}
-                    </div>
-                    <div className="text-sm mt-1">
-                      <span className="text-muted-foreground">
-                        Creation date:
-                      </span>{" "}
-                      <span className="font-medium">
-                        {channel && channel.created_at
-                          ? formatDate(channel.created_at)
-                          : "Not available"}
-                      </span>
-                    </div>
-                    {isSubscribed && !isOwner && (
-                      <div className="text-sm mt-2">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <span className="text-primary hover:underline cursor-pointer flex items-center gap-1">
-                              Subscribed
-                              <ChevronDown className="h-3 w-3 opacity-70" />
-                            </span>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start">
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive cursor-pointer"
-                              onClick={() => unsubscribeMutation.mutate()}
-                              disabled={unsubscribeMutation.isPending}
-                            >
-                              {unsubscribeMutation.isPending ? (
-                                <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                              ) : null}
-                              Unsubscribe from channel
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
+                </div>
+                <div className="mt-4 pt-4 border-t space-y-2">
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Created by</span>{" "}
+                    {ownerInfo?.username ? (
+                      <Link
+                        href={`/users/${ownerInfo.username}`}
+                        className="text-primary hover:underline font-medium"
+                      >
+                        {ownerInfo.username}
+                      </Link>
+                    ) : loadingOwner ? (
+                      <span className="text-muted-foreground">Loading...</span>
+                    ) : (
+                      <span className="text-muted-foreground">Unknown User</span>
                     )}
                   </div>
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">
+                      Creation date:
+                    </span>{" "}
+                    <span className="font-medium">
+                      {channel && channel.created_at
+                        ? formatDate(channel.created_at)
+                        : "Not available"}
+                    </span>
+                  </div>
+                  {isSubscribed && !isOwner && (
+                    <div className="text-sm pt-1">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <span className="text-primary hover:underline cursor-pointer flex items-center gap-1">
+                            Subscribed
+                            <ChevronDown className="h-3 w-3 opacity-70" />
+                          </span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive cursor-pointer"
+                            onClick={() => unsubscribeMutation.mutate()}
+                            disabled={unsubscribeMutation.isPending}
+                          >
+                            {unsubscribeMutation.isPending ? (
+                              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            ) : null}
+                            Unsubscribe from channel
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {isOwner && (
-                <div className="rounded-lg border bg-card p-6">
-                  <h2 className="text-xl font-semibold mb-4">
+                <div className="glass-stats-card p-6">
+                  <h2 className="text-lg font-semibold mb-4">
                     Channel Settings
                   </h2>
                   <div className="flex flex-col space-y-2">

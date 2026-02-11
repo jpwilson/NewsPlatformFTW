@@ -37,52 +37,162 @@
   }
 }
 
-/* Glassmorphism utility classes */
+/* Glossy glass utility classes */
 @layer components {
-  .glass {
-    @apply backdrop-blur-md border;
-    background: hsl(var(--background) / 0.72);
-    border-color: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  }
-
-  .dark .glass {
-    background: hsl(var(--background) / 0.6);
-    border-color: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  }
-
-  .glass-card {
-    @apply backdrop-blur-sm border transition-all duration-200;
-    background: hsl(var(--card) / 0.82);
-    border-color: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 2px 12px -4px rgba(0, 0, 0, 0.08);
-  }
-
-  .glass-card:hover {
-    border-color: rgba(255, 255, 255, 0.16);
-    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.12);
-  }
-
-  .dark .glass-card {
-    background: hsl(var(--card) / 0.7);
-    border-color: rgba(255, 255, 255, 0.06);
-    box-shadow: 0 2px 12px -4px rgba(0, 0, 0, 0.3);
-  }
-
-  .dark .glass-card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
-  }
-
+  /* Glossy nav: gradient sheen, no blur */
   .glass-nav {
-    @apply backdrop-blur-xl border-b;
-    background: hsl(var(--background) / 0.8);
-    border-color: rgba(255, 255, 255, 0.08);
+    @apply border-b;
+    background: linear-gradient(
+      180deg,
+      hsl(var(--background)) 0%,
+      hsl(var(--background) / 0.97) 50%,
+      hsl(var(--muted) / 0.3) 100%
+    );
+    border-color: hsl(var(--border));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
   }
 
   .dark .glass-nav {
-    background: hsl(var(--background) / 0.7);
+    background: linear-gradient(
+      180deg,
+      hsl(var(--background)) 0%,
+      hsl(var(--background) / 0.95) 50%,
+      hsl(var(--muted) / 0.15) 100%
+    );
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  /* Glossy card: gradient highlight on top edge */
+  .glass-card {
+    @apply border rounded-xl transition-all duration-200;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.08) 0%, transparent 40%),
+      hsl(var(--card));
+    border-color: hsl(var(--border));
+    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+
+  .glass-card:hover {
+    box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    transform: translateY(-1px);
+  }
+
+  .dark .glass-card {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 40%),
+      hsl(var(--card));
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .dark .glass-card:hover {
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transform: translateY(-1px);
+  }
+
+  /* Glossy dropdown */
+  .glass-dropdown {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 50%),
+      hsl(var(--popover));
+    border: 1px solid hsl(var(--border));
+    box-shadow:
+      0 8px 32px -4px rgba(0, 0, 0, 0.15),
+      0 2px 8px rgba(0, 0, 0, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+
+  .dark .glass-dropdown {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 50%),
+      hsl(var(--popover));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+      0 8px 32px -4px rgba(0, 0, 0, 0.5),
+      0 2px 8px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* Glossy ticker */
+  .glass-ticker {
+    @apply border-y;
+    background: linear-gradient(
+      180deg,
+      hsl(var(--muted) / 0.4) 0%,
+      hsl(var(--muted) / 0.15) 40%,
+      hsl(var(--muted) / 0.25) 100%
+    );
+    border-color: hsl(var(--border));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(0, 0, 0, 0.04);
+  }
+
+  .dark .glass-ticker {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--muted) / 0.25) 0%,
+      hsl(var(--muted) / 0.08) 40%,
+      hsl(var(--muted) / 0.15) 100%
+    );
     border-color: rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  }
+
+  /* Glossy sheet (mobile menu) */
+  .glass-sheet {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.06) 0%, transparent 30%),
+      hsl(var(--background));
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12), inset 1px 0 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .dark .glass-sheet {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 30%),
+      hsl(var(--background));
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4), inset 1px 0 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* Category pill hover — glossy pop */
+  .category-pill-hover {
+    @apply transition-all duration-200;
+  }
+
+  .category-pill-hover:hover {
+    background: linear-gradient(180deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 100%);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  .dark .category-pill-hover:hover {
+    background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.02) 100%);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+
+  /* Active category: stronger gloss */
+  .category-pill-active {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+
+  .dark .category-pill-active {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Channel stats card: prominent glossy card */
+  .glass-stats-card {
+    @apply border rounded-xl;
+    background:
+      linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 50%, rgba(255,255,255,0.04) 100%),
+      hsl(var(--card));
+    border-color: hsl(var(--border));
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  }
+
+  .dark .glass-stats-card {
+    background:
+      linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 50%, rgba(255,255,255,0.02) 100%),
+      hsl(var(--card));
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 16px -4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 }
