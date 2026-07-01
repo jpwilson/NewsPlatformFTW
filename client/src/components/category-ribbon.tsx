@@ -1,13 +1,7 @@
 import { useRef, useEffect, useState } from "react";
-import { MapPin, ChevronDown, Check, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 // All categories in order
 const ALL_CATEGORIES: Array<{
@@ -77,9 +71,9 @@ const ALL_CATEGORIES: Array<{
     label: "AI", 
     dbIds: [25]
   },
-  { 
+  {
     id: "everything-else",
-    label: "Everything Else", 
+    label: "More",
     dbIds: [15]
   },
 ];
@@ -168,9 +162,8 @@ export function CategoryRibbon({
           variant="ghost"
           size="sm"
           className={cn(
-            "whitespace-nowrap gap-1.5 font-medium category-pill-hover",
-            !userLocation && "text-muted-foreground",
-            isSelected && "category-pill-active"
+            "whitespace-nowrap gap-1.5 rounded-none font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground",
+            isSelected && "text-foreground font-semibold edition-underline-active"
           )}
           onClick={() => handleCategoryClick(category)}
         >
@@ -186,8 +179,8 @@ export function CategoryRibbon({
         variant="ghost"
         size="sm"
         className={cn(
-          "whitespace-nowrap font-medium category-pill-hover",
-          isSelected && "category-pill-active"
+          "whitespace-nowrap rounded-none font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground",
+          isSelected && "text-foreground font-semibold edition-underline-active"
         )}
         onClick={() => handleCategoryClick(category)}
       >
