@@ -235,6 +235,186 @@ function ApiAccessManager() {
   );
 }
 
+function HomepageSettingsSection() {
+  const [settings, setSettings] = React.useState<any>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiRequest("GET", "/api/homepage/settings");
+        setSettings(await res.json());
+      } catch {
+        // Couldn't load (e.g. the migration hasn't been run yet) — fall back to
+        // defaults so the form still renders and a Save will create the row.
+        setSettings({
+          heroMode: "recency_most_read",
+          heroRecencyHours: 24,
+          featuredArticleId: null,
+          mostReadWindow: "7d",
+          showReadingNow: true,
+        });
+        setError(
+          "Couldn't load saved settings — showing defaults. If this persists, run supabase/migrations/homepage_settings.sql in Supabase."
+        );
+      }
+    })();
+  }, []);
+
+  function update(patch: any) {
+    setSettings((s: any) => ({ ...(s || {}), ...patch }));
+    setSaved(false);
+  }
+
+  async function save() {
+    if (!settings) return;
+    setLoading(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await apiRequest("PUT", "/api/homepage/settings", {
+        heroMode: settings.heroMode,
+        heroRecencyHours: Number(settings.heroRecencyHours) || 24,
+        featuredArticleId:
+          settings.heroMode === "manual" && settings.featuredArticleId
+            ? Number(settings.featuredArticleId)
+            : null,
+        mostReadWindow: settings.mostReadWindow,
+        showReadingNow: !!settings.showReadingNow,
+      });
+      if (res.ok) {
+        setSettings(await res.json());
+        setSaved(true);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || err.message || "Failed to save");
+      }
+    } catch (e: any) {
+      setError(e.message || "Failed to save");
+    }
+    setLoading(false);
+  }
+
+  if (!settings) {
+    return <p className="text-sm text-muted-foreground">Loading settings…</p>;
+  }
+
+  const selectClass =
+    "px-3 py-2 border rounded-md bg-background text-sm w-full max-w-xs";
+
+  return (
+    <div className="space-y-6 max-w-xl">
+      <div>
+        <label className="block text-sm font-medium mb-1">
+          Lead story (hero)
+        </label>
+        <p className="text-xs text-muted-foreground mb-2">
+          How the top story is chosen.
+        </p>
+        <select
+          className={selectClass}
+          value={settings.heroMode}
+          onChange={(e) => update({ heroMode: e.target.value })}
+        >
+          <option value="recency_most_read">
+            Most-read of the latest day (recommended)
+          </option>
+          <option value="newest">Newest story</option>
+          <option value="most_read_all_time">Most-read all-time</option>
+          <option value="manual">Manual — pick an article</option>
+        </select>
+      </div>
+
+      {settings.heroMode === "manual" && (
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Featured article ID
+          </label>
+          <p className="text-xs text-muted-foreground mb-2">
+            Find the ID in the “Manage Articles” tab. Falls back to most-read if
+            the article isn’t currently on the homepage.
+          </p>
+          <input
+            type="number"
+            className={selectClass}
+            value={settings.featuredArticleId ?? ""}
+            onChange={(e) => update({ featuredArticleId: e.target.value })}
+            placeholder="e.g. 1234"
+          />
+        </div>
+      )}
+
+      {settings.heroMode === "recency_most_read" && (
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            Hero recency window
+          </label>
+          <p className="text-xs text-muted-foreground mb-2">
+            How far back “the latest day” reaches.
+          </p>
+          <select
+            className={selectClass}
+            value={String(settings.heroRecencyHours)}
+            onChange={(e) => update({ heroRecencyHours: e.target.value })}
+          >
+            <option value="24">Last 24 hours</option>
+            <option value="48">Last 48 hours</option>
+            <option value="72">Last 72 hours</option>
+          </select>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium mb-1">
+          “Most read” window
+        </label>
+        <p className="text-xs text-muted-foreground mb-2">
+          Time range for the Most-read rail.
+        </p>
+        <select
+          className={selectClass}
+          value={settings.mostReadWindow}
+          onChange={(e) => update({ mostReadWindow: e.target.value })}
+        >
+          <option value="24h">Today (24h)</option>
+          <option value="7d">This week (7d)</option>
+          <option value="30d">This month (30d)</option>
+          <option value="all">All time</option>
+        </select>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <input
+          id="show-reading-now"
+          type="checkbox"
+          className="h-4 w-4"
+          checked={!!settings.showReadingNow}
+          onChange={(e) => update({ showReadingNow: e.target.checked })}
+        />
+        <label htmlFor="show-reading-now" className="text-sm font-medium">
+          Show “reading now” figure on cards
+        </label>
+      </div>
+
+      <div className="flex items-center gap-3 pt-2">
+        <Button onClick={save} disabled={loading} size="sm">
+          {loading ? "Saving…" : "Save changes"}
+        </Button>
+        {saved && (
+          <span className="text-sm text-green-600 dark:text-green-400">
+            Saved ✓
+          </span>
+        )}
+        {error && (
+          <span className="text-sm text-red-600 dark:text-red-400">{error}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   return (
     <>
@@ -256,6 +436,7 @@ export default function AdminPage() {
             <TabsTrigger value="articles">Manage Articles</TabsTrigger>
             <TabsTrigger value="channels">Manage Channels</TabsTrigger>
             <TabsTrigger value="api">API</TabsTrigger>
+            <TabsTrigger value="homepage">Homepage</TabsTrigger>
           </TabsList>
 
           <TabsContent value="articles">
@@ -303,6 +484,17 @@ export default function AdminPage() {
                 </p>
                 <ApiAccessManager />
               </div>
+            </section>
+          </TabsContent>
+
+          <TabsContent value="homepage">
+            <section>
+              <h2 className="text-2xl font-semibold mb-4">Homepage Algorithm</h2>
+              <p className="text-muted-foreground mb-4">
+                Control how the homepage picks the lead story and ranks the
+                “Most read” list. Changes apply to everyone.
+              </p>
+              <HomepageSettingsSection />
             </section>
           </TabsContent>
         </Tabs>

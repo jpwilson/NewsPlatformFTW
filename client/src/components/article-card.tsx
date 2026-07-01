@@ -68,9 +68,11 @@ function formatCompact(n: number): string {
 export function ArticleCard({
   article,
   variant = "horizontal",
+  showReadingNow = true,
 }: {
   article: ArticleWithSnakeCase;
   variant?: ArticleCardVariant;
+  showReadingNow?: boolean;
 }) {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -262,10 +264,12 @@ export function ArticleCard({
                 <Clock className="h-3.5 w-3.5" />
                 {readMinutes} min read
               </span>
-              <span className="inline-flex items-center gap-1 font-medium text-[hsl(var(--edition-negative))]">
-                <Flame className="h-3.5 w-3.5" />
-                {formatCompact(readingNow)} reading
-              </span>
+              {showReadingNow && (
+                <span className="inline-flex items-center gap-1 font-medium text-[hsl(var(--edition-negative))]">
+                  <Flame className="h-3.5 w-3.5" />
+                  {formatCompact(readingNow)} reading
+                </span>
+              )}
             </div>
           </div>
         </article>
@@ -316,10 +320,14 @@ export function ArticleCard({
               <span>{relativeTime}</span>
               <span aria-hidden>·</span>
               <span>{readMinutes} min</span>
-              <span aria-hidden>·</span>
-              <span className="text-[hsl(var(--edition-negative))]">
-                {formatCompact(readingNow)} reading
-              </span>
+              {showReadingNow && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="text-[hsl(var(--edition-negative))]">
+                    {formatCompact(readingNow)} reading
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </article>
