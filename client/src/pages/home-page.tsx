@@ -536,14 +536,14 @@ export default function HomePage() {
         }}
       />
 
-      <div className="container mx-auto p-4 lg:p-8">
+      <div className="container mx-auto p-4 lg:px-8 lg:py-5">
         {/* Main content area with Articles and Channels - moved up to wrap headers too */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Articles section with header - takes up 2/3 on large screens */}
           <div className="lg:col-span-2 space-y-4">
             {/* Header section */}
             <div>
-              <h1 className="text-4xl font-display font-bold">
+              <h1 className="text-3xl font-display font-bold">
                 {ribbonCategory
                   ? ribbonCategory.charAt(0).toUpperCase() + ribbonCategory.slice(1) + " News"
                   : "Top stories"}
@@ -899,7 +899,7 @@ export default function HomePage() {
               <div className="space-y-8">
                 {/* Hero / lead story */}
                 {heroArticle && (
-                  <div className="border-b border-[hsl(var(--edition-border-hair))] pb-8">
+                  <div className="border-b border-[hsl(var(--edition-border-hair))] pb-6">
                     <ArticleCard
                       article={heroArticle}
                       variant="hero"

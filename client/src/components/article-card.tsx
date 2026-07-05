@@ -207,50 +207,30 @@ export function ArticleCard({
     </AlertDialog>
   );
 
-  // === HERO variant — the lead story (compact side-by-side) ===
-  // Image beside a moderate headline so the lead + several "More top stories"
-  // rows share the top of the page. Stacks (image over text) on mobile.
+  // === HERO variant — the lead story (image IS the hero) ===
+  // Magazine-cover lead: one massive full-column-width image with a capped
+  // height so it never blows the fold, and the headline/standfirst/meta
+  // overlaid on a dark gradient at the bottom. Maximum picture, minimal
+  // vertical cost. Falls back to a text hero when images are disabled/missing.
   if (variant === "hero") {
-    return (
-      <>
-        <article className="grid grid-cols-1 gap-5 md:grid-cols-[1.1fr_1fr] md:items-center md:gap-7">
-          {imagesEnabled && (
-            <Link href={articleUrl} className="group block">
-              <div className="relative aspect-[16/10] w-full overflow-hidden rounded-xl bg-muted">
-                {firstImage ? (
-                  <img
-                    src={firstImage.imageUrl}
-                    alt={firstImage.caption || article.title}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                  />
-                ) : (
-                  mediaPlaceholder
-                )}
-                {primaryCategory && (
-                  <>
-                    <div className="edition-scrim pointer-events-none absolute inset-0" />
-                    <span className="absolute bottom-3 left-3 rounded bg-black/60 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
-                      {primaryCategory}
-                    </span>
-                  </>
-                )}
-              </div>
-            </Link>
-          )}
-          <div className="flex flex-col">
+    if (!imagesEnabled || !firstImage) {
+      // No image available — compact text-only lead.
+      return (
+        <>
+          <article className="flex flex-col">
             <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--edition-accent))]">
               {isFromToday ? "Today's lead" : "Top story"}
               {primaryCategory ? ` · ${primaryCategory}` : ""}
             </span>
             <Link href={articleUrl}>
-              <h2 className="mt-2 font-display text-2xl font-extrabold leading-[1.1] tracking-tight hover:underline cursor-pointer line-clamp-3 lg:text-3xl">
+              <h2 className="mt-1.5 font-display text-[26px] font-extrabold leading-[1.08] tracking-tight hover:underline cursor-pointer line-clamp-2 lg:text-[32px]">
                 {article.title}
               </h2>
             </Link>
-            <p className="mt-2 line-clamp-3 text-[15px] leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 max-w-3xl text-[14.5px] leading-snug text-muted-foreground line-clamp-2">
               {plainText}
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
               <button
                 onClick={handleChannelClick}
                 className="font-medium text-foreground hover:underline"
@@ -271,6 +251,60 @@ export function ArticleCard({
                 </span>
               )}
             </div>
+          </article>
+          {authDialog}
+        </>
+      );
+    }
+
+    return (
+      <>
+        <article className="flex flex-col">
+          {/* The picture leads — full column width, capped so the whole hero
+              (image + headline + standfirst) stays above the fold. */}
+          <Link href={articleUrl} className="group block">
+            <div className="relative aspect-[16/9] max-h-[400px] w-full overflow-hidden rounded-xl bg-muted sm:aspect-[21/9]">
+              <img
+                src={firstImage.imageUrl}
+                alt={firstImage.caption || article.title}
+                className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+              />
+            </div>
+          </Link>
+
+          {/* Headline block below the image — classic news lead */}
+          <span className="mt-3 text-[11px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--edition-accent))]">
+            {isFromToday ? "Today's lead" : "Top story"}
+            {primaryCategory ? ` · ${primaryCategory}` : ""}
+          </span>
+          <Link href={articleUrl}>
+            <h2 className="mt-1 font-display text-[26px] font-extrabold leading-[1.1] tracking-tight hover:underline cursor-pointer line-clamp-2 lg:text-[30px]">
+              {article.title}
+            </h2>
+          </Link>
+          <p className="mt-1.5 max-w-3xl text-[14.5px] leading-snug text-muted-foreground line-clamp-2">
+            {plainText}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+            <button
+              onClick={handleChannelClick}
+              className="font-medium text-foreground hover:underline"
+            >
+              {article.channel?.name || "Unknown Channel"}
+            </button>
+            <span aria-hidden>·</span>
+            <span>{relativeTime}</span>
+            <span aria-hidden>·</span>
+            <span className="inline-flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              {readMinutes} min read
+            </span>
+            {showReadingNow && (
+              <span className="inline-flex items-center gap-1 font-medium text-[hsl(var(--edition-negative))]">
+                <Flame className="h-3.5 w-3.5" />
+                {formatCompact(readingNow)} reading
+              </span>
+            )}
           </div>
         </article>
         {authDialog}
