@@ -7,9 +7,19 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "wouter";
-import { MessageSquare, ThumbsUp, ThumbsDown, Eye } from "lucide-react";
+import {
+  MessageSquare,
+  ThumbsUp,
+  Eye,
+  Clock,
+  Flame,
+  MapPin,
+  Tag,
+  Newspaper,
+} from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { formatDate } from "@/lib/date-utils";
+import { formatDistanceToNow } from "date-fns";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -45,7 +55,25 @@ type ArticleWithSnakeCase = Article & {
   images?: Array<{ imageUrl: string; caption?: string }>;
 };
 
-export function ArticleCard({ article, variant = "horizontal" }: { article: ArticleWithSnakeCase; variant?: "horizontal" | "vertical" }) {
+type ArticleCardVariant = "horizontal" | "vertical" | "hero" | "row";
+
+// Compact number formatting for reader-facing counts (e.g. 12408 -> "12.4k").
+function formatCompact(n: number): string {
+  if (n >= 1000) {
+    return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  }
+  return String(n);
+}
+
+export function ArticleCard({
+  article,
+  variant = "horizontal",
+  showReadingNow = true,
+}: {
+  article: ArticleWithSnakeCase;
+  variant?: ArticleCardVariant;
+  showReadingNow?: boolean;
+}) {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
@@ -88,20 +116,15 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
     });
   };
 
-  // Use 0 as default if counts are undefined
+  // Use 0 as default if counts are undefined.
+  // Check for both camelCase and snake_case properties (dev vs prod API shapes).
   const likes = article.likes || 0;
-  const dislikes = article.dislikes || 0;
-  // Check for both camelCase and snake_case view count properties
   const views = article.viewCount || article.view_count || 0;
   const commentCount =
     article._count?.comments ||
     article.commentCount ||
     article.comment_count ||
     0;
-
-  // Check if user has liked or disliked
-  const userLiked = article.userReaction === true;
-  const userDisliked = article.userReaction === false;
 
   // Create the article URL with slug
   const articleUrl = createSlugUrl(
@@ -110,10 +133,242 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
     article.id.toString()
   );
 
-  // Check if article has an image and if images are enabled
+  // Freshness / popularity signals ------------------------------------------
+  const plainText = article.content
+    ? article.content.replace(/<[^>]+>/g, "")
+    : "";
+  const wordCount = plainText.trim() ? plainText.trim().split(/\s+/).length : 0;
+  const readMinutes = Math.max(1, Math.ceil(wordCount / 200));
+
+  const rawDate = article.created_at || article.createdAt;
+  let relativeTime: string;
+  try {
+    const d = rawDate ? new Date(rawDate) : null;
+    relativeTime =
+      d && !isNaN(d.getTime())
+        ? formatDistanceToNow(d, { addSuffix: true })
+        : formatDate(rawDate);
+  } catch {
+    relativeTime = formatDate(rawDate);
+  }
+
+  // Is the story from today? Drives the hero eyebrow so a stale lead never
+  // claims to be "Today's lead".
+  const isFromToday = (() => {
+    if (!rawDate) return false;
+    const d = new Date(rawDate);
+    return !isNaN(d.getTime()) && d.toDateString() === new Date().toDateString();
+  })();
+
+  // Static "reading now" placeholder — DETERMINISTIC from view count so it is
+  // stable (no flicker) and always plausible (kept below total views).
+  // TODO: swap for a real live-readers/presence signal when available.
+  const readingNow = Math.max(
+    1,
+    Math.min(Math.round(views * 0.6), Math.round(Math.sqrt(views) * 12))
+  );
+
+  // Primary category label (blue eyebrow on the new edition cards)
+  const primaryCategory =
+    article.categories?.find((c) => c.isPrimary)?.name ||
+    article.categories?.[0]?.name ||
+    article.category ||
+    "";
+
+  // Image handling — respect the global image-visibility toggle. When images
+  // are enabled but this article has none, we show a neutral placeholder so the
+  // edition grid stays uniform (issue: current cards mix photos with no-image).
   const images = article.images ?? [];
-  const hasImage = showImages && images.length > 0;
-  const firstImage = hasImage ? images[0] : null;
+  const imagesEnabled = showImages;
+  const firstImage = imagesEnabled && images.length > 0 ? images[0] : null;
+
+  const mediaPlaceholder = (
+    <div className="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground/30">
+      <Newspaper className="h-8 w-8" />
+    </div>
+  );
+
+  const authDialog = (
+    <AlertDialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Authentication Required</AlertDialogTitle>
+          <AlertDialogDescription>
+            You need to be logged in to view channel details.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setShowAuthDialog(false)}>
+            Cancel
+          </AlertDialogCancel>
+          <Button onClick={() => setLocation("/auth")}>Sign In</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
+  // === HERO variant — the lead story (image IS the hero) ===
+  // Magazine-cover lead: one massive full-column-width image with a capped
+  // height so it never blows the fold, and the headline/standfirst/meta
+  // overlaid on a dark gradient at the bottom. Maximum picture, minimal
+  // vertical cost. Falls back to a text hero when images are disabled/missing.
+  if (variant === "hero") {
+    if (!imagesEnabled || !firstImage) {
+      // No image available — compact text-only lead.
+      return (
+        <>
+          <article className="flex flex-col">
+            <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--edition-accent))]">
+              {isFromToday ? "Today's lead" : "Top story"}
+              {primaryCategory ? ` · ${primaryCategory}` : ""}
+            </span>
+            <Link href={articleUrl}>
+              <h2 className="mt-1.5 font-display text-[26px] font-extrabold leading-[1.08] tracking-tight hover:underline cursor-pointer line-clamp-2 lg:text-[32px]">
+                {article.title}
+              </h2>
+            </Link>
+            <p className="mt-1.5 max-w-3xl text-[14.5px] leading-snug text-muted-foreground line-clamp-2">
+              {plainText}
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+              <button
+                onClick={handleChannelClick}
+                className="font-medium text-foreground hover:underline"
+              >
+                {article.channel?.name || "Unknown Channel"}
+              </button>
+              <span aria-hidden>·</span>
+              <span>{relativeTime}</span>
+              <span aria-hidden>·</span>
+              <span className="inline-flex items-center gap-1">
+                <Clock className="h-3.5 w-3.5" />
+                {readMinutes} min read
+              </span>
+              {showReadingNow && (
+                <span className="inline-flex items-center gap-1 font-medium text-[hsl(var(--edition-negative))]">
+                  <Flame className="h-3.5 w-3.5" />
+                  {formatCompact(readingNow)} reading
+                </span>
+              )}
+            </div>
+          </article>
+          {authDialog}
+        </>
+      );
+    }
+
+    return (
+      <>
+        <article className="flex flex-col">
+          {/* The picture leads — full column width, capped so the whole hero
+              (image + headline + standfirst) stays above the fold. */}
+          <Link href={articleUrl} className="group block">
+            <div className="relative aspect-[16/9] max-h-[400px] w-full overflow-hidden rounded-xl bg-muted sm:aspect-[21/9]">
+              <img
+                src={firstImage.imageUrl}
+                alt={firstImage.caption || article.title}
+                className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+              />
+            </div>
+          </Link>
+
+          {/* Headline block below the image — classic news lead */}
+          <span className="mt-3 text-[11px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--edition-accent))]">
+            {isFromToday ? "Today's lead" : "Top story"}
+            {primaryCategory ? ` · ${primaryCategory}` : ""}
+          </span>
+          <Link href={articleUrl}>
+            <h2 className="mt-1 font-display text-[26px] font-extrabold leading-[1.1] tracking-tight hover:underline cursor-pointer line-clamp-2 lg:text-[30px]">
+              {article.title}
+            </h2>
+          </Link>
+          <p className="mt-1.5 max-w-3xl text-[14.5px] leading-snug text-muted-foreground line-clamp-2">
+            {plainText}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground">
+            <button
+              onClick={handleChannelClick}
+              className="font-medium text-foreground hover:underline"
+            >
+              {article.channel?.name || "Unknown Channel"}
+            </button>
+            <span aria-hidden>·</span>
+            <span>{relativeTime}</span>
+            <span aria-hidden>·</span>
+            <span className="inline-flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" />
+              {readMinutes} min read
+            </span>
+            {showReadingNow && (
+              <span className="inline-flex items-center gap-1 font-medium text-[hsl(var(--edition-negative))]">
+                <Flame className="h-3.5 w-3.5" />
+                {formatCompact(readingNow)} reading
+              </span>
+            )}
+          </div>
+        </article>
+        {authDialog}
+      </>
+    );
+  }
+
+  // === ROW variant — compact "More top stories" list item ===
+  if (variant === "row") {
+    return (
+      <>
+        <article className="flex gap-4 border-b border-[hsl(var(--edition-border-hair))] py-4">
+          {imagesEnabled && (
+            <Link href={articleUrl} className="shrink-0">
+              <div className="relative h-[74px] w-[116px] overflow-hidden rounded-md bg-muted">
+                {firstImage ? (
+                  <img
+                    src={firstImage.imageUrl}
+                    alt={firstImage.caption || article.title}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                ) : (
+                  mediaPlaceholder
+                )}
+              </div>
+            </Link>
+          )}
+          <div className="min-w-0 flex-1">
+            {primaryCategory && (
+              <span className="text-[10.5px] font-bold uppercase tracking-wide text-[hsl(var(--edition-accent))]">
+                {primaryCategory}
+              </span>
+            )}
+            <Link href={articleUrl}>
+              <h3 className="font-display text-[19px] font-bold leading-tight hover:underline cursor-pointer line-clamp-2">
+                {article.title}
+              </h3>
+            </Link>
+            <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[12.5px] text-muted-foreground">
+              <button
+                onClick={handleChannelClick}
+                className="hover:underline"
+              >
+                {article.channel?.name || "Unknown Channel"}
+              </button>
+              <span aria-hidden>·</span>
+              <span>{relativeTime}</span>
+              <span aria-hidden>·</span>
+              <span>{readMinutes} min</span>
+              {showReadingNow && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span className="text-[hsl(var(--edition-negative))]">
+                    {formatCompact(readingNow)} reading
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </article>
+        {authDialog}
+      </>
+    );
+  }
 
   return (
     <>
@@ -137,7 +392,7 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                 </h3>
               </Link>
               <div className="flex flex-col gap-1 text-xs text-muted-foreground mb-3">
-                <span>{formatDate(article.created_at || article.createdAt)}</span>
+                <span>{relativeTime} · {readMinutes} min read</span>
                 <button
                   onClick={handleChannelClick}
                   className="text-primary hover:underline w-fit"
@@ -161,22 +416,18 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                 )}
               </div>
               <p className="text-sm text-muted-foreground line-clamp-2 mb-3 flex-1">
-                {article.content.replace(/<[^>]+>/g, "")}
+                {plainText}
               </p>
               <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t">
                 <div className="flex items-center">
                   <Eye className="h-3.5 w-3.5 mr-1" />
-                  <span>{views}</span>
+                  <span>{formatCompact(views)}</span>
                 </div>
                 <div className="flex items-center">
                   <ThumbsUp className="h-3.5 w-3.5 mr-1" />
                   <span>{likes}</span>
                 </div>
-                <div className="flex items-center">
-                  <ThumbsDown className="h-3.5 w-3.5 mr-1" />
-                  <span>{dislikes}</span>
-                </div>
-                {commentCount >= 7 && (
+                {commentCount > 0 && (
                   <Link href={`${articleUrl}#comments`}>
                     <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
                       <MessageSquare className="h-3.5 w-3.5 mr-1" />
@@ -201,8 +452,13 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                   </h3>
                 </Link>
                 <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  <span>{formatDate(article.created_at || article.createdAt)}</span>
-                  {article.location && <span>📍 {article.location}</span>}
+                  <span>{relativeTime} · {readMinutes} min read</span>
+                  {article.location && (
+                    <span className="inline-flex items-center gap-1">
+                      <MapPin className="h-3 w-3" />
+                      {article.location}
+                    </span>
+                  )}
                   <button
                     onClick={handleChannelClick}
                     className="text-primary hover:underline w-fit"
@@ -218,22 +474,18 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                   )}
                 </div>
                 <p className="text-sm text-muted-foreground line-clamp-2 mt-3 flex-1">
-                  {article.content.replace(/<[^>]+>/g, "")}
+                  {plainText}
                 </p>
                 <div className="flex items-center gap-4 text-xs text-muted-foreground mt-3 pt-2 border-t">
                   <div className="flex items-center">
                     <Eye className="h-3.5 w-3.5 mr-1" />
-                    <span>{views}</span>
+                    <span>{formatCompact(views)}</span>
                   </div>
                   <div className="flex items-center">
                     <ThumbsUp className="h-3.5 w-3.5 mr-1" />
                     <span>{likes}</span>
                   </div>
-                  <div className="flex items-center">
-                    <ThumbsDown className="h-3.5 w-3.5 mr-1" />
-                    <span>{dislikes}</span>
-                  </div>
-                  {commentCount >= 7 && (
+                  {commentCount > 0 && (
                     <Link href={`${articleUrl}#comments`}>
                       <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
                         <MessageSquare className="h-3.5 w-3.5 mr-1" />
@@ -261,8 +513,13 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                 </h3>
               </Link>
               <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                <span>{formatDate(article.created_at || article.createdAt)}</span>
-                {article.location && <span>📍 {article.location}</span>}
+                <span>{relativeTime} · {readMinutes} min read</span>
+                {article.location && (
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {article.location}
+                  </span>
+                )}
                 <button
                   onClick={handleChannelClick}
                   className="text-primary hover:underline w-fit"
@@ -278,22 +535,18 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                 )}
               </div>
               <p className="text-sm text-muted-foreground line-clamp-2 mt-3">
-                {article.content.replace(/<[^>]+>/g, "")}
+                {plainText}
               </p>
               <div className="flex items-center gap-4 text-xs text-muted-foreground mt-3 pt-2 border-t">
                 <div className="flex items-center">
                   <Eye className="h-3.5 w-3.5 mr-1" />
-                  <span>{views}</span>
+                  <span>{formatCompact(views)}</span>
                 </div>
                 <div className="flex items-center">
                   <ThumbsUp className="h-3.5 w-3.5 mr-1" />
                   <span>{likes}</span>
                 </div>
-                <div className="flex items-center">
-                  <ThumbsDown className="h-3.5 w-3.5 mr-1" />
-                  <span>{dislikes}</span>
-                </div>
-                {commentCount >= 7 && (
+                {commentCount > 0 && (
                   <Link href={`${articleUrl}#comments`}>
                     <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
                       <MessageSquare className="h-3.5 w-3.5 mr-1" />
@@ -308,7 +561,7 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
 
         {/* Desktop Layout - horizontal (hidden when vertical variant is used) */}
         <div className={cn("hidden", variant === "vertical" ? "" : "md:flex")}>
-          <div className={cn("flex-1", hasImage && "w-2/3")}>
+          <div className={cn("flex-1", firstImage && "w-2/3")}>
             <CardHeader>
               <div className="space-y-2">
                 <Link href={articleUrl}>
@@ -318,10 +571,13 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                 </Link>
                 <div className="flex flex-col gap-1 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
-                    <span>
-                      {formatDate(article.created_at || article.createdAt)}
-                    </span>
-                    {article.location && <span>📍 {article.location}</span>}
+                    <span>{relativeTime} · {readMinutes} min read</span>
+                    {article.location && (
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {article.location}
+                      </span>
+                    )}
                   </div>
                   <button
                     onClick={handleChannelClick}
@@ -335,9 +591,10 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                       {article.categories.map((cat, index) => (
                         <span
                           key={`${cat.id}-${index}`}
-                          className="px-2 py-0.5 bg-muted rounded-md text-xs"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-muted rounded-md text-xs"
                         >
-                          🏷️ {cat.name}
+                          <Tag className="h-3 w-3" />
+                          {cat.name}
                         </span>
                       ))}
                     </div>
@@ -345,8 +602,9 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                     article.category &&
                     article.category.trim() !== "" && (
                       <div className="flex flex-wrap gap-2 mt-1">
-                        <span className="px-2 py-0.5 bg-muted rounded-md text-xs">
-                          🏷️ {article.category}
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-muted rounded-md text-xs">
+                          <Tag className="h-3 w-3" />
+                          {article.category}
                         </span>
                       </div>
                     )
@@ -357,7 +615,7 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
 
             <CardContent>
               <p className="text-muted-foreground line-clamp-3">
-                {article.content.replace(/<[^>]+>/g, "")}
+                {plainText}
               </p>
             </CardContent>
 
@@ -365,7 +623,7 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
               <div className="flex items-center gap-5">
                 <div className="flex items-center text-muted-foreground">
                   <Eye className="h-4 w-4 mr-1" />
-                  <span className="text-sm">{views}</span>
+                  <span className="text-sm">{formatCompact(views)}</span>
                 </div>
 
                 <div className="flex items-center text-muted-foreground">
@@ -373,12 +631,7 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
                   <span className="text-sm">{likes}</span>
                 </div>
 
-                <div className="flex items-center text-muted-foreground">
-                  <ThumbsDown className="h-4 w-4 mr-1" />
-                  <span className="text-sm">{dislikes}</span>
-                </div>
-
-                {commentCount >= 7 && (
+                {commentCount > 0 && (
                   <Link href={`${articleUrl}#comments`}>
                     <div className="flex items-center text-muted-foreground hover:text-primary hover:underline cursor-pointer">
                       <MessageSquare className="h-4 w-4 mr-1" />
@@ -402,22 +655,7 @@ export function ArticleCard({ article, variant = "horizontal" }: { article: Arti
         </div>
       </Card>
 
-      <AlertDialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Authentication Required</AlertDialogTitle>
-            <AlertDialogDescription>
-              You need to be logged in to view channel details.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setShowAuthDialog(false)}>
-              Cancel
-            </AlertDialogCancel>
-            <Button onClick={() => setLocation("/auth")}>Sign In</Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {authDialog}
     </>
   );
 }

@@ -1623,4 +1623,130 @@ export async function registerRoutes(app: Express): Promise<void> {
       return res.status(500).json({ error: "Server error" });
     }
   });
+
+  // ---- Homepage algorithm settings (mirrors api/index.ts for prod) ----
+  const mapHomepageSettingsRow = (row: any) => {
+    const defaults = {
+      heroMode: "recency_most_read",
+      heroRecencyHours: 24,
+      featuredArticleId: null as number | null,
+      mostReadWindow: "7d",
+      showReadingNow: true,
+    };
+    if (!row) return defaults;
+    return {
+      heroMode: row.hero_mode ?? defaults.heroMode,
+      heroRecencyHours: row.hero_recency_hours ?? defaults.heroRecencyHours,
+      featuredArticleId: row.featured_article_id ?? null,
+      mostReadWindow: row.most_read_window ?? defaults.mostReadWindow,
+      showReadingNow: row.show_reading_now ?? defaults.showReadingNow,
+    };
+  };
+
+  // Returns an error message if the PUT body is invalid, else null.
+  const validateHomepageSettingsBody = (body: any): string | null => {
+    const HERO_MODES = [
+      "recency_most_read",
+      "newest",
+      "most_read_all_time",
+      "manual",
+    ];
+    const MOST_READ_WINDOWS = ["24h", "7d", "30d", "all"];
+    if (body.heroMode !== undefined && !HERO_MODES.includes(body.heroMode))
+      return "Invalid heroMode";
+    if (
+      body.mostReadWindow !== undefined &&
+      !MOST_READ_WINDOWS.includes(body.mostReadWindow)
+    )
+      return "Invalid mostReadWindow";
+    if (body.heroRecencyHours !== undefined) {
+      const n = Number(body.heroRecencyHours);
+      if (!Number.isInteger(n) || n < 1 || n > 24 * 30)
+        return "Invalid heroRecencyHours";
+    }
+    if (
+      body.featuredArticleId !== undefined &&
+      body.featuredArticleId !== null
+    ) {
+      const n = Number(body.featuredArticleId);
+      if (!Number.isInteger(n) || n < 1) return "Invalid featuredArticleId";
+    }
+    if (
+      body.showReadingNow !== undefined &&
+      typeof body.showReadingNow !== "boolean"
+    )
+      return "Invalid showReadingNow";
+    return null;
+  };
+
+  // Get homepage algorithm settings (public)
+  app.get("/api/homepage/settings", async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from("homepage_settings")
+        .select("*")
+        .eq("id", 1)
+        .maybeSingle();
+      if (error) throw error;
+      res.json(mapHomepageSettingsRow(data));
+    } catch (error) {
+      console.error("Error fetching homepage settings:", error);
+      res.status(500).json({ message: "Failed to fetch homepage settings" });
+    }
+  });
+
+  // Update homepage algorithm settings (admin-only)
+  app.put("/api/homepage/settings", async (req, res) => {
+    // isDevAdmin returns false when not authenticated, so this 403 also covers
+    // the unauthenticated case — matching the prod handler's behaviour.
+    if (!(await isDevAdmin(req)))
+      return res.status(403).json({ error: "Admin access required" });
+    try {
+      const body = req.body || {};
+      const validationError = validateHomepageSettingsBody(body);
+      if (validationError)
+        return res.status(400).json({ error: validationError });
+      if (
+        body.featuredArticleId !== undefined &&
+        body.featuredArticleId !== null
+      ) {
+        const { data: art } = await supabase
+          .from("articles")
+          .select("id")
+          .eq("id", Number(body.featuredArticleId))
+          .maybeSingle();
+        if (!art)
+          return res.status(400).json({ error: "Featured article not found" });
+      }
+      const uid = await getDevSupabaseUid(req);
+      const updates: Record<string, any> = {
+        id: 1,
+        updated_by: uid,
+        updated_at: new Date().toISOString(),
+      };
+      if (body.heroMode !== undefined) updates.hero_mode = body.heroMode;
+      if (body.heroRecencyHours !== undefined)
+        updates.hero_recency_hours = Number(body.heroRecencyHours);
+      if (body.featuredArticleId !== undefined)
+        updates.featured_article_id =
+          body.featuredArticleId === null
+            ? null
+            : Number(body.featuredArticleId);
+      if (body.mostReadWindow !== undefined)
+        updates.most_read_window = body.mostReadWindow;
+      if (body.showReadingNow !== undefined)
+        updates.show_reading_now = body.showReadingNow;
+
+      const { data, error } = await supabase
+        .from("homepage_settings")
+        .upsert([updates])
+        .select()
+        .single();
+      if (error) throw error;
+      res.json(mapHomepageSettingsRow(data));
+    } catch (error) {
+      console.error("Error updating homepage settings:", error);
+      res.status(500).json({ message: "Failed to update homepage settings" });
+    }
+  });
 }

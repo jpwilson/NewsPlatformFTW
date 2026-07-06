@@ -11,7 +11,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Users, UserRound, Calendar, FileText } from "lucide-react";
+import { Users, UserRound, Calendar, FileText, Plus } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { AuthDialog } from "./auth-dialog";
@@ -39,7 +39,13 @@ type ExtendedChannel = Channel & {
   };
 };
 
-export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
+export function ChannelCard({
+  channel,
+  variant = "full",
+}: {
+  channel: ExtendedChannel;
+  variant?: "full" | "rail";
+}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -167,6 +173,70 @@ export function ChannelCard({ channel }: { channel: ExtendedChannel }) {
 
   const bannerUrl = channel.bannerImage || channel.banner_image;
   const profileUrl = channel.profileImage || channel.profile_image;
+  const isOwner =
+    !!user && (user.id === channel.userId || user.id === channel.user_id);
+
+  // === RAIL variant — compact card for the homepage "Discover channels" rail ===
+  if (variant === "rail") {
+    return (
+      <>
+        <div
+          onClick={handleCardClick}
+          className="cursor-pointer rounded-xl border border-[hsl(var(--edition-border))] bg-[hsl(var(--edition-panel))] p-3.5 transition-colors hover:border-[hsl(var(--edition-border-strong))]"
+        >
+          <div className="flex items-center gap-3">
+            <Avatar className="h-10 w-10 flex-shrink-0">
+              <AvatarImage src={profileUrl || undefined} alt={channel.name} />
+              <AvatarFallback className="bg-primary/10">
+                {channel.name.substring(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate font-display text-[14.5px] font-semibold leading-tight">
+                {channel.name}
+              </h3>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {getSubscriberCount().toLocaleString()} subscribers
+              </p>
+            </div>
+          </div>
+
+          {isOwner ? (
+            <div className="mt-3 rounded-md bg-muted/30 p-2 text-center text-xs text-muted-foreground">
+              Your channel
+            </div>
+          ) : isSubscribed ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUnsubscribe();
+              }}
+              disabled={unsubscribeMutation.isPending}
+              className="mt-3 w-full rounded-lg border border-[hsl(var(--edition-border-strong))] py-2 text-center text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/40"
+            >
+              Subscribed ✓
+            </button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 h-8 w-full gap-1 border-[hsl(var(--edition-accent))]/40 font-medium text-[hsl(var(--edition-accent))] hover:bg-[hsl(var(--edition-accent))] hover:text-white"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSubscribe();
+              }}
+              disabled={subscribeMutation.isPending}
+            >
+              <Plus className="h-4 w-4" />
+              Subscribe
+            </Button>
+          )}
+        </div>
+
+        <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
+      </>
+    );
+  }
 
   return (
     <>

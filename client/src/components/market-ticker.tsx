@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TickerItem {
@@ -11,16 +11,24 @@ interface TickerItem {
   currency?: string;
 }
 
+const TICKER_HIDDEN_KEY = "np_ticker_hidden";
+
 export function MarketTicker() {
   const [tickers, setTickers] = useState<TickerItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [hidden, setHidden] = useState<boolean>(
+    () =>
+      typeof window !== "undefined" &&
+      localStorage.getItem(TICKER_HIDDEN_KEY) === "1"
+  );
 
   useEffect(() => {
+    if (hidden) return; // don't poll while dismissed
     fetchTickerData();
     // Refresh every 60 seconds
     const interval = setInterval(fetchTickerData, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [hidden]);
 
   const fetchTickerData = async () => {
     try {
@@ -79,22 +87,13 @@ export function MarketTicker() {
 
       // Fetch stock prices from backend proxy
       try {
-        console.log("[Ticker] Fetching stocks from /api/market/stocks");
         const stockRes = await fetch("/api/market/stocks");
-        console.log("[Ticker] Stock API response status:", stockRes.status);
 
         if (stockRes.ok) {
           const stockData = await stockRes.json();
-          console.log("[Ticker] Stock data received:", stockData);
           if (Array.isArray(stockData) && stockData.length > 0) {
             items.push(...stockData);
-            console.log("[Ticker] Added", stockData.length, "stocks to ticker");
-          } else {
-            console.warn("[Ticker] Stock data is empty or not an array:", stockData);
           }
-        } else {
-          const errorText = await stockRes.text();
-          console.error("[Ticker] Stock API returned error:", stockRes.status, errorText);
         }
       } catch (e) {
         console.error("[Ticker] Error fetching stocks:", e);
@@ -108,30 +107,49 @@ export function MarketTicker() {
     }
   };
 
+  const dismiss = () => {
+    try {
+      localStorage.setItem(TICKER_HIDDEN_KEY, "1");
+    } catch {
+      /* ignore storage errors */
+    }
+    setHidden(true);
+  };
+
+  if (hidden) return null;
+
   if (isLoading || tickers.length === 0) {
     return (
-      <div className="glass-ticker py-2 px-4">
-        <div className="text-sm text-muted-foreground animate-pulse">
-          Loading market data...
+      <div className="glass-ticker px-4 py-1.5">
+        <div className="animate-pulse text-xs text-muted-foreground">
+          Loading market data…
         </div>
       </div>
     );
   }
 
-  // Duplicate the tickers array for seamless infinite scroll
+  // Triple the tickers array for a seamless infinite scroll
   const duplicatedTickers = [...tickers, ...tickers, ...tickers];
 
   return (
-    <div className="glass-ticker overflow-hidden relative">
-      <div className="ticker-container">
+    <div className="glass-ticker flex items-stretch overflow-hidden">
+      {/* Static label */}
+      <span className="flex flex-shrink-0 items-center border-r border-[hsl(var(--edition-border-hair))] px-3 text-[11px] font-bold uppercase tracking-wide text-[hsl(var(--edition-text-dim))]">
+        Markets
+      </span>
+
+      {/* Scrolling data */}
+      <div className="relative min-w-0 flex-1 overflow-hidden">
         <div className="ticker-scroll">
           {duplicatedTickers.map((ticker, index) => (
             <div
               key={`${ticker.symbol}-${index}`}
-              className="ticker-item inline-flex items-center gap-2 px-6 py-2 whitespace-nowrap"
+              className="ticker-item inline-flex items-center gap-1.5 whitespace-nowrap px-5 py-1.5"
             >
-              <span className="font-semibold text-sm">{ticker.symbol}</span>
-              <span className="text-sm">
+              <span className="text-xs font-medium text-muted-foreground">
+                {ticker.symbol}
+              </span>
+              <span className="text-xs">
                 {ticker.currency}
                 {ticker.symbol.startsWith("BTC")
                   ? ticker.price.toLocaleString(undefined, {
@@ -146,10 +164,10 @@ export function MarketTicker() {
               {ticker.changePercent !== 0 && (
                 <span
                   className={cn(
-                    "flex items-center gap-1 text-xs font-medium",
+                    "flex items-center gap-0.5 text-[11px] font-medium",
                     ticker.changePercent > 0
-                      ? "text-green-600 dark:text-green-400"
-                      : "text-red-600 dark:text-red-400"
+                      ? "text-[hsl(var(--edition-positive))]"
+                      : "text-[hsl(var(--edition-negative))]"
                   )}
                 >
                   {ticker.changePercent > 0 ? (
@@ -165,14 +183,21 @@ export function MarketTicker() {
         </div>
       </div>
 
-      <style>{`
-        .ticker-container {
-          display: flex;
-          width: 100%;
-        }
+      {/* Dismiss control */}
+      <button
+        type="button"
+        aria-label="Hide market ticker"
+        onClick={dismiss}
+        className="flex flex-shrink-0 items-center gap-1 border-l border-[hsl(var(--edition-border-hair))] px-3 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        Hide
+        <X className="h-3 w-3" />
+      </button>
 
+      <style>{`
         .ticker-scroll {
           display: flex;
+          width: max-content;
           animation: scroll 60s linear infinite;
         }
 

@@ -59,6 +59,7 @@ type ArticleWithSnakeCase = Article & {
   view_count?: number;
   userReaction?: boolean | null;
   categoryId?: number;
+  slug?: string | null;
   _count?: {
     comments?: number;
   };
@@ -91,6 +92,9 @@ export default function HomePage() {
   const [filteredArticles, setFilteredArticles] = useState<
     ArticleWithSnakeCase[]
   >([]);
+  // Whether the filter/sort effect has produced its first result — used to
+  // avoid a one-frame "No articles" flash before derived state is populated.
+  const [filtersReady, setFiltersReady] = useState(false);
   const [filteredChannels, setFilteredChannels] = useState<
     ChannelWithSnakeCase[]
   >([]);
@@ -122,6 +126,30 @@ export default function HomePage() {
   >({
     queryKey: ["/api/categories"],
   });
+
+  // Get the user's subscriptions — used to exclude already-followed channels
+  // from the "Discover channels" rail.
+  const { data: subscriptions } = useQuery<ChannelWithSnakeCase[]>({
+    queryKey: ["/api/user/subscriptions"],
+    enabled: !!user,
+  });
+
+  // Homepage algorithm settings (admin-controlled via /admin → Homepage tab).
+  // Falls back to sensible defaults if the endpoint/table isn't available yet.
+  const { data: algoRaw } = useQuery<any>({
+    queryKey: ["/api/homepage/settings"],
+  });
+  const algo = {
+    heroMode: algoRaw?.heroMode ?? algoRaw?.hero_mode ?? "recency_most_read",
+    heroRecencyHours:
+      algoRaw?.heroRecencyHours ?? algoRaw?.hero_recency_hours ?? 24,
+    featuredArticleId:
+      algoRaw?.featuredArticleId ?? algoRaw?.featured_article_id ?? null,
+    mostReadWindow:
+      algoRaw?.mostReadWindow ?? algoRaw?.most_read_window ?? "7d",
+    showReadingNow:
+      algoRaw?.showReadingNow ?? algoRaw?.show_reading_now ?? true,
+  };
 
   // Filter out user's own channels
   useEffect(() => {
@@ -309,6 +337,7 @@ export default function HomePage() {
     });
 
     setFilteredArticles(filtered);
+    setFiltersReady(true);
   }, [
     articles,
     orderField,
@@ -379,6 +408,109 @@ export default function HomePage() {
     (locationSearchTerm ? 1 : 0) +
     filterChannels.length;
 
+  // ---- Edition composition (interim client-side ranking) ----
+  // Split the ALREADY-filtered/sorted list into a lead story + compact rows +
+  // the remaining grid. This never bypasses the pipeline above — it only slices
+  // its output, so filters, chips, ribbon and sort all stay authoritative.
+  const isDefaultView =
+    !searchTerm &&
+    filterCategories.length === 0 &&
+    !locationSearchTerm &&
+    filterChannels.length === 0 &&
+    !ribbonCategory &&
+    orderField === "createdAt" &&
+    orderDirection === "desc";
+
+  const getViews = (a: ArticleWithSnakeCase) =>
+    a.viewCount || a.view_count || 0;
+  const getTime = (a: ArticleWithSnakeCase) =>
+    new Date(a.createdAt || a.created_at || 0).getTime();
+
+  // Pick the hero per the admin-configured algorithm. Only applied in the
+  // default view — when a filter/search/sort is active we respect the user's
+  // order (hero = first of the filtered list) so their intent is never overridden.
+  const pickHero = (
+    list: ArticleWithSnakeCase[]
+  ): ArticleWithSnakeCase | undefined => {
+    if (!list.length) return undefined;
+    // Manual editorial override wins when the pinned article is in the feed.
+    if (algo.heroMode === "manual" && algo.featuredArticleId != null) {
+      const pinned = list.find((a) => a.id === algo.featuredArticleId);
+      if (pinned) return pinned;
+    }
+    if (algo.heroMode === "newest") {
+      return list.reduce((m, a) => (getTime(a) > getTime(m) ? a : m), list[0]);
+    }
+    if (algo.heroMode === "most_read_all_time") {
+      return list.reduce((m, a) => (getViews(a) > getViews(m) ? a : m), list[0]);
+    }
+    // Default 'recency_most_read': most-read within the most recent
+    // `heroRecencyHours` of content, so the lead is fresh and never stale.
+    // Collapses to simply the newest story when content is sparse.
+    const windowMs = (algo.heroRecencyHours || 24) * 60 * 60 * 1000;
+    const newestTime = list.reduce((m, a) => Math.max(m, getTime(a)), 0);
+    let best = list[0];
+    let bestViews = -1;
+    for (const a of list) {
+      if (newestTime - getTime(a) <= windowMs && getViews(a) > bestViews) {
+        bestViews = getViews(a);
+        best = a;
+      }
+    }
+    return best;
+  };
+
+  let heroArticle: ArticleWithSnakeCase | undefined;
+  let moreStories: ArticleWithSnakeCase[] = [];
+  let gridArticles: ArticleWithSnakeCase[] = [];
+  if (filteredArticles.length > 0) {
+    heroArticle = isDefaultView
+      ? pickHero(filteredArticles)
+      : filteredArticles[0];
+    const rest = filteredArticles.filter((a) => a.id !== heroArticle?.id);
+    moreStories = rest.slice(0, 5);
+    gridArticles = rest.slice(5);
+  }
+
+  // "Most read" rail — client-side ranking within the admin-configured window.
+  // TODO: swap for a server-side article_views aggregation (real view events).
+  const mostReadWindowHours: Record<string, number> = {
+    "24h": 24,
+    "7d": 24 * 7,
+    "30d": 24 * 30,
+  };
+  const mrWindow = mostReadWindowHours[algo.mostReadWindow];
+  const mrNow = Date.now();
+  // Exclude the hero so it never appears as both the lead and #1 in the rail.
+  const notHero = (a: ArticleWithSnakeCase) => a.id !== heroArticle?.id;
+  let mostRead = (articles ? [...articles] : [])
+    .filter(notHero)
+    .filter((a) =>
+      mrWindow === undefined
+        ? true
+        : mrNow - getTime(a) <= mrWindow * 60 * 60 * 1000
+    )
+    .sort((a, b) => getViews(b) - getViews(a))
+    .slice(0, 4);
+  // If the window yields nothing (e.g. only older content), fall back to
+  // all-time top reads so the rail is never awkwardly empty.
+  if (mostRead.length === 0 && articles?.length) {
+    mostRead = [...articles]
+      .filter(notHero)
+      .sort((a, b) => getViews(b) - getViews(a))
+      .slice(0, 4);
+  }
+
+  // "Discover channels" rail — top channels the user does NOT already follow.
+  // filteredChannels already excludes owned channels and is sorted by
+  // subscriber count; here we additionally drop already-subscribed channels.
+  const subscribedIds = new Set(
+    (subscriptions ?? []).map((s) => Number(s.id))
+  );
+  const discoverChannels = filteredChannels
+    .filter((c) => !subscribedIds.has(Number(c.id)))
+    .slice(0, 4);
+
   return (
     <div className="min-h-screen bg-background">
       <NavigationBar selectedChannelId={user ? selectedChannelId : undefined} />
@@ -404,17 +536,17 @@ export default function HomePage() {
         }}
       />
 
-      <div className="container mx-auto p-4 lg:p-8">
+      <div className="container mx-auto p-4 lg:px-8 lg:py-5">
         {/* Main content area with Articles and Channels - moved up to wrap headers too */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Articles section with header - takes up 2/3 on large screens */}
           <div className="lg:col-span-2 space-y-4">
             {/* Header section */}
             <div>
-              <h1 className="text-4xl font-display font-bold">
+              <h1 className="text-3xl font-display font-bold">
                 {ribbonCategory
                   ? ribbonCategory.charAt(0).toUpperCase() + ribbonCategory.slice(1) + " News"
-                  : "Latest Articles"}
+                  : "Top stories"}
               </h1>
               <div className="flex justify-between items-center mt-2">
                 <p className="text-muted-foreground">
@@ -422,7 +554,7 @@ export default function HomePage() {
                     ? `Showing ${ribbonCategory} articles`
                     : user
                       ? "Fresh stories from your favorite channels"
-                      : "Discover stories from across the platform"}
+                      : "Today's top stories from across the platform"}
                 </p>
 
                 {/* Article control buttons - now contained in article column */}
@@ -653,7 +785,7 @@ export default function HomePage() {
                           : "/articles/new"
                       }
                     >
-                      <Button>
+                      <Button variant="outline">
                         <PlusCircle className="h-4 w-4 mr-2" />
                         Write an Article
                       </Button>
@@ -753,7 +885,7 @@ export default function HomePage() {
             )}
 
             {/* Articles list */}
-            {loadingArticles ? (
+            {loadingArticles || (!!articles && !filtersReady) ? (
               <div className="flex justify-center my-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
@@ -764,41 +896,138 @@ export default function HomePage() {
                   : "No articles yet"}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {filteredArticles.map((article) => (
-                  <ArticleCard key={article.id} article={article} variant="vertical" />
-                ))}
+              <div className="space-y-8">
+                {/* Hero / lead story */}
+                {heroArticle && (
+                  <div className="border-b border-[hsl(var(--edition-border-hair))] pb-6">
+                    <ArticleCard
+                      article={heroArticle}
+                      variant="hero"
+                      showReadingNow={algo.showReadingNow}
+                    />
+                  </div>
+                )}
+
+                {/* More top stories */}
+                {moreStories.length > 0 && (
+                  <div>
+                    <h2 className="mb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      More top stories
+                    </h2>
+                    <div>
+                      {moreStories.map((article) => (
+                        <ArticleCard
+                          key={article.id}
+                          article={article}
+                          variant="row"
+                          showReadingNow={algo.showReadingNow}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Remaining stories */}
+                {gridArticles.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {gridArticles.map((article) => (
+                      <ArticleCard
+                        key={article.id}
+                        article={article}
+                        variant="vertical"
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Popular Channels section - 1/3 on large screens, hidden on smaller screens */}
-          <div className="hidden lg:block space-y-6">
-            <div className="pt-2">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-display font-bold">
-                  Trending Channels
+          {/* Right rail — Discover channels + Most read. Stacks below the
+              main column on mobile (previously hidden — issue #6/growth). */}
+          <div className="space-y-8">
+            {/* Discover channels */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-display font-bold">
+                  Discover channels
                 </h2>
-                <Link href="/channels">
-                  <Button size="sm" className="text-sm h-8">
-                    Explore Channels
-                  </Button>
+                <Link
+                  href="/channels"
+                  className="text-sm text-[hsl(var(--edition-accent))] hover:underline"
+                >
+                  See all
                 </Link>
               </div>
+
+              {loadingChannels ? (
+                <div className="flex justify-center p-4">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : discoverChannels.length === 0 ? (
+                <div className="text-center p-4 text-sm text-muted-foreground">
+                  {user
+                    ? "You follow every channel already"
+                    : "No channels yet"}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {discoverChannels.map((channel) => (
+                    <ChannelCard
+                      key={channel.id}
+                      channel={channel}
+                      variant="rail"
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
-            {loadingChannels ? (
-              <div className="flex justify-center p-4">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            {/* Most read */}
+            {mostRead.length > 0 && (
+              <div>
+                <h2 className="text-xl font-display font-bold mb-4">
+                  Most read
+                </h2>
+                <ol className="space-y-4">
+                  {mostRead.map((article, i) => {
+                    const views =
+                      article.viewCount || article.view_count || 0;
+                    const url = createSlugUrl(
+                      "/articles/",
+                      article.slug || "",
+                      article.id.toString()
+                    );
+                    return (
+                      <li
+                        key={article.id}
+                        className="flex gap-3 border-b border-[hsl(var(--edition-border-hair))] pb-4 last:border-0"
+                      >
+                        <span
+                          className={cn(
+                            "font-display text-2xl leading-none",
+                            i === 0
+                              ? "text-[hsl(var(--edition-accent))]"
+                              : "text-muted-foreground/50"
+                          )}
+                        >
+                          {i + 1}
+                        </span>
+                        <div className="min-w-0">
+                          <Link href={url}>
+                            <h3 className="text-sm font-semibold leading-snug hover:underline cursor-pointer line-clamp-2">
+                              {article.title}
+                            </h3>
+                          </Link>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {views.toLocaleString()} reads
+                          </p>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
               </div>
-            ) : filteredChannels?.length === 0 ? (
-              <div className="text-center p-4 text-muted-foreground">
-                No channels yet
-              </div>
-            ) : (
-              filteredChannels?.map((channel) => (
-                <ChannelCard key={channel.id} channel={channel} />
-              ))
             )}
           </div>
         </div>

@@ -149,6 +149,29 @@ export const articleImages = pgTable('article_images', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Per-view event log. Already exists in Supabase (written on every article
+// view); declared here for type-safety and to document the analytics source.
+export const articleViews = pgTable('article_views', {
+  id: serial('id').primaryKey(),
+  articleId: integer('article_id').notNull(),
+  userId: integer('user_id'),
+  clientIdentifier: text('client_identifier'),
+  viewedAt: timestamp('viewed_at', { withTimezone: true }).defaultNow(),
+});
+
+// Single-row (id = 1) homepage algorithm settings, controlled from the admin
+// dashboard and read by the public homepage to drive hero/most-read behaviour.
+export const homepageSettings = pgTable('homepage_settings', {
+  id: integer('id').primaryKey().default(1),
+  heroMode: text('hero_mode').notNull().default('recency_most_read'), // recency_most_read | newest | most_read_all_time | manual
+  heroRecencyHours: integer('hero_recency_hours').notNull().default(24),
+  featuredArticleId: integer('featured_article_id').references(() => articles.id, { onDelete: 'set null' }),
+  mostReadWindow: text('most_read_window').notNull().default('7d'), // 24h | 7d | 30d | all
+  showReadingNow: boolean('show_reading_now').notNull().default(true),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Define schema relations
 export const usersRelations = relations(users, ({ many }) => ({
   channels: many(channels),
@@ -226,6 +249,8 @@ export type ArticleCategory = typeof articleCategories.$inferSelect;
 export type ChannelCategory = typeof channelCategories.$inferSelect;
 export type ArticleImage = typeof articleImages.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
+export type ArticleView = typeof articleViews.$inferSelect;
+export type HomepageSettings = typeof homepageSettings.$inferSelect;
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertChannel = z.infer<typeof insertChannelSchema>;

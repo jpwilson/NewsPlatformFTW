@@ -465,9 +465,21 @@ export function NavigationBar({
                   </div>
                 </>
               ) : (
-                <Link href="/auth">
-                  <Button size="sm">Login</Button>
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link href="/auth">
+                    <Button variant="ghost" size="sm">
+                      Log in
+                    </Button>
+                  </Link>
+                  <Link href="/auth">
+                    <Button
+                      size="sm"
+                      className="bg-[hsl(var(--edition-accent))] text-white hover:bg-[hsl(var(--edition-accent))]/90"
+                    >
+                      Start reading — free
+                    </Button>
+                  </Link>
+                </div>
               ))}
           </nav>
         </div>
