@@ -162,7 +162,9 @@ export function CategoryRibbon({
           variant="ghost"
           size="sm"
           className={cn(
-            "whitespace-nowrap gap-1.5 rounded-none font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground",
+            "whitespace-nowrap gap-1.5 rounded-none font-medium text-muted-foreground transition-all hover:bg-transparent hover:text-foreground",
+            !isSelected &&
+              "hover:shadow-[inset_0_-2px_0_0_hsl(var(--border))]",
             isSelected && "text-foreground font-semibold edition-underline-active"
           )}
           onClick={() => handleCategoryClick(category)}
@@ -179,7 +181,9 @@ export function CategoryRibbon({
         variant="ghost"
         size="sm"
         className={cn(
-          "whitespace-nowrap rounded-none font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground",
+          "whitespace-nowrap rounded-none font-medium text-muted-foreground transition-all hover:bg-transparent hover:text-foreground",
+          !isSelected &&
+            "hover:shadow-[inset_0_-2px_0_0_hsl(var(--border))]",
           isSelected && "text-foreground font-semibold edition-underline-active"
         )}
         onClick={() => handleCategoryClick(category)}
@@ -224,7 +228,7 @@ export function CategoryRibbon({
           <div
             ref={scrollContainerRef}
             className={cn(
-              "flex gap-1 px-4 py-2 overflow-x-auto scrollbar-hide",
+              "flex gap-1 px-4 py-2.5 overflow-x-auto scrollbar-hide",
               "scroll-smooth",
               // Add padding for scroll buttons when visible
               canScrollLeft && "pl-12",

@@ -73,6 +73,11 @@ type ChannelWithSnakeCase = Channel & {
   subscriber_count?: number;
   subscriberCount?: number;
   subscribers?: any[];
+  articleCount?: number;
+  article_count?: number;
+  _count?: {
+    articles?: number;
+  };
 };
 
 interface OrderOption {
@@ -507,8 +512,17 @@ export default function HomePage() {
   const subscribedIds = new Set(
     (subscriptions ?? []).map((s) => Number(s.id))
   );
+  // Only surface channels that actually have articles — an empty channel
+  // isn't an interesting option for a reader. (If the API ever stops
+  // returning counts entirely, skip the filter rather than empty the rail.)
+  const getChannelArticles = (c: ChannelWithSnakeCase) =>
+    c.articleCount ?? c.article_count ?? c._count?.articles ?? 0;
+  const countsAvailable = filteredChannels.some(
+    (c) => getChannelArticles(c) > 0
+  );
   const discoverChannels = filteredChannels
     .filter((c) => !subscribedIds.has(Number(c.id)))
+    .filter((c) => (countsAvailable ? getChannelArticles(c) > 0 : true))
     .slice(0, 4);
 
   return (

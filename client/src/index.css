@@ -34,6 +34,17 @@
 
   /* Dark mode customizations for better contrast */
   .dark {
+    /* Layered dark surfaces — lifted off pure black so page < ticker <
+       panel/card separate into visible depth, with borders that actually
+       read. This is what makes dark UIs "pop": structure, not brightness. */
+    --background: 0 0% 7%;
+    --card: 0 0% 10%;
+    --popover: 0 0% 11%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 66%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+
     --primary: 210 40% 50%; /* Lighter blue for dark mode buttons */
     --primary-foreground: 0 0% 100%; /* White text for better visibility */
 
@@ -43,17 +54,17 @@
     --accent: 210 30% 30%; /* Accent color with better visibility */
     --accent-foreground: 0 0% 98%;
 
-    /* Edition tokens — dark values (spec palette) */
-    --edition-bg: 0 0% 4%;            /* #0a0a0a */
-    --edition-panel: 0 0% 6%;         /* #101010 */
-    --edition-ticker: 0 0% 5%;        /* #0d0d0d */
-    --edition-border-strong: 0 0% 11%;/* #1c1c1c */
-    --edition-border: 0 0% 12%;       /* #1f1f1f */
-    --edition-border-hair: 0 0% 9%;   /* #161616 */
+    /* Edition tokens — dark values (lifted to match the layered surfaces) */
+    --edition-bg: 0 0% 7%;
+    --edition-panel: 0 0% 10%;
+    --edition-ticker: 0 0% 8.5%;
+    --edition-border-strong: 0 0% 24%;
+    --edition-border: 0 0% 18%;
+    --edition-border-hair: 0 0% 14%;
     --edition-text: 60 7% 95%;        /* #f3f3f1 */
-    --edition-text-secondary: 40 8% 69%; /* #b5b2ac */
-    --edition-text-muted: 0 0% 55%;   /* #8c8c8c */
-    --edition-text-dim: 0 0% 49%;     /* #7c7c7c */
+    --edition-text-secondary: 40 8% 72%;
+    --edition-text-muted: 0 0% 60%;
+    --edition-text-dim: 0 0% 52%;
     --edition-accent: 217 91% 60%;    /* #3b82f6 */
     --edition-positive: 153 60% 53%;  /* #3ecf8e */
     --edition-negative: 2 72% 63%;    /* #e5635e */
@@ -106,8 +117,8 @@
       hsl(var(--background) / 0.95) 50%,
       hsl(var(--muted) / 0.15) 100%
     );
-    border-color: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   /* Glossy card: gradient highlight on top edge */
@@ -127,15 +138,15 @@
 
   .dark .glass-card {
     background:
-      linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 40%),
+      linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 40%),
       hsl(var(--card));
-    border-color: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   .dark .glass-card:hover {
-    border-color: rgba(255, 255, 255, 0.14);
-    box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
     transform: translateY(-1px);
   }
 
