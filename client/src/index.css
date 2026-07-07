@@ -30,20 +30,35 @@
     --edition-accent: 217 91% 60%;   /* #3b82f6 */
     --edition-positive: 153 58% 38%;
     --edition-negative: 2 72% 52%;
+
+    /* Section accent palette — light values (Guardian-style per-section hues,
+       consumed via hsl(var(--cat-*)); resolver in lib/category-colors.ts) */
+    --cat-politics: 0 72% 48%;
+    --cat-business: 32 95% 42%;
+    --cat-tech: 262 75% 55%;
+    --cat-ai: 217 91% 52%;
+    --cat-science: 190 90% 36%;
+    --cat-sports: 142 70% 36%;
+    --cat-culture: 300 65% 46%;
+    --cat-lifestyle: 340 75% 50%;
+    --cat-education: 226 65% 52%;
+    --cat-environment: 160 84% 30%;
+    --cat-opinion: 24 90% 46%;
+    --cat-law: 215 28% 46%;
   }
 
   /* Dark mode customizations for better contrast */
   .dark {
-    /* Layered dark surfaces — lifted off pure black so page < ticker <
-       panel/card separate into visible depth, with borders that actually
-       read. This is what makes dark UIs "pop": structure, not brightness. */
-    --background: 0 0% 7%;
-    --card: 0 0% 10%;
-    --popover: 0 0% 11%;
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 66%;
-    --border: 0 0% 18%;
-    --input: 0 0% 18%;
+    /* Layered dark surfaces — lifted well off pure black (Spotify/YouTube
+       tier) so page < ticker < panel/card separate into visible depth, with
+       borders that actually read. Structure + light = "pop". */
+    --background: 0 0% 9%;
+    --card: 0 0% 13%;
+    --popover: 0 0% 14%;
+    --muted: 0 0% 19%;
+    --muted-foreground: 0 0% 68%;
+    --border: 0 0% 23%;
+    --input: 0 0% 23%;
 
     --primary: 210 40% 50%; /* Lighter blue for dark mode buttons */
     --primary-foreground: 0 0% 100%; /* White text for better visibility */
@@ -55,19 +70,33 @@
     --accent-foreground: 0 0% 98%;
 
     /* Edition tokens — dark values (lifted to match the layered surfaces) */
-    --edition-bg: 0 0% 7%;
-    --edition-panel: 0 0% 10%;
-    --edition-ticker: 0 0% 8.5%;
-    --edition-border-strong: 0 0% 24%;
-    --edition-border: 0 0% 18%;
-    --edition-border-hair: 0 0% 14%;
+    --edition-bg: 0 0% 9%;
+    --edition-panel: 0 0% 13%;
+    --edition-ticker: 0 0% 11%;
+    --edition-border-strong: 0 0% 29%;
+    --edition-border: 0 0% 23%;
+    --edition-border-hair: 0 0% 17%;
     --edition-text: 60 7% 95%;        /* #f3f3f1 */
     --edition-text-secondary: 40 8% 72%;
-    --edition-text-muted: 0 0% 60%;
-    --edition-text-dim: 0 0% 52%;
+    --edition-text-muted: 0 0% 62%;
+    --edition-text-dim: 0 0% 54%;
     --edition-accent: 217 91% 60%;    /* #3b82f6 */
     --edition-positive: 153 60% 53%;  /* #3ecf8e */
     --edition-negative: 2 72% 63%;    /* #e5635e */
+
+    /* Section accent palette — dark values (brighter for dark surfaces) */
+    --cat-politics: 0 84% 66%;
+    --cat-business: 38 92% 58%;
+    --cat-tech: 262 85% 70%;
+    --cat-ai: 213 93% 66%;
+    --cat-science: 190 85% 55%;
+    --cat-sports: 142 66% 55%;
+    --cat-culture: 300 70% 68%;
+    --cat-lifestyle: 340 82% 68%;
+    --cat-education: 226 80% 70%;
+    --cat-environment: 160 70% 50%;
+    --cat-opinion: 26 95% 62%;
+    --cat-law: 215 35% 65%;
   }
 }
 

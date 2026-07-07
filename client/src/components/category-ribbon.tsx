@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { categoryColor } from "@/lib/category-colors";
 
 // All categories in order
 const ALL_CATEGORIES: Array<{
@@ -167,6 +168,11 @@ export function CategoryRibbon({
               "hover:shadow-[inset_0_-2px_0_0_hsl(var(--border))]",
             isSelected && "text-foreground font-semibold edition-underline-active"
           )}
+          style={
+            isSelected
+              ? { boxShadow: `inset 0 -2px 0 0 ${categoryColor(category.id)}` }
+              : undefined
+          }
           onClick={() => handleCategoryClick(category)}
         >
           <Icon className="h-3.5 w-3.5" />
@@ -186,6 +192,11 @@ export function CategoryRibbon({
             "hover:shadow-[inset_0_-2px_0_0_hsl(var(--border))]",
           isSelected && "text-foreground font-semibold edition-underline-active"
         )}
+        style={
+          isSelected
+            ? { boxShadow: `inset 0 -2px 0 0 ${categoryColor(category.id)}` }
+            : undefined
+        }
         onClick={() => handleCategoryClick(category)}
       >
         {category.label}

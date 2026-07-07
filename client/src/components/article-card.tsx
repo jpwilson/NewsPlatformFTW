@@ -33,6 +33,7 @@ import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { createSlugUrl } from "@/lib/slug-utils";
+import { categoryColor } from "@/lib/category-colors";
 import { useImageVisibility } from "@/components/image-toggle";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
@@ -218,7 +219,10 @@ export function ArticleCard({
       return (
         <>
           <article className="flex flex-col">
-            <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--edition-accent))]">
+            <span
+              className="text-[11px] font-bold uppercase tracking-[0.16em]"
+              style={{ color: categoryColor(primaryCategory) }}
+            >
               {isFromToday ? "Today's lead" : "Top story"}
               {primaryCategory ? ` · ${primaryCategory}` : ""}
             </span>
@@ -273,7 +277,10 @@ export function ArticleCard({
           </Link>
 
           {/* Headline block below the image — classic news lead */}
-          <span className="mt-3 text-[11px] font-bold uppercase tracking-[0.16em] text-[hsl(var(--edition-accent))]">
+          <span
+            className="mt-3 text-[11px] font-bold uppercase tracking-[0.16em]"
+            style={{ color: categoryColor(primaryCategory) }}
+          >
             {isFromToday ? "Today's lead" : "Top story"}
             {primaryCategory ? ` · ${primaryCategory}` : ""}
           </span>
@@ -334,7 +341,10 @@ export function ArticleCard({
           )}
           <div className="min-w-0 flex-1">
             {primaryCategory && (
-              <span className="text-[10.5px] font-bold uppercase tracking-wide text-[hsl(var(--edition-accent))]">
+              <span
+                className="text-[10.5px] font-bold uppercase tracking-wide"
+                style={{ color: categoryColor(primaryCategory) }}
+              >
                 {primaryCategory}
               </span>
             )}
