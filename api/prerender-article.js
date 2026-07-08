@@ -262,14 +262,14 @@ export default async function handler(req, res) {
           <meta property="og:url" content="${articleUrl}" />
           <meta property="og:title" content="${title}" />
           <meta property="og:description" content="${escapedDescription}" />
-          ${absoluteImageUrl ? `<meta property="og:image" content="${absoluteImageUrl}" />` : '<!-- No image available -->'}
-          <meta property="og:site_name" content="News Platform" />
-          
+          <meta property="og:image" content="${absoluteImageUrl || 'https://newsplatform.org/logo-stacked.png'}" />
+          <meta property="og:site_name" content="NewsPlatform" />
+
           <!-- Twitter -->
           <meta name="twitter:card" content="${absoluteImageUrl ? 'summary_large_image' : 'summary'}" />
           <meta name="twitter:title" content="${title}" />
           <meta name="twitter:description" content="${escapedDescription}" />
-          ${absoluteImageUrl ? `<meta name="twitter:image" content="${absoluteImageUrl}" />` : '<!-- No image available -->'}
+          <meta name="twitter:image" content="${absoluteImageUrl || 'https://newsplatform.org/logo-stacked.png'}" />
           
           <!-- Redirect after delay -->
           <meta http-equiv="refresh" content="${redirectDelay};url=${articleUrl}" />

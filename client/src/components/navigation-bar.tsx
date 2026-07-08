@@ -371,10 +371,20 @@ export function NavigationBar({
 
           <button
             onClick={() => setLocation("/")}
-            className="flex items-center gap-2 cursor-pointer"
+            className="flex items-center cursor-pointer"
+            aria-label="NewsPlatform home"
           >
-            <Newspaper className="h-6 w-6" />
-            <span className="font-bold text-lg">NewsPlatform</span>
+            {/* Brand lockup — light/dark variants */}
+            <img
+              src="/logo-newsplatform.svg"
+              alt="NewsPlatform"
+              className="h-8 w-auto dark:hidden"
+            />
+            <img
+              src="/logo-newsplatform-white.svg"
+              alt="NewsPlatform"
+              className="hidden h-8 w-auto dark:block"
+            />
           </button>
 
         </div>

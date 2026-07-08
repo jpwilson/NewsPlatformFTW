@@ -2,7 +2,7 @@ import React from "react";
 import { AdminArticleTable } from "@/components/admin-article-table";
 import { AdminChannelTable } from "@/components/admin-channel-table";
 import { Link } from "wouter";
-import { Newspaper, ExternalLink, X } from "lucide-react";
+import { ExternalLink, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
@@ -421,9 +421,9 @@ export default function AdminPage() {
       {/* Simple admin header with just the logo */}
       <header className="sticky top-0 z-50 glass-nav">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 cursor-pointer">
-            <Newspaper className="h-6 w-6" />
-            <span className="font-bold text-lg">NewsPlatform</span>
+          <Link href="/" className="flex items-center cursor-pointer" aria-label="NewsPlatform home">
+            <img src="/logo-newsplatform.svg" alt="NewsPlatform" className="h-8 w-auto dark:hidden" />
+            <img src="/logo-newsplatform-white.svg" alt="NewsPlatform" className="hidden h-8 w-auto dark:block" />
           </Link>
         </div>
       </header>

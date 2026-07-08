@@ -1,5 +1,4 @@
 import { Link } from "wouter";
-import { Newspaper } from "lucide-react";
 import { ApiKeySection } from "@/pages/admin-page";
 
 export default function ApiKeysPage() {
@@ -7,9 +6,9 @@ export default function ApiKeysPage() {
     <>
       <header className="sticky top-0 z-50 glass-nav">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 cursor-pointer">
-            <Newspaper className="h-6 w-6" />
-            <span className="font-bold text-lg">NewsPlatform</span>
+          <Link href="/" className="flex items-center cursor-pointer" aria-label="NewsPlatform home">
+            <img src="/logo-newsplatform.svg" alt="NewsPlatform" className="h-8 w-auto dark:hidden" />
+            <img src="/logo-newsplatform-white.svg" alt="NewsPlatform" className="hidden h-8 w-auto dark:block" />
           </Link>
         </div>
       </header>
