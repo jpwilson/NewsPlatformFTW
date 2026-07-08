@@ -568,7 +568,7 @@ export default function HomePage() {
                     ? `Showing ${ribbonCategory} articles`
                     : user
                       ? "Fresh stories from your favorite channels"
-                      : "Today's top stories from across the platform"}
+                      : "Today's top stories from across NewsPlatform"}
                 </p>
 
                 {/* Article control buttons - now contained in article column */}
