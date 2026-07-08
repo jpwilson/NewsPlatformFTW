@@ -23,6 +23,7 @@ import AdminPage from "@/pages/admin-page";
 import ApiKeysPage from "@/pages/api-keys-page";
 import ApiDocsPage from "@/pages/api-docs-page";
 import PrivacyPage from "@/pages/privacy-page";
+import TermsPage from "@/pages/terms-page";
 import { Analytics } from "@vercel/analytics/react";
 import { HelmetProvider } from "react-helmet-async";
 import { useEffect } from "react";
@@ -87,6 +88,7 @@ function Router() {
       <Route path="/users/:username" component={ProfilePage} />
       <Route path="/api" component={ApiDocsPage} />
       <Route path="/privacy" component={PrivacyPage} />
+      <Route path="/terms" component={TermsPage} />
       <Route path="/api-keys">
         <ApiAccessRouteGuard>
           <ApiKeysPage />

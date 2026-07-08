@@ -1087,6 +1087,9 @@ export default function HomePage() {
             <Link href="/privacy" className="hover:text-foreground hover:underline">
               Privacy Policy
             </Link>
+            <Link href="/terms" className="hover:text-foreground hover:underline">
+              Terms of Service
+            </Link>
             <Link href="/channels" className="hover:text-foreground hover:underline">
               Channels
             </Link>
