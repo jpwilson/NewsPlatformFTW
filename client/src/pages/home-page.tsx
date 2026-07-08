@@ -1081,19 +1081,32 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="mt-12 border-t border-[hsl(var(--edition-border-hair))]">
-        <div className="container mx-auto flex flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-muted-foreground lg:px-8">
-          <span>© {new Date().getFullYear()} NewsPlatform</span>
-          <nav className="flex items-center gap-5">
-            <Link href="/privacy" className="hover:text-foreground hover:underline">
-              Privacy Policy
-            </Link>
-            <Link href="/terms" className="hover:text-foreground hover:underline">
-              Terms of Service
-            </Link>
-            <Link href="/channels" className="hover:text-foreground hover:underline">
-              Channels
-            </Link>
-          </nav>
+        <div className="container mx-auto px-4 py-8 lg:px-8">
+          <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+            <div className="max-w-md">
+              <p className="font-display text-lg font-bold">NewsPlatform</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                NewsPlatform is an independent news publishing platform.
+                Writers and organisations run their own channels and publish
+                articles; readers follow the channels they trust and get the
+                day's top stories in one place.
+              </p>
+            </div>
+            <nav className="flex items-center gap-5 text-sm text-muted-foreground">
+              <Link href="/privacy" className="hover:text-foreground hover:underline">
+                Privacy Policy
+              </Link>
+              <Link href="/terms" className="hover:text-foreground hover:underline">
+                Terms of Service
+              </Link>
+              <Link href="/channels" className="hover:text-foreground hover:underline">
+                Channels
+              </Link>
+            </nav>
+          </div>
+          <p className="mt-6 text-xs text-muted-foreground">
+            © {new Date().getFullYear()} NewsPlatform
+          </p>
         </div>
       </footer>
     </div>
