@@ -165,13 +165,16 @@ export function CategoryRibbon({
           className={cn(
             "whitespace-nowrap gap-1.5 rounded-none font-medium text-muted-foreground transition-all hover:bg-transparent hover:text-foreground",
             !isSelected &&
-              "hover:shadow-[inset_0_-2px_0_0_hsl(var(--border))]",
+              "hover:shadow-[inset_0_-2px_0_0_var(--cat)]",
             isSelected && "text-foreground font-semibold edition-underline-active"
           )}
           style={
-            isSelected
-              ? { boxShadow: `inset 0 -2px 0 0 ${categoryColor(category.id)}` }
-              : undefined
+            {
+              "--cat": categoryColor(category.id),
+              ...(isSelected
+                ? { boxShadow: "inset 0 -2px 0 0 var(--cat)" }
+                : {}),
+            } as React.CSSProperties
           }
           onClick={() => handleCategoryClick(category)}
         >
@@ -189,13 +192,16 @@ export function CategoryRibbon({
         className={cn(
           "whitespace-nowrap rounded-none font-medium text-muted-foreground transition-all hover:bg-transparent hover:text-foreground",
           !isSelected &&
-            "hover:shadow-[inset_0_-2px_0_0_hsl(var(--border))]",
+            "hover:shadow-[inset_0_-2px_0_0_var(--cat)]",
           isSelected && "text-foreground font-semibold edition-underline-active"
         )}
         style={
-          isSelected
-            ? { boxShadow: `inset 0 -2px 0 0 ${categoryColor(category.id)}` }
-            : undefined
+          {
+            "--cat": categoryColor(category.id),
+            ...(isSelected
+              ? { boxShadow: "inset 0 -2px 0 0 var(--cat)" }
+              : {}),
+          } as React.CSSProperties
         }
         onClick={() => handleCategoryClick(category)}
       >

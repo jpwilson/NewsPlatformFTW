@@ -8,7 +8,6 @@ import { MarketTicker } from "@/components/market-ticker";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
-  Loader2,
   PlusCircle,
   SlidersHorizontal,
   Filter,
@@ -39,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useSelectedChannel } from "@/hooks/use-selected-channel";
@@ -900,8 +900,26 @@ export default function HomePage() {
 
             {/* Articles list */}
             {loadingArticles || (!!articles && !filtersReady) ? (
-              <div className="flex justify-center my-12">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              /* Skeleton mirrors the edition layout: hero + story rows */
+              <div className="space-y-8">
+                <div>
+                  <Skeleton className="max-h-[400px] w-full rounded-xl aspect-[16/9] sm:aspect-[21/9]" />
+                  <Skeleton className="mt-4 h-3 w-44" />
+                  <Skeleton className="mt-3 h-8 w-3/4" />
+                  <Skeleton className="mt-3 h-4 w-2/3" />
+                </div>
+                <div className="space-y-6">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="flex gap-4">
+                      <Skeleton className="h-[74px] w-[116px] shrink-0 rounded-md" />
+                      <div className="min-w-0 flex-1 space-y-2.5">
+                        <Skeleton className="h-3 w-20" />
+                        <Skeleton className="h-5 w-5/6" />
+                        <Skeleton className="h-3 w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : filteredArticles.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
@@ -975,8 +993,22 @@ export default function HomePage() {
               </div>
 
               {loadingChannels ? (
-                <div className="flex justify-center p-4">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <div className="space-y-3">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="rounded-xl border border-[hsl(var(--edition-border))] p-3.5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Skeleton className="h-10 w-10 rounded-full" />
+                        <div className="flex-1 space-y-2">
+                          <Skeleton className="h-4 w-2/3" />
+                          <Skeleton className="h-3 w-1/3" />
+                        </div>
+                      </div>
+                      <Skeleton className="mt-3 h-8 w-full rounded-lg" />
+                    </div>
+                  ))}
                 </div>
               ) : discoverChannels.length === 0 ? (
                 <div className="text-center p-4 text-sm text-muted-foreground">

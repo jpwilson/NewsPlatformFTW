@@ -250,7 +250,7 @@ export function ArticleCard({
               </span>
               {showReadingNow && (
                 <span className="inline-flex items-center gap-1 font-medium text-[hsl(var(--edition-negative))]">
-                  <Flame className="h-3.5 w-3.5" />
+                  <Flame className="h-3.5 w-3.5 animate-pulse" />
                   {formatCompact(readingNow)} reading
                 </span>
               )}
@@ -308,7 +308,7 @@ export function ArticleCard({
             </span>
             {showReadingNow && (
               <span className="inline-flex items-center gap-1 font-medium text-[hsl(var(--edition-negative))]">
-                <Flame className="h-3.5 w-3.5" />
+                <Flame className="h-3.5 w-3.5 animate-pulse" />
                 {formatCompact(readingNow)} reading
               </span>
             )}
@@ -323,7 +323,7 @@ export function ArticleCard({
   if (variant === "row") {
     return (
       <>
-        <article className="flex gap-4 border-b border-[hsl(var(--edition-border-hair))] py-4">
+        <article className="group flex gap-4 border-b border-[hsl(var(--edition-border-hair))] py-4">
           {imagesEnabled && (
             <Link href={articleUrl} className="shrink-0">
               <div className="relative h-[74px] w-[116px] overflow-hidden rounded-md bg-muted">
@@ -331,7 +331,7 @@ export function ArticleCard({
                   <img
                     src={firstImage.imageUrl}
                     alt={firstImage.caption || article.title}
-                    className="absolute inset-0 h-full w-full object-cover"
+                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
                   />
                 ) : (
                   mediaPlaceholder
@@ -349,7 +349,7 @@ export function ArticleCard({
               </span>
             )}
             <Link href={articleUrl}>
-              <h3 className="font-display text-[19px] font-bold leading-tight hover:underline cursor-pointer line-clamp-2">
+              <h3 className="font-display text-[19px] font-bold leading-tight hover:underline cursor-pointer line-clamp-2 transition-colors group-hover:text-[hsl(var(--edition-accent))]">
                 {article.title}
               </h3>
             </Link>
