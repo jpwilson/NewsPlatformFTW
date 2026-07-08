@@ -1078,6 +1078,21 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="mt-12 border-t border-[hsl(var(--edition-border-hair))]">
+        <div className="container mx-auto flex flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-muted-foreground lg:px-8">
+          <span>© {new Date().getFullYear()} NewsPlatform</span>
+          <nav className="flex items-center gap-5">
+            <Link href="/privacy" className="hover:text-foreground hover:underline">
+              Privacy Policy
+            </Link>
+            <Link href="/channels" className="hover:text-foreground hover:underline">
+              Channels
+            </Link>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }
