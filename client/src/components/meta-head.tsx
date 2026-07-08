@@ -34,7 +34,7 @@ export function MetaHead({
       <meta property="og:description" content={description} />
       <meta property="og:url" content={fullUrl} />
       <meta property="og:type" content={type} />
-      <meta property="og:site_name" content="News Platform" />
+      <meta property="og:site_name" content="NewsPlatform" />
       {fullImageUrl && <meta property="og:image" content={fullImageUrl} />}
 
       {/* Twitter Card Tags */}
