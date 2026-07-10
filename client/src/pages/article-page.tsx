@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Article, Channel } from "@shared/schema";
 import { NavigationBar } from "@/components/navigation-bar";
+import {
+  RichArticleContent,
+  ReadingProgress,
+} from "@/components/rich-article-content";
 import { CommentSection } from "@/components/comment-section";
 import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -1206,6 +1210,7 @@ export default function ArticlePage() {
       )}
 
       <div className="min-h-screen bg-background">
+        <ReadingProgress />
         <NavigationBar />
 
         <article className="container mx-auto p-4 lg:p-8 max-w-4xl">
@@ -1878,14 +1883,14 @@ export default function ArticlePage() {
                 </div>
               </>
             ) : (
-              // Render HTML content - convert plain text if needed
-              <div
-                className="prose dark:prose-invert max-w-none"
-                dangerouslySetInnerHTML={{
-                  __html: isPlainText(article.content)
+              // Rich article content: charts hydrate, figures open a lightbox
+              <RichArticleContent
+                className="article-body prose dark:prose-invert max-w-none"
+                html={
+                  isPlainText(article.content)
                     ? convertPlainTextToHtml(article.content)
-                    : article.content || "",
-                }}
+                    : article.content || ""
+                }
               />
             )}
           </div>
