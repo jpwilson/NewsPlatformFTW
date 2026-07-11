@@ -485,6 +485,44 @@
     color: hsl(var(--edition-text-dim));
   }
 
+  /* ===== Editor (TipTap) affordances — WYSIWYG parity with the reader ===== */
+
+  .article-body .ProseMirror .article-figure figcaption {
+    min-height: 1.2em;
+  }
+  .article-body .ProseMirror .article-figure figcaption:empty::before {
+    content: "Write a caption (who/what/where — credit)…";
+    color: hsl(var(--edition-text-dim));
+    font-style: italic;
+  }
+  .article-body .ProseMirror img {
+    cursor: default;
+  }
+  .article-body .ProseMirror .ProseMirror-selectednode {
+    outline: 2px solid hsl(var(--edition-accent));
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+  .article-body .ProseMirror .video-embed {
+    pointer-events: none; /* select/move the block instead of playing inline */
+  }
+  .article-body .ProseMirror table.article-table td,
+  .article-body .ProseMirror table.article-table th {
+    border: 1px solid hsl(var(--border));
+    min-width: 3rem;
+    position: relative;
+  }
+  .article-body .ProseMirror .selectedCell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: hsl(var(--edition-accent) / 0.12);
+    pointer-events: none;
+  }
+  .article-body .ProseMirror .callout-body p:first-child {
+    margin-top: 0;
+  }
+
   /* Channel stats card: prominent glossy card */
   .glass-stats-card {
     @apply border rounded-xl;
