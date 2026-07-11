@@ -432,15 +432,24 @@ export async function registerRoutes(app: Express): Promise<void> {
             
           // Ensure view_count is present, defaulting to 0 if not
           const viewCount = article.view_count || 0;
-            
+
+          // Slim the list payload: cards need an excerpt + word count, not
+          // the full body (mirrors api/index.ts).
+          const plainText = String(article.content || "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+
           return {
             ...article,
+            content: plainText.slice(0, 500),
+            wordCount: plainText ? plainText.split(" ").length : 0,
             channel,
             likes,
             dislikes,
             viewCount,
             userReaction,
-            _count: { 
+            _count: {
               comments: commentCountError ? 0 : (commentCountData?.length || 0)
             },
             // Add additional comment count fields for backward compatibility
@@ -1747,6 +1756,122 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error updating homepage settings:", error);
       res.status(500).json({ message: "Failed to update homepage settings" });
+    }
+  });
+
+  // ---- SEO: sitemap + RSS feeds (mirrors api/index.ts) ----
+  const SITE_BASE = "https://newsplatform.org";
+  const xmlEscape = (s: any): string =>
+    String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  const rssItemXml = (a: any): string => {
+    const link = `${SITE_BASE}/articles/${a.id}${a.slug ? `/${a.slug}` : ""}`;
+    const desc = String(a.content || "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    const pub = a.published_at || a.created_at;
+    return `<item><title>${xmlEscape(a.title)}</title><link>${xmlEscape(link)}</link><guid isPermaLink="true">${xmlEscape(link)}</guid>${
+      pub ? `<pubDate>${new Date(pub).toUTCString()}</pubDate>` : ""
+    }${a.category ? `<category>${xmlEscape(a.category)}</category>` : ""}<description>${xmlEscape(desc)}</description></item>`;
+  };
+  const rssFeedXml = (title: string, link: string, description: string, items: string): string =>
+    `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>${xmlEscape(title)}</title><link>${xmlEscape(link)}</link><description>${xmlEscape(description)}</description><language>en</language>${items}</channel></rss>`;
+
+  app.get("/sitemap.xml", async (req, res) => {
+    try {
+      const { data: articles } = await supabase
+        .from("articles")
+        .select("id, slug, created_at, last_edited")
+        .eq("published", true)
+        .order("created_at", { ascending: false })
+        .limit(5000);
+      const { data: channels } = await supabase.from("channels").select("id");
+      const urls: string[] = [
+        `<url><loc>${SITE_BASE}/</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>`,
+        `<url><loc>${SITE_BASE}/channels</loc><changefreq>daily</changefreq><priority>0.7</priority></url>`,
+        `<url><loc>${SITE_BASE}/privacy</loc><priority>0.2</priority></url>`,
+        `<url><loc>${SITE_BASE}/terms</loc><priority>0.2</priority></url>`,
+      ];
+      for (const c of channels || []) {
+        urls.push(
+          `<url><loc>${SITE_BASE}/channels/${c.id}</loc><changefreq>daily</changefreq><priority>0.6</priority></url>`
+        );
+      }
+      for (const a of articles || []) {
+        const lastmod = String(a.last_edited || a.created_at || "").slice(0, 10);
+        const loc = `${SITE_BASE}/articles/${a.id}${a.slug ? `/${xmlEscape(a.slug)}` : ""}`;
+        urls.push(
+          `<url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}<priority>0.8</priority></url>`
+        );
+      }
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>`;
+      res.setHeader("Content-Type", "application/xml");
+      res.status(200).send(xml);
+    } catch (e) {
+      console.error("Error generating sitemap:", e);
+      res.status(500).end();
+    }
+  });
+
+  app.get("/rss.xml", async (req, res) => {
+    try {
+      const { data: articles } = await supabase
+        .from("articles")
+        .select("id, slug, title, content, category, created_at, published_at")
+        .eq("published", true)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      const xml = rssFeedXml(
+        "NewsPlatform",
+        SITE_BASE,
+        "Today's top stories from independent channels on NewsPlatform.",
+        (articles || []).map(rssItemXml).join("")
+      );
+      res.setHeader("Content-Type", "application/rss+xml");
+      res.status(200).send(xml);
+    } catch (e) {
+      console.error("Error generating RSS:", e);
+      res.status(500).end();
+    }
+  });
+
+  app.get("/channels/:id/rss.xml", async (req, res) => {
+    try {
+      const idMatch = String(req.params.id || "").match(/(\d+)$/);
+      if (!idMatch) return res.status(404).end();
+      const channelId = parseInt(idMatch[1], 10);
+      const { data: channel } = await supabase
+        .from("channels")
+        .select("id, name, description")
+        .eq("id", channelId)
+        .maybeSingle();
+      if (!channel) return res.status(404).end();
+      const { data: articles } = await supabase
+        .from("articles")
+        .select("id, slug, title, content, category, created_at, published_at")
+        .eq("channel_id", channelId)
+        .eq("published", true)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      const xml = rssFeedXml(
+        `${channel.name} — NewsPlatform`,
+        `${SITE_BASE}/channels/${channel.id}`,
+        channel.description || `Latest articles from ${channel.name} on NewsPlatform.`,
+        (articles || []).map(rssItemXml).join("")
+      );
+      res.setHeader("Content-Type", "application/rss+xml");
+      res.status(200).send(xml);
+    } catch (e) {
+      console.error("Error generating channel RSS:", e);
+      res.status(500).end();
     }
   });
 }

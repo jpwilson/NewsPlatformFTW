@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+
+Sitemap: https://newsplatform.org/sitemap.xml

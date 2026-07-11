@@ -54,6 +54,8 @@ type ArticleWithSnakeCase = Article & {
     comments?: number;
   };
   images?: Array<{ imageUrl: string; caption?: string }>;
+  /** Server-computed full word count (list endpoints send excerpts only) */
+  wordCount?: number;
 };
 
 type ArticleCardVariant = "horizontal" | "vertical" | "hero" | "row";
@@ -136,7 +138,10 @@ export function ArticleCard({
   const plainText = article.content
     ? article.content.replace(/<[^>]+>/g, "")
     : "";
-  const wordCount = plainText.trim() ? plainText.trim().split(/\s+/).length : 0;
+  // Prefer the server-computed word count (list endpoints send excerpts only)
+  const wordCount =
+    article.wordCount ??
+    (plainText.trim() ? plainText.trim().split(/\s+/).length : 0);
   const readMinutes = Math.max(1, Math.ceil(wordCount / 200));
 
   const rawDate = article.created_at || article.createdAt;
