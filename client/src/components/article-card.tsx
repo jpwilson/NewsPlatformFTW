@@ -85,20 +85,15 @@ export function ArticleCard({
 
   const handleChannelClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!user) {
-      setShowAuthDialog(true);
+    // Channel pages are public — navigate for everyone.
+    const channelId = article?.channel_id || article?.channelId;
+    if (channelId) {
+      const channelSlug = article?.channel?.slug || "";
+      setLocation(
+        createSlugUrl("/channels/", channelSlug, channelId.toString())
+      );
     } else {
-      // Use either channelId or channel_id, checking for existence
-      const channelId = article?.channel_id || article?.channelId;
-      // Only navigate if channelId exists
-      if (channelId) {
-        const channelSlug = article?.channel?.slug || "";
-        setLocation(
-          createSlugUrl("/channels/", channelSlug, channelId.toString())
-        );
-      } else {
-        console.error("No channel ID found for this article");
-      }
+      console.error("No channel ID found for this article");
     }
   };
 

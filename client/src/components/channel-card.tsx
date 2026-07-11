@@ -104,13 +104,9 @@ export function ChannelCard({
       return;
     }
 
-    if (user) {
-      // Use slug if available, fallback to ID
-      const channelSlug = channel.slug || "";
-      navigate(createSlugUrl("/channels/", channelSlug, channel.id));
-    } else {
-      setAuthDialogOpen(true);
-    }
+    // Channel pages are public — navigate for everyone.
+    const channelSlug = channel.slug || "";
+    navigate(createSlugUrl("/channels/", channelSlug, channel.id));
   };
 
   const handleSubscribe = () => {
