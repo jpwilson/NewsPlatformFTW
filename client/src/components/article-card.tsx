@@ -70,10 +70,13 @@ export function ArticleCard({
   article,
   variant = "horizontal",
   showReadingNow = true,
+  eyebrow,
 }: {
   article: ArticleWithSnakeCase;
   variant?: ArticleCardVariant;
   showReadingNow?: boolean;
+  /** Overrides the hero eyebrow label (default: "Today's lead" / "Top story") */
+  eyebrow?: string;
 }) {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -223,7 +226,7 @@ export function ArticleCard({
               className="text-[11px] font-bold uppercase tracking-[0.16em]"
               style={{ color: categoryColor(primaryCategory) }}
             >
-              {isFromToday ? "Today's lead" : "Top story"}
+              {eyebrow ?? (isFromToday ? "Today's lead" : "Top story")}
               {primaryCategory ? ` · ${primaryCategory}` : ""}
             </span>
             <Link href={articleUrl}>
@@ -281,7 +284,7 @@ export function ArticleCard({
             className="mt-3 text-[11px] font-bold uppercase tracking-[0.16em]"
             style={{ color: categoryColor(primaryCategory) }}
           >
-            {isFromToday ? "Today's lead" : "Top story"}
+            {eyebrow ?? (isFromToday ? "Today's lead" : "Top story")}
             {primaryCategory ? ` · ${primaryCategory}` : ""}
           </span>
           <Link href={articleUrl}>

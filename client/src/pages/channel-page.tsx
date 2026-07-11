@@ -54,6 +54,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { createSlugUrl } from "@/lib/slug-utils";
+import { categoryColor } from "@/lib/category-colors";
+import { ArticleCard } from "@/components/article-card";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -105,24 +107,9 @@ export default function ChannelPage() {
   const [profileCropModalOpen, setProfileCropModalOpen] = useState(false);
   const [profileImageSrc, setProfileImageSrc] = useState<string>("");
 
-  // Redirect to home if auth dialog is closed without login
-  useEffect(() => {
-    if (!user && !authDialogOpen) {
-      setLocation("/");
-    }
-  }, [user, authDialogOpen, setLocation]);
-
-  // Only show auth dialog if explicitly needed
-  useEffect(() => {
-    // Only show the dialog if user is null after a short delay (to allow auth to load)
-    const timer = setTimeout(() => {
-      if (!user) {
-        setAuthDialogOpen(true);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [user]);
+  // Channel pages are PUBLIC — they are landing pages for readers and search
+  // engines. Auth is only required for actions (subscribe, edit), which open
+  // the auth dialog on demand.
 
   // Fetch current channel
   const { data: channel, isLoading: loadingChannel, refetch: refetchChannel } =
@@ -765,6 +752,15 @@ export default function ChannelPage() {
     );
   }
 
+  // Reader view uses the shared edition cards; make sure each article carries
+  // its channel for the byline.
+  const readerArticles = (articles || []).map((a) => ({
+    ...a,
+    channel:
+      (a as any).channel ??
+      ({ id: channel.id, name: channel.name, slug: channel.slug } as any),
+  }));
+
   return (
     <div className="min-h-screen bg-background">
       <NavigationBar selectedChannelId={id} />
@@ -773,7 +769,7 @@ export default function ChannelPage() {
       <AuthDialog
         open={authDialogOpen}
         onOpenChange={setAuthDialogOpen}
-        description="You need to be logged in to view channel details."
+        description="Sign in to subscribe and follow channels."
       />
 
       {/* Profile Image Crop Modal */}
@@ -787,11 +783,9 @@ export default function ChannelPage() {
         title="Crop Profile Image"
       />
 
-      {/* Only show channel content to logged in users */}
-      {user && (
-        <div className="w-full">
+      <div className="w-full">
           {/* Banner Image */}
-          <div className="relative w-full h-56 lg:h-72 bg-gradient-to-br from-primary/20 via-primary/10 to-primary/5">
+          <div className="relative w-full h-56 lg:h-72 bg-muted">
             {channel.bannerImage ? (
               <img
                 src={channel.bannerImage}
@@ -799,13 +793,19 @@ export default function ChannelPage() {
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center text-muted-foreground/50">
-                  <Image className="h-12 w-12 mx-auto mb-2" />
-                  <p className="text-sm">No banner image</p>
-                </div>
-              </div>
+              // Branded fallback: the channel's section colour as a gradient
+              <div
+                className="h-full w-full"
+                style={{
+                  background: `linear-gradient(115deg, ${categoryColor(
+                    channel.category
+                  )} -20%, transparent 80%)`,
+                  opacity: 0.45,
+                }}
+              />
             )}
+            {/* Editorial fade into the page */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
 
             {/* Profile Image Overlay */}
             <div className="absolute -bottom-14 left-4 lg:left-8 z-10">
@@ -1012,12 +1012,15 @@ export default function ChannelPage() {
                     ))}
 
                   {!isOwner &&
-                    user &&
                     !isEditing &&
                     (!isSubscribed ? (
                       <Button
                         variant="default"
-                        onClick={() => subscribeMutation.mutate()}
+                        onClick={() =>
+                          user
+                            ? subscribeMutation.mutate()
+                            : setAuthDialogOpen(true)
+                        }
                         disabled={subscribeMutation.isPending}
                       >
                         {subscribeMutation.isPending ? (
@@ -1055,46 +1058,75 @@ export default function ChannelPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">Articles</h2>
-                {isOwner && (
-                  <div className="flex items-center gap-2">
-                    <Link href={`/channels/${id}/articles/new`}>
-                      <Button variant="default">
-                        <PlusCircle className="h-4 w-4 mr-2" />
-                        New Article
-                      </Button>
-                    </Link>
+              {isOwner ? (
+                <>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-semibold">Articles</h2>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/channels/${id}/articles/new`}>
+                        <Button variant="default">
+                          <PlusCircle className="h-4 w-4 mr-2" />
+                          New Article
+                        </Button>
+                      </Link>
+                    </div>
                   </div>
-                )}
-              </div>
 
-              <Tabs
-                value={activeTab}
-                onValueChange={setActiveTab}
-                className="w-full"
-              >
-                <TabsList>
-                  <TabsTrigger value="published">Published</TabsTrigger>
-                  {isOwner && <TabsTrigger value="drafts">Drafts</TabsTrigger>}
-                </TabsList>
-
-                <TabsContent
-                  value="published"
-                  className="glass-card mt-2"
-                >
-                  {renderArticles(articles)}
-                </TabsContent>
-
-                {isOwner && (
-                  <TabsContent
-                    value="drafts"
-                    className="glass-card mt-2"
+                  <Tabs
+                    value={activeTab}
+                    onValueChange={setActiveTab}
+                    className="w-full"
                   >
-                    {renderArticles(drafts, true)}
-                  </TabsContent>
-                )}
-              </Tabs>
+                    <TabsList>
+                      <TabsTrigger value="published">Published</TabsTrigger>
+                      <TabsTrigger value="drafts">Drafts</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="published" className="glass-card mt-2">
+                      {renderArticles(articles)}
+                    </TabsContent>
+
+                    <TabsContent value="drafts" className="glass-card mt-2">
+                      {renderArticles(drafts, true)}
+                    </TabsContent>
+                  </Tabs>
+                </>
+              ) : (
+                /* Reader view: the channel as a front page, not a data table */
+                <div className="space-y-8">
+                  {readerArticles.length === 0 ? (
+                    <div className="py-16 text-center text-muted-foreground">
+                      No articles yet — subscribe to catch the first one.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="border-b border-[hsl(var(--edition-border-hair))] pb-6">
+                        <ArticleCard
+                          article={readerArticles[0]}
+                          variant="hero"
+                          eyebrow="Latest"
+                        />
+                      </div>
+                      {readerArticles.length > 1 && (
+                        <div>
+                          <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                            More from {channel.name}
+                          </h3>
+                          <div>
+                            {readerArticles.slice(1).map((a) => (
+                              <ArticleCard
+                                key={a.id}
+                                article={a}
+                                variant="row"
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-6">
@@ -1205,8 +1237,7 @@ export default function ChannelPage() {
             </div>
           </div>
           </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

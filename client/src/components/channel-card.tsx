@@ -18,6 +18,7 @@ import { AuthDialog } from "./auth-dialog";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import { createSlugUrl } from "@/lib/slug-utils";
+import { categoryColor } from "@/lib/category-colors";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 // Extended Channel type that includes subscriberCount and article count
@@ -244,34 +245,50 @@ export function ChannelCard({
         className="mb-4 cursor-pointer hover:shadow-lg transition-all duration-200 shadow-sm dark:shadow-md dark:shadow-white/10 dark:border-white/20 overflow-hidden flex flex-col"
         onClick={handleCardClick}
       >
-        {/* Banner Image Strip */}
-        {bannerUrl && (
+        {/* Banner strip — image, or a category-coloured gradient fallback */}
+        {bannerUrl ? (
           <div
-            className="w-full h-32 bg-gradient-to-br from-primary/20 to-primary/5"
+            className="w-full h-28"
             style={{
               backgroundImage: `url(${bannerUrl})`,
               backgroundSize: 'cover',
               backgroundPosition: 'center'
             }}
           />
+        ) : (
+          <div
+            className="w-full h-20"
+            style={{
+              background: `linear-gradient(115deg, ${categoryColor(channel.category)} -30%, transparent 90%)`,
+              opacity: 0.4,
+            }}
+          />
         )}
 
-        <CardHeader className="pb-3 flex-shrink-0">
+        <CardHeader className="pb-3 flex-shrink-0 pt-0">
           <div className="flex items-start gap-3">
-            {/* Profile Image */}
-            <Avatar className="h-12 w-12 flex-shrink-0">
+            {/* Profile Image — overlaps the banner */}
+            <Avatar className="h-14 w-14 flex-shrink-0 -mt-7 rounded-full ring-4 ring-card">
               <AvatarImage src={profileUrl || undefined} alt={channel.name} />
               <AvatarFallback className="bg-primary/10">
                 {channel.name.substring(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            
+
             {/* Channel Info */}
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 pt-2">
+              {channel.category && (
+                <div
+                  className="text-[10px] font-bold uppercase tracking-wider"
+                  style={{ color: categoryColor(channel.category) }}
+                >
+                  {channel.category}
+                </div>
+              )}
               <h3 className="font-display font-semibold text-lg leading-tight truncate">
                 {channel.name}
               </h3>
-              
+
               {/* Stats Row */}
               <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
                 <div className="flex items-center gap-1">
