@@ -123,6 +123,7 @@ export function ArticleCard({
   // Use 0 as default if counts are undefined.
   // Check for both camelCase and snake_case properties (dev vs prod API shapes).
   const likes = article.likes || 0;
+  const userLiked = article.userReaction === true;
   const views = article.viewCount || article.view_count || 0;
   const commentCount =
     article._count?.comments ||
@@ -201,7 +202,7 @@ export function ArticleCard({
         <AlertDialogHeader>
           <AlertDialogTitle>Authentication Required</AlertDialogTitle>
           <AlertDialogDescription>
-            You need to be logged in to view channel details.
+            Sign in to like articles and follow channels.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -439,10 +440,17 @@ export function ArticleCard({
                   <Eye className="h-3.5 w-3.5 mr-1" />
                   <span>{formatCompact(views)}</span>
                 </div>
-                <div className="flex items-center">
+                <button
+                  onClick={(e) => handleReaction(e, true)}
+                  aria-label="Like this article"
+                  className={cn(
+                    "flex items-center transition-colors hover:text-[hsl(var(--edition-accent))]",
+                    userLiked && "text-[hsl(var(--edition-accent))] font-medium"
+                  )}
+                >
                   <ThumbsUp className="h-3.5 w-3.5 mr-1" />
                   <span>{likes}</span>
-                </div>
+                </button>
                 {commentCount > 0 && (
                   <Link href={`${articleUrl}#comments`}>
                     <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
@@ -497,10 +505,17 @@ export function ArticleCard({
                     <Eye className="h-3.5 w-3.5 mr-1" />
                     <span>{formatCompact(views)}</span>
                   </div>
-                  <div className="flex items-center">
+                  <button
+                    onClick={(e) => handleReaction(e, true)}
+                    aria-label="Like this article"
+                    className={cn(
+                      "flex items-center transition-colors hover:text-[hsl(var(--edition-accent))]",
+                      userLiked && "text-[hsl(var(--edition-accent))] font-medium"
+                    )}
+                  >
                     <ThumbsUp className="h-3.5 w-3.5 mr-1" />
                     <span>{likes}</span>
-                  </div>
+                  </button>
                   {commentCount > 0 && (
                     <Link href={`${articleUrl}#comments`}>
                       <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
@@ -558,10 +573,17 @@ export function ArticleCard({
                   <Eye className="h-3.5 w-3.5 mr-1" />
                   <span>{formatCompact(views)}</span>
                 </div>
-                <div className="flex items-center">
+                <button
+                  onClick={(e) => handleReaction(e, true)}
+                  aria-label="Like this article"
+                  className={cn(
+                    "flex items-center transition-colors hover:text-[hsl(var(--edition-accent))]",
+                    userLiked && "text-[hsl(var(--edition-accent))] font-medium"
+                  )}
+                >
                   <ThumbsUp className="h-3.5 w-3.5 mr-1" />
                   <span>{likes}</span>
-                </div>
+                </button>
                 {commentCount > 0 && (
                   <Link href={`${articleUrl}#comments`}>
                     <div className="flex items-center hover:text-primary hover:underline cursor-pointer">
@@ -642,10 +664,17 @@ export function ArticleCard({
                   <span className="text-sm">{formatCompact(views)}</span>
                 </div>
 
-                <div className="flex items-center text-muted-foreground">
+                <button
+                  onClick={(e) => handleReaction(e, true)}
+                  aria-label="Like this article"
+                  className={cn(
+                    "flex items-center text-muted-foreground transition-colors hover:text-[hsl(var(--edition-accent))]",
+                    userLiked && "text-[hsl(var(--edition-accent))] font-medium"
+                  )}
+                >
                   <ThumbsUp className="h-4 w-4 mr-1" />
                   <span className="text-sm">{likes}</span>
-                </div>
+                </button>
 
                 {commentCount > 0 && (
                   <Link href={`${articleUrl}#comments`}>

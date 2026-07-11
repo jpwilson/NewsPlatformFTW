@@ -5,6 +5,7 @@ import {
   RichArticleContent,
   ReadingProgress,
 } from "@/components/rich-article-content";
+import { ArticleCard } from "@/components/article-card";
 import { CommentSection } from "@/components/comment-section";
 import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -258,6 +259,24 @@ export default function ArticlePage() {
     queryKey: ["/api/user/channels"],
     enabled: !!user && !!isEditing,
   });
+
+  // Related articles (same channel) for the recirculation block
+  const articleChannelId = article?.channel_id || article?.channelId;
+  const { data: channelArticles } = useQuery<any[]>({
+    queryKey: [`/api/channels/${articleChannelId}/articles`],
+    enabled: !!articleChannelId,
+  });
+  const relatedArticles = (channelArticles || [])
+    .filter((a) => a.id !== article?.id)
+    .slice(0, 4)
+    .map((a) => ({
+      ...a,
+      channel:
+        a.channel ??
+        (article?.channel
+          ? { id: articleChannelId, name: (article as any).channel?.name }
+          : undefined),
+    }));
 
   // Check if the current user is the article owner
   const isOwner =
@@ -1951,6 +1970,20 @@ export default function ArticlePage() {
               </div>
             )}
           </div>
+
+          {/* Related articles — recirculation from the same channel */}
+          {article && article.status !== "draft" && relatedArticles.length > 0 && (
+            <div className="my-10 border-t pt-8">
+              <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                More from {article.channel?.name || "this channel"}
+              </h2>
+              <div>
+                {relatedArticles.map((a: any) => (
+                  <ArticleCard key={a.id} article={a} variant="row" />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Comments section (only show for published articles) */}
           {article && article.status !== "draft" && (

@@ -100,6 +100,12 @@ export default function HomePage() {
   // Whether the filter/sort effect has produced its first result — used to
   // avoid a one-frame "No articles" flash before derived state is populated.
   const [filtersReady, setFiltersReady] = useState(false);
+  // Onboarding nudge (follow your first channels) — dismissible, persisted.
+  const [onboardDismissed, setOnboardDismissed] = useState<boolean>(
+    () =>
+      typeof window !== "undefined" &&
+      localStorage.getItem("np_onboard_dismissed") === "1"
+  );
   const [filteredChannels, setFilteredChannels] = useState<
     ChannelWithSnakeCase[]
   >([]);
@@ -559,6 +565,44 @@ export default function HomePage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Articles section with header - takes up 2/3 on large screens */}
           <div className="lg:col-span-2 space-y-4">
+            {/* Onboarding: help brand-new accounts follow their first channels */}
+            {user &&
+              subscriptions !== undefined &&
+              subscriptions.length === 0 &&
+              !onboardDismissed &&
+              discoverChannels.length > 0 && (
+                <div className="relative rounded-xl border border-[hsl(var(--edition-accent))]/30 bg-[hsl(var(--edition-accent))]/5 p-4">
+                  <button
+                    aria-label="Dismiss"
+                    className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                    onClick={() => {
+                      try {
+                        localStorage.setItem("np_onboard_dismissed", "1");
+                      } catch {}
+                      setOnboardDismissed(true);
+                    }}
+                  >
+                    ×
+                  </button>
+                  <h2 className="font-display text-lg font-bold">
+                    Make it yours — follow your first channels
+                  </h2>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    Subscribe to the channels you trust and your homepage fills
+                    with their stories.
+                  </p>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    {discoverChannels.slice(0, 3).map((channel) => (
+                      <ChannelCard
+                        key={channel.id}
+                        channel={channel}
+                        variant="rail"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
             {/* Header section */}
             <div>
               <h1 className="text-3xl font-display font-bold">
