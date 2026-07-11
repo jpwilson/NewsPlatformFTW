@@ -439,7 +439,11 @@ export default function HomePage() {
   ): ArticleWithSnakeCase | undefined => {
     if (!list.length) return undefined;
     // Manual editorial override wins when the pinned article is in the feed.
-    if (algo.heroMode === "manual" && algo.featuredArticleId != null) {
+    // "manual_sponsored" = same pick, rendered with a Sponsored disclosure.
+    if (
+      (algo.heroMode === "manual" || algo.heroMode === "manual_sponsored") &&
+      algo.featuredArticleId != null
+    ) {
       const pinned = list.find((a) => a.id === algo.featuredArticleId);
       if (pinned) return pinned;
     }
@@ -936,6 +940,18 @@ export default function HomePage() {
                       article={heroArticle}
                       variant="hero"
                       showReadingNow={algo.showReadingNow}
+                      eyebrow={
+                        algo.heroMode === "manual_sponsored" &&
+                        heroArticle.id === algo.featuredArticleId
+                          ? "Sponsored"
+                          : undefined
+                      }
+                      eyebrowColor={
+                        algo.heroMode === "manual_sponsored" &&
+                        heroArticle.id === algo.featuredArticleId
+                          ? "hsl(var(--cat-business))"
+                          : undefined
+                      }
                     />
                   </div>
                 )}
@@ -1098,6 +1114,9 @@ export default function HomePage() {
               </Link>
               <Link href="/terms" className="hover:text-foreground hover:underline">
                 Terms of Service
+              </Link>
+              <Link href="/advertise" className="hover:text-foreground hover:underline">
+                Advertise
               </Link>
               <Link href="/channels" className="hover:text-foreground hover:underline">
                 Channels

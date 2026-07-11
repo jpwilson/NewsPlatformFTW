@@ -278,7 +278,9 @@ function HomepageSettingsSection() {
         heroMode: settings.heroMode,
         heroRecencyHours: Number(settings.heroRecencyHours) || 24,
         featuredArticleId:
-          settings.heroMode === "manual" && settings.featuredArticleId
+          (settings.heroMode === "manual" ||
+            settings.heroMode === "manual_sponsored") &&
+          settings.featuredArticleId
             ? Number(settings.featuredArticleId)
             : null,
         mostReadWindow: settings.mostReadWindow,
@@ -324,10 +326,14 @@ function HomepageSettingsSection() {
           <option value="newest">Newest story</option>
           <option value="most_read_all_time">Most-read all-time</option>
           <option value="manual">Manual — pick an article</option>
+          <option value="manual_sponsored">
+            Manual — sponsored placement (labelled)
+          </option>
         </select>
       </div>
 
-      {settings.heroMode === "manual" && (
+      {(settings.heroMode === "manual" ||
+        settings.heroMode === "manual_sponsored") && (
         <div>
           <label className="block text-sm font-medium mb-1">
             Featured article ID

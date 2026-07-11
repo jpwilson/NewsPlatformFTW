@@ -79,6 +79,8 @@ export function ArticleCard({
   showReadingNow?: boolean;
   /** Overrides the hero eyebrow label (default: "Today's lead" / "Top story") */
   eyebrow?: string;
+  /** Overrides the hero eyebrow colour (default: the category's section colour) */
+  eyebrowColor?: string;
 }) {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
@@ -224,7 +226,7 @@ export function ArticleCard({
           <article className="flex flex-col">
             <span
               className="text-[11px] font-bold uppercase tracking-[0.16em]"
-              style={{ color: categoryColor(primaryCategory) }}
+              style={{ color: eyebrowColor ?? categoryColor(primaryCategory) }}
             >
               {eyebrow ?? (isFromToday ? "Today's lead" : "Top story")}
               {primaryCategory ? ` · ${primaryCategory}` : ""}
@@ -282,7 +284,7 @@ export function ArticleCard({
           {/* Headline block below the image — classic news lead */}
           <span
             className="mt-3 text-[11px] font-bold uppercase tracking-[0.16em]"
-            style={{ color: categoryColor(primaryCategory) }}
+            style={{ color: eyebrowColor ?? categoryColor(primaryCategory) }}
           >
             {eyebrow ?? (isFromToday ? "Today's lead" : "Top story")}
             {primaryCategory ? ` · ${primaryCategory}` : ""}

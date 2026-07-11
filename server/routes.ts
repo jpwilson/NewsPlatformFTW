@@ -1659,6 +1659,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       "newest",
       "most_read_all_time",
       "manual",
+      "manual_sponsored",
     ];
     const MOST_READ_WINDOWS = ["24h", "7d", "30d", "all"];
     if (body.heroMode !== undefined && !HERO_MODES.includes(body.heroMode))
