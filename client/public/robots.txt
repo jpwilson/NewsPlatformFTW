@@ -6,4 +6,4 @@ Disallow: /profile
 Disallow: /auth
 Disallow: /auth-callback
 
-Sitemap: https://newsplatform.org/sitemap.xml
+Sitemap: https://www.newsplatform.org/sitemap.xml

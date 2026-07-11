@@ -1760,7 +1760,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   });
 
   // ---- SEO: sitemap + RSS feeds (mirrors api/index.ts) ----
-  const SITE_BASE = "https://newsplatform.org";
+  const SITE_BASE = "https://www.newsplatform.org"; // canonical host (apex 308s here)
   const xmlEscape = (s: any): string =>
     String(s || "")
       .replace(/&/g, "&amp;")

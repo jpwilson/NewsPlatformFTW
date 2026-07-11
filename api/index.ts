@@ -6373,7 +6373,7 @@ app.put("/api/homepage/settings", async (req, res) => {
 
 // ---- SEO: sitemap + RSS feeds ----
 // Served via vercel.json rewrites (/sitemap.xml, /rss.xml, /channels/:id/rss.xml).
-const SITE_BASE = "https://newsplatform.org";
+const SITE_BASE = "https://www.newsplatform.org"; // canonical host (apex 308s here)
 
 function xmlEscape(s: any): string {
   return String(s || "")
