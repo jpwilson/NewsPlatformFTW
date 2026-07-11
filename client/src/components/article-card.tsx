@@ -73,6 +73,7 @@ export function ArticleCard({
   variant = "horizontal",
   showReadingNow = true,
   eyebrow,
+  eyebrowColor,
 }: {
   article: ArticleWithSnakeCase;
   variant?: ArticleCardVariant;
