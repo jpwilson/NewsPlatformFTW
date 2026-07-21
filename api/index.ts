@@ -5999,6 +5999,51 @@ async function createSingleArticle(
   };
 }
 
+// Admin: set engagement counters on an article. view_count is the article's
+// absolute view total; admin_like_count / admin_dislike_count are added on
+// top of real user reactions everywhere totals are computed.
+app.post("/api/v1/admin/articles/:id/engagement", async (req, res) => {
+  try {
+    const uid = await getSupabaseUid(req);
+    if (!uid || !(await isAdminUser(uid))) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const articleId = parseInt(req.params.id);
+    if (!articleId) {
+      return res.status(400).json({ error: "Invalid article id" });
+    }
+
+    const { viewCount, adminLikeCount, adminDislikeCount } = req.body || {};
+    const updates: any = {};
+    if (viewCount !== undefined)
+      updates.view_count = Math.max(0, parseInt(viewCount) || 0);
+    if (adminLikeCount !== undefined)
+      updates.admin_like_count = Math.max(0, parseInt(adminLikeCount) || 0);
+    if (adminDislikeCount !== undefined)
+      updates.admin_dislike_count = Math.max(0, parseInt(adminDislikeCount) || 0);
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "No engagement fields provided" });
+    }
+
+    const { data: article, error } = await supabase
+      .from("articles")
+      .update(updates)
+      .eq("id", articleId)
+      .select("id, title, view_count, admin_like_count, admin_dislike_count")
+      .single();
+
+    if (error || !article) {
+      return res.status(404).json({ error: "Article not found or update failed" });
+    }
+
+    return res.json(article);
+  } catch (error) {
+    console.error("Error in POST /api/v1/admin/articles/:id/engagement:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 // --- Content API Endpoints ---
 
 // Create a single article
