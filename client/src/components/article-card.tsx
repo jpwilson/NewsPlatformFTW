@@ -278,7 +278,7 @@ export function ArticleCard({
               <img
                 src={firstImage.imageUrl}
                 alt={firstImage.caption || article.title}
-                className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                className="absolute inset-0 h-full w-full object-cover object-[50%_25%] transition-transform duration-300 group-hover:scale-[1.02]"
               />
             </div>
           </Link>
@@ -338,7 +338,7 @@ export function ArticleCard({
                   <img
                     src={firstImage.imageUrl}
                     alt={firstImage.caption || article.title}
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                    className="absolute inset-0 h-full w-full object-cover object-[50%_25%] transition-transform duration-200 group-hover:scale-105"
                   />
                 ) : (
                   mediaPlaceholder
@@ -398,7 +398,7 @@ export function ArticleCard({
                 <img
                   src={firstImage.imageUrl}
                   alt={firstImage.caption || "Article image"}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover object-[50%_25%]"
                 />
               </div>
             )}
@@ -531,7 +531,7 @@ export function ArticleCard({
                 <img
                   src={firstImage.imageUrl}
                   alt={firstImage.caption || "Article image"}
-                  className="absolute inset-0 w-full h-full object-cover rounded-r-lg"
+                  className="absolute inset-0 w-full h-full object-cover object-[50%_25%] rounded-r-lg"
                 />
               </div>
             </div>

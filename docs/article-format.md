@@ -136,6 +136,16 @@ Alongside the markdown `content`: `title` (≤ 90 chars, specific > clever),
 first image in the article is used as the card/hero/social image — make it
 the strongest one.
 
+**Hero image rules (the card/hero/social image is CROPPED to wide ratios —
+up to 21:9 on desktop — with the crop window biased toward the upper third):**
+- MUST be landscape (wider than tall), ideally 3:2 to 2:1. Never use a
+  portrait or a tight close-up of a face as the first image.
+- ≥ 1200 px wide, ≤ 10 MB (larger heroes fail ingest silently).
+- The subject must survive a center-strip crop: main subject in the middle
+  60% of the frame horizontally and the upper half vertically.
+- Wide scene shots (stadiums, skylines, landscapes, groups) crop well;
+  head-and-shoulders portraits do not — put portraits in the body instead.
+
 ---
 
 ## Editorial checklist (per article)

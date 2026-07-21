@@ -1730,7 +1730,7 @@ export default function ArticlePage() {
                   <img
                     src={article.images[0].imageUrl}
                     alt="Article main image"
-                    className="w-full h-[400px] object-cover rounded-lg cursor-pointer"
+                    className="w-full max-h-[480px] h-auto object-cover object-[50%_25%] rounded-lg cursor-pointer aspect-[16/9]"
                     onClick={() => {
                       setSelectedImageIndex(0);
                       setShowImageModal(true);
@@ -1853,7 +1853,7 @@ export default function ArticlePage() {
                                   <img
                                     src={image.imageUrl}
                                     alt={`Image ${index + 1}`}
-                                    className="w-full h-full object-cover rounded-md"
+                                    className="w-full h-full object-cover object-[50%_25%] rounded-md"
                                   />
                                   <Button
                                     type="button"
