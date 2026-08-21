@@ -6,6 +6,10 @@
             "use": "@vercel/node"
         },
         {
+            "src": "api/debug.ts",
+            "use": "@vercel/node"
+        },
+        {
             "src": "api/prerender-article.js",
             "use": "@vercel/node"
         },
@@ -39,8 +43,12 @@
     ],
     "rewrites": [
         {
+            "source": "/api/debug",
+            "destination": "/api/debug.ts"
+        },
+        {
             "source": "/api/debug/:path*",
-            "destination": "/api/index.ts"
+            "destination": "/api/debug.ts"
         },
         {
             "source": "/api/user/:path*",
