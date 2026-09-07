@@ -12,6 +12,7 @@ export function ApiKeySection() {
   const [newKeyName, setNewKeyName] = React.useState("");
   const [createdKey, setCreatedKey] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     fetchKeys();
@@ -19,39 +20,45 @@ export function ApiKeySection() {
 
   async function fetchKeys() {
     try {
-      const res = await fetch("/api/v1/api-keys", { credentials: "include" });
+      const res = await apiRequest("GET", "/api/v1/api-keys");
       if (res.ok) setKeys(await res.json());
-    } catch {}
+    } catch (e: any) {
+      setError(e.message || "Failed to load API keys");
+    }
   }
 
   async function createKey() {
     if (!newKeyName.trim()) return;
     setLoading(true);
+    setError(null);
+    setCreatedKey(null);
     try {
-      const res = await fetch("/api/v1/api-keys", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName.trim() }),
+      const res = await apiRequest("POST", "/api/v1/api-keys", {
+        name: newKeyName.trim(),
       });
       if (res.ok) {
         const data = await res.json();
         setCreatedKey(data.key);
         setNewKeyName("");
         fetchKeys();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || err.message || `Failed to create key (${res.status})`);
       }
-    } catch {}
+    } catch (e: any) {
+      setError(e.message || "Failed to create API key");
+    }
     setLoading(false);
   }
 
   async function revokeKey(id: string) {
+    setError(null);
     try {
-      await fetch(`/api/v1/api-keys/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      await apiRequest("DELETE", `/api/v1/api-keys/${id}`);
       fetchKeys();
-    } catch {}
+    } catch (e: any) {
+      setError(e.message || "Failed to revoke key");
+    }
   }
 
   return (
@@ -71,6 +78,9 @@ export function ApiKeySection() {
             {loading ? "Creating..." : "Generate Key"}
           </Button>
         </div>
+        {error && (
+          <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
+        )}
         {createdKey && (
           <div className="mt-3 p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-md">
             <p className="text-sm font-medium text-green-800 dark:text-green-200 mb-1">
