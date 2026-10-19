@@ -28,6 +28,8 @@ import AdvertisePage from "@/pages/advertise-page";
 import { Analytics } from "@vercel/analytics/react";
 import { HelmetProvider } from "react-helmet-async";
 import { useEffect } from "react";
+import { PostHogProvider, usePostHog } from "@/lib/posthog";
+import { useAuth } from "@/hooks/use-auth";
 
 // Check if we're running in production (Vercel) or development
 const isProduction = process.env.NODE_ENV === "production";
@@ -64,45 +66,73 @@ function ArticleRedirect() {
   return <div>Redirecting...</div>;
 }
 
+// PageViewTracker component to track pageviews on route changes
+function PageViewTracker() {
+  const [location] = useLocation();
+  const { trackEvent, identify, posthog } = usePostHog();
+  const { user } = useAuth();
+
+  // Track pageviews on route changes
+  useEffect(() => {
+    if (posthog) {
+      posthog.capture("$pageview");
+    }
+  }, [location, posthog]);
+
+  // Identify user when logged in
+  useEffect(() => {
+    if (user && posthog) {
+      identify(user.id, {
+        username: user.username,
+      });
+    }
+  }, [user, identify, posthog]);
+
+  return null;
+}
+
 function Router() {
   return (
-    <Switch>
-      <Route path="/" component={HomePage} />
-      <ProtectedRoute
-        path="/channels/:id/articles/new"
-        component={CreateArticle}
-      />
-      <ProtectedRoute path="/channels/new" component={CreateChannel} />
-      <ProtectedRoute
-        path="/channels/:id/subscribers"
-        component={ManageSubscribersPage}
-      />
-      <Route path="/channels/:id" component={ChannelPage} />
-      <Route path="/channels" component={ChannelsPage} />
-      <ProtectedRoute path="/articles/new" component={CreateArticle} />
-      <ProtectedRoute path="/articles/:id/edit" component={EditArticle} />
-      <Route path="/articles/:id/:slug?" component={ArticlePage} />
-      <Route path="/articles/:slug" component={ArticleRedirect} />
-      <Route path="/auth" component={AuthPage} />
-      <Route path="/auth-callback" component={AuthCallback} />
-      <Route path="/profile" component={ProfilePage} />
-      <Route path="/users/:username" component={ProfilePage} />
-      <Route path="/api" component={ApiDocsPage} />
-      <Route path="/privacy" component={PrivacyPage} />
-      <Route path="/terms" component={TermsPage} />
-      <Route path="/advertise" component={AdvertisePage} />
-      <Route path="/api-keys">
-        <ApiAccessRouteGuard>
-          <ApiKeysPage />
-        </ApiAccessRouteGuard>
-      </Route>
-      <Route path="/admin">
-        <AdminRouteGuard>
-          <AdminPage />
-        </AdminRouteGuard>
-      </Route>
-      <Route component={NotFound} />
-    </Switch>
+    <>
+      <PageViewTracker />
+      <Switch>
+        <Route path="/" component={HomePage} />
+        <ProtectedRoute
+          path="/channels/:id/articles/new"
+          component={CreateArticle}
+        />
+        <ProtectedRoute path="/channels/new" component={CreateChannel} />
+        <ProtectedRoute
+          path="/channels/:id/subscribers"
+          component={ManageSubscribersPage}
+        />
+        <Route path="/channels/:id" component={ChannelPage} />
+        <Route path="/channels" component={ChannelsPage} />
+        <ProtectedRoute path="/articles/new" component={CreateArticle} />
+        <ProtectedRoute path="/articles/:id/edit" component={EditArticle} />
+        <Route path="/articles/:id/:slug?" component={ArticlePage} />
+        <Route path="/articles/:slug" component={ArticleRedirect} />
+        <Route path="/auth" component={AuthPage} />
+        <Route path="/auth-callback" component={AuthCallback} />
+        <Route path="/profile" component={ProfilePage} />
+        <Route path="/users/:username" component={ProfilePage} />
+        <Route path="/api" component={ApiDocsPage} />
+        <Route path="/privacy" component={PrivacyPage} />
+        <Route path="/terms" component={TermsPage} />
+        <Route path="/advertise" component={AdvertisePage} />
+        <Route path="/api-keys">
+          <ApiAccessRouteGuard>
+            <ApiKeysPage />
+          </ApiAccessRouteGuard>
+        </Route>
+        <Route path="/admin">
+          <AdminRouteGuard>
+            <AdminPage />
+          </AdminRouteGuard>
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
+    </>
   );
 }
 
@@ -111,13 +141,15 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <HelmetProvider>
         <AuthProvider>
-          <SelectedChannelProvider>
-            <ThemeProvider defaultTheme="light">
-              <Router />
-              <Analytics />
-              <Toaster />
-            </ThemeProvider>
-          </SelectedChannelProvider>
+          <PostHogProvider>
+            <SelectedChannelProvider>
+              <ThemeProvider defaultTheme="light">
+                <Router />
+                <Analytics />
+                <Toaster />
+              </ThemeProvider>
+            </SelectedChannelProvider>
+          </PostHogProvider>
         </AuthProvider>
       </HelmetProvider>
     </QueryClientProvider>

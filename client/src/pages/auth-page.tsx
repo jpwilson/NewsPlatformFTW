@@ -20,7 +20,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
-import "../lib/oauth-debug"; // Add debug utilities
+import "../lib/oauth-debug";
+import { usePostHog } from "@/lib/posthog";
 
 // Schema for login
 const loginSchema = z.object({
@@ -41,6 +42,7 @@ export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { trackEvent } = usePostHog();
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -83,6 +85,12 @@ export default function AuthPage() {
         result = await loginMutation.mutateAsync({ username, password });
       } else {
         result = await registerMutation.mutateAsync({ username, password });
+        
+        // Track sign up event
+        trackEvent("user_signed_up", {
+          username: username,
+          method: "password",
+        });
       }
 
       if (result && "success" in result && "error" in result) {

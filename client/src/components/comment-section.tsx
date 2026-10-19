@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { z } from "zod";
+import { usePostHog } from "@/lib/posthog";
 
 // Type for API response format
 interface CommentResponse {
@@ -44,6 +45,7 @@ export function CommentSection({
   onCommentsLoaded,
 }: CommentSectionProps) {
   const { user } = useAuth();
+  const { trackEvent } = usePostHog();
   const [replyToId, setReplyToId] = useState<number | null>(null);
 
   // Query for comments with the correct response type
@@ -102,6 +104,12 @@ export function CommentSection({
       }
     },
     onSuccess: () => {
+      // Track comment event
+      trackEvent("comment_posted", {
+        article_id: articleId,
+        is_reply: replyToId !== null,
+      });
+
       queryClient.invalidateQueries({
         queryKey: [`/api/articles/${articleId}/comments`],
       });
