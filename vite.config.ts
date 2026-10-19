@@ -186,6 +186,13 @@ export default defineConfig(async ({ mode }) => {
       "import.meta.env.VITE_MAPBOX_TOKEN": JSON.stringify(
         process.env.VITE_MAPBOX_TOKEN
       ),
+      // PostHog analytics env vars
+      "import.meta.env.VITE_POSTHOG_KEY": JSON.stringify(
+        process.env.VITE_POSTHOG_KEY
+      ),
+      "import.meta.env.VITE_POSTHOG_HOST": JSON.stringify(
+        process.env.VITE_POSTHOG_HOST
+      ),
     },
   };
 });
