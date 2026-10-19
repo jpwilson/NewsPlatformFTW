@@ -6599,23 +6599,26 @@ app.get("/api/ai/latest-stories", async (req, res) => {
         count: articles?.length || 0,
         category: category || "all",
       },
-      data: (articles || []).map((article) => ({
-        id: article.id,
-        title: article.title,
-        slug: article.slug,
-        url: `https://www.newsplatform.org/articles/${article.id}${article.slug ? `/${article.slug}` : ""}`,
-        excerpt: article.content ? article.content.substring(0, 300).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() + '...' : '',
-        category: article.category,
-        location: article.location,
-        published_at: article.published_at || article.created_at,
-        channel: {
-          id: article.channel?.id,
-          name: article.channel?.name,
-          slug: article.channel?.slug,
-          description: article.channel?.description,
-          url: article.channel?.id ? `https://www.newsplatform.org/channels/${article.channel.id}` : null,
-        },
-      })),
+      data: (articles || []).map((article) => {
+        const channel = Array.isArray(article.channel) ? article.channel[0] : article.channel;
+        return {
+          id: article.id,
+          title: article.title,
+          slug: article.slug,
+          url: `https://www.newsplatform.org/articles/${article.id}${article.slug ? `/${article.slug}` : ""}`,
+          excerpt: article.content ? article.content.substring(0, 300).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() + '...' : '',
+          category: article.category,
+          location: article.location,
+          published_at: article.published_at || article.created_at,
+          channel: {
+            id: channel?.id,
+            name: channel?.name,
+            slug: channel?.slug,
+            description: channel?.description,
+            url: channel?.id ? `https://www.newsplatform.org/channels/${channel.id}` : null,
+          },
+        };
+      }),
     };
 
     res.setHeader("Content-Type", "application/json");
