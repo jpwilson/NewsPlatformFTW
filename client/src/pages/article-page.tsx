@@ -69,6 +69,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { RichTextEditor } from "@/components/rich-text-editor";
+import { usePostHog } from "@/lib/posthog";
 
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 type ArticleWithSnakeCase = Article & {
@@ -236,6 +237,7 @@ export default function ArticlePage() {
   const [showImages, setShowImages] = useState(true);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [showImageModal, setShowImageModal] = useState(false);
+  const { trackEvent } = usePostHog();
 
   const {
     data: article,
@@ -493,6 +495,17 @@ export default function ArticlePage() {
   useEffect(() => {
     if (articleId && !isLoading && article) {
       console.log("Recording view for article:", article.slug);
+      
+      // Track article view in PostHog
+      trackEvent("article_viewed", {
+        article_id: article.id,
+        article_slug: article.slug,
+        article_title: article.title,
+        channel_id: article.channel_id || article.channelId,
+        channel_name: article.channel?.name,
+        category: article.category,
+      });
+
       apiRequest("POST", `/api/articles/${article.slug}/view`, {})
         .then((response) => response.json())
         .then((data) => {
@@ -538,7 +551,7 @@ export default function ArticlePage() {
         })
         .catch((err) => console.error("Failed to increment view count:", err));
     }
-  }, [articleId, isLoading, article]);
+  }, [articleId, isLoading, article, trackEvent]);
 
   const [likeCount, setLikeCount] = useState(0);
   const [dislikeCount, setDislikeCount] = useState(0);

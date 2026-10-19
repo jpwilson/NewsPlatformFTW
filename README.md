@@ -203,3 +203,52 @@ To verify the subscription system is working correctly:
    - Click "Manage Subscribers" on your channel page
    - View, sort, and search your subscriber list
    - Verify subscriber counts and subscription dates
+
+## Analytics
+
+NewsPlatform uses PostHog for privacy-friendly analytics to understand visitor behavior and engagement. Analytics is optional and can be disabled by not setting the environment variables.
+
+### Setup
+
+To enable PostHog analytics:
+
+1. **Sign up for PostHog Cloud (US)**: Create a free account at [https://posthog.com](https://posthog.com)
+
+2. **Get your project API key**: Find it in your PostHog project settings
+
+3. **Configure environment variables**:
+   - For local development: Add to your `.env` file
+   - For Vercel deployment: Add to your project's environment variables in the Vercel dashboard
+
+   ```bash
+   VITE_POSTHOG_KEY=your_posthog_project_api_key
+   VITE_POSTHOG_HOST=https://us.i.posthog.com  # Optional, defaults to US region
+   ```
+
+### Tracked Events
+
+The following events are automatically tracked:
+
+- **Pageviews**: All page navigation including SPA route changes
+- **Article Views**: When users read articles
+- **User Sign-ups**: When new users register
+- **Channel Subscriptions**: When users follow/subscribe to channels
+- **Comments**: When users post comments on articles
+
+### Privacy
+
+- Analytics gracefully degrades if environment variables are not set - the application continues to work normally
+- Only user IDs are tracked, no personally identifiable information (PII) beyond that
+- Users can opt-out through PostHog's standard privacy controls
+
+### Vercel Environment Variables Setup
+
+When deploying to Vercel:
+
+1. Go to your project dashboard on Vercel
+2. Navigate to Settings → Environment Variables
+3. Add the following variables:
+   - `VITE_POSTHOG_KEY`: Your PostHog project API key
+   - `VITE_POSTHOG_HOST`: `https://us.i.posthog.com` (or your PostHog instance URL)
+4. Select the environments where you want analytics enabled (Production, Preview, Development)
+5. Redeploy your application for changes to take effect

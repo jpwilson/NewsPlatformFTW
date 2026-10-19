@@ -64,6 +64,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ImageCropModal } from "@/components/image-crop-modal";
+import { usePostHog } from "@/lib/posthog";
 
 type SortField =
   | "title"
@@ -92,6 +93,7 @@ export default function ChannelPage() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { trackEvent } = usePostHog();
   const [sortField, setSortField] = useState<SortField>("createdAt");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const [activeTab, setActiveTab] = useState("published");
@@ -545,6 +547,13 @@ export default function ChannelPage() {
       await apiRequest("POST", `/api/channels/${id}/subscribe`);
     },
     onSuccess: () => {
+      // Track subscribe event
+      trackEvent("channel_subscribed", {
+        channel_id: id,
+        channel_name: channel?.name,
+        channel_slug: channel?.slug,
+      });
+
       queryClient.invalidateQueries({ queryKey: ["/api/user/subscriptions"] });
       queryClient.invalidateQueries({ queryKey: [`/api/channels/${id}`] });
       toast({

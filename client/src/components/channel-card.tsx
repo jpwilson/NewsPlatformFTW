@@ -20,6 +20,7 @@ import { formatDistanceToNow } from "date-fns";
 import { createSlugUrl } from "@/lib/slug-utils";
 import { categoryColor } from "@/lib/category-colors";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { usePostHog } from "@/lib/posthog";
 
 // Extended Channel type that includes subscriberCount and article count
 type ExtendedChannel = Channel & {
@@ -49,6 +50,7 @@ export function ChannelCard({
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { trackEvent } = usePostHog();
   const [, navigate] = useLocation();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
 
@@ -69,6 +71,13 @@ export function ChannelCard({
       await apiRequest("POST", `/api/channels/${channel.id}/subscribe`);
     },
     onSuccess: () => {
+      // Track subscribe event
+      trackEvent("channel_subscribed", {
+        channel_id: channel.id,
+        channel_name: channel.name,
+        channel_slug: channel.slug,
+      });
+
       queryClient.invalidateQueries({ queryKey: ["/api/channels"] });
       queryClient.invalidateQueries({ queryKey: ["/api/user/subscriptions"] });
       queryClient.invalidateQueries({
