@@ -15,7 +15,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 function isCrawlerUA(userAgent) {
   if (!userAgent) return false;
-  return /(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot)/i.test(
+  return /(GPTBot|PerplexityBot|ClaudeBot|Google-Extended|facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot)/i.test(
     userAgent
   );
 }

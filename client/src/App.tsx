@@ -25,6 +25,9 @@ import ApiDocsPage from "@/pages/api-docs-page";
 import PrivacyPage from "@/pages/privacy-page";
 import TermsPage from "@/pages/terms-page";
 import AdvertisePage from "@/pages/advertise-page";
+import AboutPage from "@/pages/about-page";
+import HowItWorksPage from "@/pages/how-it-works-page";
+import ComparePage from "@/pages/compare-page";
 import { Analytics } from "@vercel/analytics/react";
 import { HelmetProvider } from "react-helmet-async";
 import { useEffect } from "react";
@@ -117,6 +120,9 @@ function Router() {
         <Route path="/profile" component={ProfilePage} />
         <Route path="/users/:username" component={ProfilePage} />
         <Route path="/api" component={ApiDocsPage} />
+        <Route path="/about" component={AboutPage} />
+        <Route path="/how-it-works" component={HowItWorksPage} />
+        <Route path="/compare" component={ComparePage} />
         <Route path="/privacy" component={PrivacyPage} />
         <Route path="/terms" component={TermsPage} />
         <Route path="/advertise" component={AdvertisePage} />

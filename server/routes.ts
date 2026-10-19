@@ -1797,6 +1797,10 @@ export async function registerRoutes(app: Express): Promise<void> {
       const urls: string[] = [
         `<url><loc>${SITE_BASE}/</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>`,
         `<url><loc>${SITE_BASE}/channels</loc><changefreq>daily</changefreq><priority>0.7</priority></url>`,
+        `<url><loc>${SITE_BASE}/about</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>`,
+        `<url><loc>${SITE_BASE}/how-it-works</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>`,
+        `<url><loc>${SITE_BASE}/compare</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>`,
+        `<url><loc>${SITE_BASE}/api</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>`,
         `<url><loc>${SITE_BASE}/privacy</loc><priority>0.2</priority></url>`,
         `<url><loc>${SITE_BASE}/terms</loc><priority>0.2</priority></url>`,
       ];
@@ -1873,6 +1877,87 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (e) {
       console.error("Error generating channel RSS:", e);
       res.status(500).end();
+    }
+  });
+
+  // AI Integration Endpoint - public access to latest published stories
+  // No authentication required for AI tools to access
+  app.get("/api/ai/latest-stories", async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(String(req.query.limit || 20), 10), 100);
+      const offset = Math.max(parseInt(String(req.query.offset || 0), 10), 0);
+      const category = req.query.category ? String(req.query.category) : null;
+
+      let query = supabase
+        .from("articles")
+        .select(`
+          id,
+          title,
+          slug,
+          content,
+          category,
+          location,
+          published_at,
+          created_at,
+          channel:channels (
+            id,
+            name,
+            slug,
+            description
+          )
+        `)
+        .eq("published", true)
+        .order("published_at", { ascending: false });
+
+      if (category) {
+        query = query.eq("category", category);
+      }
+
+      query = query.range(offset, offset + limit - 1);
+
+      const { data: articles, error } = await query;
+
+      if (error) throw error;
+
+      const response = {
+        success: true,
+        meta: {
+          limit,
+          offset,
+          count: articles?.length || 0,
+          category: category || "all",
+        },
+        data: (articles || []).map((article) => {
+          const channel = Array.isArray(article.channel) ? article.channel[0] : article.channel;
+          return {
+            id: article.id,
+            title: article.title,
+            slug: article.slug,
+            url: `https://www.newsplatform.org/articles/${article.id}${article.slug ? `/${article.slug}` : ""}`,
+            excerpt: article.content ? article.content.substring(0, 300).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() + '...' : '',
+            category: article.category,
+            location: article.location,
+            published_at: article.published_at || article.created_at,
+            channel: {
+              id: channel?.id,
+              name: channel?.name,
+              slug: channel?.slug,
+              description: channel?.description,
+              url: channel?.id ? `https://www.newsplatform.org/channels/${channel.id}` : null,
+            },
+          };
+        }),
+      };
+
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+      res.status(200).json(response);
+    } catch (e) {
+      console.error("Error in AI integration endpoint:", e);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to fetch stories" 
+      });
     }
   });
 }
