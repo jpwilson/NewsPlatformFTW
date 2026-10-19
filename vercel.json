@@ -14,6 +14,10 @@
             "use": "@vercel/node"
         },
         {
+            "src": "api/prerender-homepage.js",
+            "use": "@vercel/node"
+        },
+        {
             "src": "package.json",
             "use": "@vercel/static-build",
             "config": {
@@ -42,6 +46,17 @@
         }
     ],
     "rewrites": [
+        {
+            "source": "/",
+            "has": [
+                {
+                    "type": "header",
+                    "key": "user-agent",
+                    "value": ".*(GPTBot|PerplexityBot|ClaudeBot|Google-Extended|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
+                }
+            ],
+            "destination": "/api/prerender-homepage.js"
+        },
         {
             "source": "/api/debug",
             "destination": "/api/debug.ts"
@@ -80,7 +95,7 @@
                 {
                     "type": "header",
                     "key": "user-agent",
-                    "value": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
+                    "value": ".*(GPTBot|PerplexityBot|ClaudeBot|Google-Extended|facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
                 }
             ],
             "destination": "/api/prerender-article.js?path=/articles/:id/:slug"
@@ -91,7 +106,7 @@
                 {
                     "type": "header",
                     "key": "user-agent",
-                    "value": ".*(facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
+                    "value": ".*(GPTBot|PerplexityBot|ClaudeBot|Google-Extended|facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
                 }
             ],
             "destination": "/api/prerender-article.js?path=/articles/:slug"

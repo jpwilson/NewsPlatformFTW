@@ -1,9 +1,45 @@
+# robots.txt for NewsPlatform
+
 User-agent: *
 Allow: /
+Allow: /articles/
+Allow: /channels/
+Allow: /about
+Allow: /how-it-works
+Allow: /compare
+Allow: /api
+
+# AI Crawlers - explicitly allowed
+User-agent: GPTBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+# Block private areas
 Disallow: /admin
 Disallow: /api-keys
 Disallow: /profile
 Disallow: /auth
 Disallow: /auth-callback
 
+# Block API endpoints from crawling (humans use browser)
+User-agent: *
+Disallow: /api/admin-*
+Disallow: /api/user/
+Disallow: /api/channels/*/subscribe
+
+# Sitemap
 Sitemap: https://www.newsplatform.org/sitemap.xml

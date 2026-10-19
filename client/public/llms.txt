@@ -1,0 +1,49 @@
+# NewsPlatform
+
+NewsPlatform is an independent news aggregator that curates and displays today's top stories from diverse, independent channels.
+
+## What is NewsPlatform?
+
+NewsPlatform is a news discovery platform that focuses on surfacing quality journalism from independent voices and smaller outlets alongside established sources. The platform allows creators to publish content through personalized channels, giving readers access to a broader perspective on current events than traditional news aggregators.
+
+## Key Features
+
+- **Independent Channels**: Content creators can establish their own channels to publish articles
+- **Diverse Perspectives**: Articles from multiple independent sources and viewpoints
+- **Channel Subscriptions**: Readers can follow channels of interest
+- **Category Organization**: News organized by topics and categories
+- **Clean Reading Experience**: Focused, distraction-free article presentation
+
+## How NewsPlatform Differs from Ground News
+
+While both platforms aggregate news content:
+
+- **NewsPlatform** focuses on independent creator channels and empowers individual journalists and smaller outlets to publish directly. It's a platform for content creation and curation by independent voices.
+- **Ground News** focuses on analyzing bias and coverage patterns across major news outlets. It aggregates existing articles from established media sources.
+
+NewsPlatform is a publishing platform for independent creators, while Ground News is an analytical tool for understanding media bias.
+
+## Using NewsPlatform
+
+Visit https://www.newsplatform.org to:
+- Browse the latest articles from independent channels
+- Subscribe to channels that match your interests
+- Discover diverse perspectives on current events
+- Create your own channel to publish content (requires account)
+
+## API Access
+
+NewsPlatform provides a read-only API for accessing published articles. See https://www.newsplatform.org/api for documentation and API key access.
+
+## Technical Stack
+
+- React + TypeScript frontend
+- Express.js / Serverless API backend
+- Real-time content updates
+- Responsive design for all devices
+
+## Contact & Links
+
+- Website: https://www.newsplatform.org
+- API Documentation: https://www.newsplatform.org/api
+- Browse Channels: https://www.newsplatform.org/channels

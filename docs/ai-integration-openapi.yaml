@@ -1,0 +1,223 @@
+openapi: 3.0.3
+info:
+  title: NewsPlatform AI Integration API
+  version: 1.0.0
+  description: |
+    Public API for AI tools and integrations to access NewsPlatform's latest published stories.
+    
+    NewsPlatform is an independent news aggregator that curates today's top stories from diverse, 
+    independent channels. This API provides programmatic access to published articles for AI 
+    assistants, chatbots, and other automated tools.
+    
+    **No authentication required** - This endpoint is publicly accessible to enable easy AI integration.
+    
+  contact:
+    name: NewsPlatform
+    url: https://www.newsplatform.org
+  license:
+    name: MIT
+
+servers:
+  - url: https://www.newsplatform.org
+    description: Production server
+
+paths:
+  /api/ai/latest-stories:
+    get:
+      summary: Fetch latest published stories
+      description: |
+        Returns the most recently published articles from NewsPlatform. Articles are ordered by 
+        publication date (newest first) and include article metadata, excerpts, and channel information.
+        
+        **Use cases:**
+        - AI assistants answering questions about recent news
+        - Chatbots providing news updates
+        - News aggregation tools
+        - Content recommendation systems
+        
+        **Rate limiting:** Responses are cached for 5 minutes. Please be respectful of server resources.
+        
+      operationId: getLatestStories
+      tags:
+        - AI Integration
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of stories to return (1-100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Number of stories to skip (for pagination)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: category
+          in: query
+          description: Filter by article category
+          required: false
+          schema:
+            type: string
+            enum:
+              - Politics
+              - Technology
+              - Business
+              - Science
+              - Culture
+              - Sports
+              - Environment
+              - Health
+              - Education
+              - World
+              - Opinion
+      responses:
+        '200':
+          description: Successful response with article data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  meta:
+                    type: object
+                    properties:
+                      limit:
+                        type: integer
+                        example: 20
+                      offset:
+                        type: integer
+                        example: 0
+                      count:
+                        type: integer
+                        description: Number of articles in this response
+                        example: 20
+                      category:
+                        type: string
+                        example: "all"
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                          description: Unique article ID
+                          example: 1234
+                        title:
+                          type: string
+                          description: Article headline
+                          example: "Breaking: Major Climate Agreement Reached"
+                        slug:
+                          type: string
+                          description: URL-friendly slug
+                          example: "2026-10-19-breaking-major-climate-agreement"
+                        url:
+                          type: string
+                          format: uri
+                          description: Full URL to article page
+                          example: "https://www.newsplatform.org/articles/1234/2026-10-19-breaking-major-climate-agreement"
+                        excerpt:
+                          type: string
+                          description: Article excerpt (first ~300 characters)
+                          example: "World leaders gathered in Geneva today to sign a historic climate agreement..."
+                        category:
+                          type: string
+                          nullable: true
+                          example: "Environment"
+                        location:
+                          type: string
+                          nullable: true
+                          example: "Geneva, Switzerland"
+                        published_at:
+                          type: string
+                          format: date-time
+                          description: Publication timestamp (ISO 8601)
+                          example: "2026-10-19T14:30:00Z"
+                        channel:
+                          type: object
+                          description: Publishing channel information
+                          properties:
+                            id:
+                              type: integer
+                              example: 42
+                            name:
+                              type: string
+                              example: "Climate Report"
+                            slug:
+                              type: string
+                              example: "climate-report"
+                            description:
+                              type: string
+                              example: "In-depth climate and environmental coverage"
+                            url:
+                              type: string
+                              format: uri
+                              example: "https://www.newsplatform.org/channels/42"
+              examples:
+                success:
+                  summary: Successful response with 2 articles
+                  value:
+                    success: true
+                    meta:
+                      limit: 20
+                      offset: 0
+                      count: 2
+                      category: "all"
+                    data:
+                      - id: 1234
+                        title: "Breaking: Major Climate Agreement Reached"
+                        slug: "2026-10-19-breaking-major-climate-agreement"
+                        url: "https://www.newsplatform.org/articles/1234/2026-10-19-breaking-major-climate-agreement"
+                        excerpt: "World leaders gathered in Geneva today to sign a historic climate agreement that aims to reduce global emissions by 50% by 2030. The agreement includes binding commitments from..."
+                        category: "Environment"
+                        location: "Geneva, Switzerland"
+                        published_at: "2026-10-19T14:30:00Z"
+                        channel:
+                          id: 42
+                          name: "Climate Report"
+                          slug: "climate-report"
+                          description: "In-depth climate and environmental coverage"
+                          url: "https://www.newsplatform.org/channels/42"
+                      - id: 1233
+                        title: "Tech Giants Announce Open AI Standards"
+                        slug: "2026-10-19-tech-giants-announce-open-ai-standards"
+                        url: "https://www.newsplatform.org/articles/1233/2026-10-19-tech-giants-announce-open-ai-standards"
+                        excerpt: "Leading technology companies including Microsoft, Google, and Meta announced a new consortium today aimed at creating open standards for AI development. The initiative seeks to..."
+                        category: "Technology"
+                        location: "San Francisco, CA"
+                        published_at: "2026-10-19T11:15:00Z"
+                        channel:
+                          id: 15
+                          name: "Tech Insights"
+                          slug: "tech-insights"
+                          description: "Technology news and analysis"
+                          url: "https://www.newsplatform.org/channels/15"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  error:
+                    type: string
+                    example: "Failed to fetch stories"
+
+components:
+  schemas: {}
+
+tags:
+  - name: AI Integration
+    description: Public endpoints for AI tools and integrations

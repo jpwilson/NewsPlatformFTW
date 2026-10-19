@@ -1,0 +1,79 @@
+{
+  "name": "newsplatform",
+  "version": "1.0.0",
+  "description": "NewsPlatform - Independent news aggregator. Fetch latest published stories from diverse, independent channels.",
+  "tools": [
+    {
+      "name": "get_latest_stories",
+      "description": "Fetch the latest published news stories from NewsPlatform. Returns articles with headlines, excerpts, publication dates, and channel information. Stories are ordered by publication date (newest first).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of stories to return (1-100)",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "number",
+            "description": "Number of stories to skip for pagination",
+            "minimum": 0,
+            "default": 0
+          },
+          "category": {
+            "type": "string",
+            "description": "Filter by article category",
+            "enum": [
+              "Politics",
+              "Technology",
+              "Business",
+              "Science",
+              "Culture",
+              "Sports",
+              "Environment",
+              "Health",
+              "Education",
+              "World",
+              "Opinion"
+            ]
+          }
+        }
+      },
+      "implementation": {
+        "method": "GET",
+        "url": "https://www.newsplatform.org/api/ai/latest-stories",
+        "headers": {
+          "Accept": "application/json"
+        }
+      }
+    }
+  ],
+  "resources": [
+    {
+      "uri": "newsplatform://about",
+      "name": "About NewsPlatform",
+      "description": "Information about NewsPlatform - what it is, how it works, and what makes it unique",
+      "mimeType": "text/plain"
+    }
+  ],
+  "prompts": [
+    {
+      "name": "summarize_latest_news",
+      "description": "Get a summary of the latest news stories from NewsPlatform",
+      "arguments": [
+        {
+          "name": "category",
+          "description": "Optional: Filter by category (Politics, Technology, Business, etc.)",
+          "required": false
+        },
+        {
+          "name": "count",
+          "description": "Number of stories to include (default: 10)",
+          "required": false
+        }
+      ]
+    }
+  ]
+}
