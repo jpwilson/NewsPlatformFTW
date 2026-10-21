@@ -8,6 +8,8 @@ const __dirname = dirname(__filename);
 import { type Server } from "http";
 import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
+import { MARKETING_PAGES } from "../client/src/content/marketing";
+import { SPA_ROUTES } from "../shared/spa-routes";
 
 const viteLogger = createLogger();
 
@@ -79,10 +81,41 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  const sendHtml = (res: express.Response, file: string, status = 200) =>
+    res.status(status).sendFile(path.resolve(distPath, file));
 
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+  // Canonical URLs are slashless: redirect /about/ → /about rather than the
+  // other way round (express.static's `redirect` does the opposite).
+  app.get(/^\/(.+)\/$/, (req, res, next) => {
+    const target = req.originalUrl.replace(/\/+(\?|$)/, "$1");
+    if (!target || target === req.originalUrl) return next();
+    res.redirect(301, target);
+  });
+
+  // Static assets. `index: false` and `redirect: false` keep express.static
+  // from serving or redirecting to directory indexes — the prerendered
+  // marketing pages are mapped explicitly below, at their canonical paths.
+  app.use(express.static(distPath, { index: false, redirect: false }));
+
+  // Prerendered marketing pages (dist/public/<page>/index.html).
+  for (const page of MARKETING_PAGES) {
+    const file =
+      page.path === "/" ? "index.html" : `${page.path.replace(/^\//, "")}/index.html`;
+    app.get(page.path, (_req, res) => sendHtml(res, file));
+  }
+
+  // App routes get the plain SPA shell. Serving index.html here would hand
+  // /profile, /admin and article pages the prerendered homepage — including
+  // its canonical — to any crawler that does not run JavaScript.
+  app.get(SPA_ROUTES, (_req, res) => sendHtml(res, "app.html"));
+
+  // Everything else is a genuine 404 rather than a soft one. HTML requests
+  // still get the app shell, so the client router renders its NotFound page.
+  app.use((req, res) => {
+    if (path.extname(req.path)) {
+      res.status(404).type("txt").send("Not found");
+      return;
+    }
+    sendHtml(res, "app.html", 404);
   });
 }

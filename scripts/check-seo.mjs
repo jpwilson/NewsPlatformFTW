@@ -8,12 +8,20 @@
  * 300 words of visible text, and a <html lang> attribute. It also checks
  * robots.txt, llms.txt, llms-full.txt, app.html and the IndexNow key file.
  *
+ * It then boots scripts/serve-dist.mjs (the local mirror of the vercel.json
+ * routing) and checks real HTTP responses: marketing pages at their canonical
+ * slashless URLs, the SPA shell for app routes, and genuine 404s for unknown
+ * routes and missing files rather than soft 404s.
+ *
  *   npm run build && node scripts/check-seo.mjs
  */
 
 import fs from "node:fs";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+
+import { SPA_ROUTES } from "../shared/spa-routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, "..", "dist", "public");
@@ -177,6 +185,94 @@ else {
   if (body !== path.basename(keyFile, ".txt"))
     fail(keyFile, "contents must be exactly the key");
   else ok(`${keyFile} (IndexNow key)`);
+}
+
+/* ------------------------------------------------------------ HTTP routing */
+
+// The vercel.json rewrites are hand-written; keep them honest about the list
+// in shared/spa-routes.js.
+const vercel = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, "..", "vercel.json"), "utf8")
+);
+const shellRewrites = new Set(
+  vercel.rewrites.filter((r) => r.destination === "/app.html").map((r) => r.source)
+);
+const missingRewrites = SPA_ROUTES.filter((r) => !shellRewrites.has(r));
+if (missingRewrites.length)
+  fail("vercel.json", `app routes not rewritten to /app.html: ${missingRewrites.join(", ")}`);
+if (!vercel.rewrites.some((r) => r.source === "/(.*)" && r.destination === "/api/not-found.js"))
+  fail("vercel.json", "catch-all does not point at the 404 function (soft 404s)");
+if (vercel.trailingSlash !== false)
+  fail("vercel.json", 'trailingSlash must be false (canonicals are slashless)');
+if (!failures) ok("vercel.json routing matches shared/spa-routes.js");
+
+console.log("\nHTTP responses (scripts/serve-dist.mjs):");
+
+const PORT = 4199 + (process.pid % 300);
+const server = spawn(process.execPath, [path.join(__dirname, "serve-dist.mjs"), String(PORT)], {
+  stdio: "ignore",
+});
+
+async function waitForServer() {
+  for (let i = 0; i < 50; i++) {
+    try {
+      await fetch(`http://127.0.0.1:${PORT}/robots.txt`);
+      return true;
+    } catch {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
+  return false;
+}
+
+async function expect(label, url, { status, type, body, location } = {}) {
+  const res = await fetch(`http://127.0.0.1:${PORT}${url}`, { redirect: "manual" });
+  const text = await res.text();
+  if (status !== undefined && res.status !== status)
+    return fail(label, `${url} → HTTP ${res.status}, expected ${status}`);
+  if (type && !(res.headers.get("content-type") || "").includes(type))
+    return fail(label, `${url} → content-type ${res.headers.get("content-type")}, want ${type}`);
+  if (location && res.headers.get("location") !== location)
+    return fail(label, `${url} → redirects to ${res.headers.get("location")}, want ${location}`);
+  if (body && !body(text)) return fail(label, `${url} → unexpected body`);
+  ok(`${url.padEnd(28)} ${res.status}${location ? ` → ${location}` : ""}`);
+}
+
+try {
+  if (!(await waitForServer())) {
+    fail("http", "serve-dist.mjs did not start");
+  } else {
+    await expect("home", "/", {
+      status: 200,
+      type: "text/html",
+      body: (b) => b.includes(`<link data-rh="true" rel="canonical" href="${SITE}/" />`),
+    });
+    for (const route of PAGES.filter((p) => p !== "/")) {
+      await expect("page", route, {
+        status: 200,
+        type: "text/html",
+        body: (b) => b.includes(`rel="canonical" href="${SITE}${route}"`),
+      });
+    }
+    // Canonicals are slashless, so the slashed form must redirect, not serve.
+    await expect("trailing slash", "/about/", { status: 308, location: "/about" });
+    // App routes: the shell, never the prerendered homepage or its canonical.
+    for (const route of ["/profile", "/admin", "/channels", "/articles/1/a-slug"]) {
+      await expect("app route", route, {
+        status: 200,
+        type: "text/html",
+        body: (b) => !/rel="canonical"/.test(b) && b.includes('<div id="root"></div>'),
+      });
+    }
+    // Unknown routes and missing files are real 404s, not the SPA with 200.
+    await expect("unknown route", "/does-not-exist", { status: 404 });
+    await expect("unknown nested route", "/compare/wordpress", { status: 404 });
+    await expect("missing text file", "/llms-fulll.txt", { status: 404 });
+    await expect("llms.txt", "/llms.txt", { status: 200, type: "text/plain" });
+    await expect("robots.txt", "/robots.txt", { status: 200, type: "text/plain" });
+  }
+} finally {
+  server.kill();
 }
 
 console.log("");

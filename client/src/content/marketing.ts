@@ -99,7 +99,7 @@ const home: MarketingPage = {
         {
           t: "ul",
           items: [
-            "<strong>Readers</strong> who want the day's stories from independent writers and smaller newsrooms in one place, in a chronological feed with no algorithmic ranking.",
+            "<strong>Readers</strong> who want the day's stories from independent writers and smaller newsrooms in one place, in a newest-first story list with no per-reader personalisation.",
             "<strong>Independent writers and journalists</strong> who want a free place to publish articles under their own channel, with a proper rich-text editor and a public URL for every story.",
             "<strong>Small newsrooms, newsletters and organisations</strong> that want a branded channel and a read/write API they can publish into programmatically.",
             "<strong>Developers and AI tools</strong> that need a public, read-only JSON feed of recent articles.",
@@ -113,7 +113,7 @@ const home: MarketingPage = {
         {
           t: "ul",
           items: [
-            "<strong>Read the front page.</strong> The homepage shows the latest published articles from every channel, newest first.",
+            "<strong>Read the front page.</strong> The homepage lists articles from every channel, newest first, with a lead story at the top and a most-read rail alongside it.",
             "<strong>Browse by category.</strong> Articles are filed under " +
               CATEGORIES +
               ", with a category ribbon across the top of the site.",
@@ -225,7 +225,7 @@ const about: MarketingPage = {
         },
         {
           t: "p",
-          text: "If you want to read work from independent writers and smaller newsrooms without an algorithmic feed deciding what you see, NewsPlatform gives you a chronological front page, category sections covering " +
+          text: "If you want to read work from independent writers and smaller newsrooms without a personalised feed deciding what you see, NewsPlatform gives you a newest-first front page, category sections covering " +
             CATEGORIES +
             ", and the ability to subscribe to the channels you trust. Reading is free and does not require an account.",
         },
@@ -314,7 +314,7 @@ const howItWorks: MarketingPage = {
         { t: "h3", text: "1. Browse the front page" },
         {
           t: "p",
-          text: "The homepage lists the most recently published articles from every channel on the platform, newest first. You do not need an account and there is no algorithmic ranking: publication time decides the order.",
+          text: "The homepage lists articles from every channel on the platform, newest first by the time the article was created. You do not need an account, and nothing is personalised to you \u2014 every reader sees the same page. Two slots are not purely newest-first: the lead story at the top, and a \u201cMost read\u201d rail ranked by view count.",
         },
         { t: "h3", text: "2. Filter by category" },
         {
@@ -385,8 +385,10 @@ const howItWorks: MarketingPage = {
         {
           t: "ul",
           items: [
-            "The feed is chronological, so small channels get the same shot at the front page as large ones.",
-            "Breaking stories surface immediately rather than waiting for an algorithm to pick them up.",
+            "The story list is newest-first, so small channels get the same shot at the front page as large ones.",
+            "Breaking stories surface immediately rather than waiting to be recommended.",
+            "The lead story at the top of the homepage is chosen by a platform setting: by default the most-read story among the most recent day of articles, and it can also be set to the newest story, the most-read of all time, or an article pinned by the editor \u2014 pinned sponsored items are labelled as sponsored.",
+            "A \u201cMost read\u201d rail ranks stories by view count within a set time window.",
             "Nothing published is hidden from the feed; all published articles are discoverable.",
             "Article pages are prerendered for search engines and AI crawlers with structured data, so stories are indexable the moment they go live.",
           ],
@@ -402,7 +404,7 @@ const howItWorks: MarketingPage = {
             "Articles must be original or properly attributed.",
             'Content must comply with the <a href="/terms">Terms of Service</a>.',
             "Spam and malicious content is removed.",
-            "Readers can report problematic content for review.",
+            'There is no in-page report button yet: concerns go to the contact address on the <a href="/terms">Terms of Service</a> page, which is also the route for copyright complaints.',
           ],
         },
       ],
@@ -439,7 +441,7 @@ const forWriters: MarketingPage = {
             "<strong>Your own channel.</strong> A named, described, branded page with a profile image, banner, category focus and public subscriber count. One account can run more than one channel.",
             "<strong>A real editor.</strong> Headings, bold and italic, bullet and numbered lists, links, tables, images with captions, charts, pull quotes and callout boxes.",
             "<strong>Clean, permanent URLs.</strong> Every article lives at <code>/articles/&lt;id&gt;/&lt;slug&gt;</code> and keeps working after edits.",
-            "<strong>A front page you are actually on.</strong> Publishing puts you at the top of the chronological homepage feed, not behind an algorithm.",
+            "<strong>A front page you are actually on.</strong> Publishing puts your article at the top of the newest-first homepage story list, not behind a personalised recommender.",
             "<strong>Distribution plumbing.</strong> Site-wide and per-channel RSS, an XML sitemap, and prerendered article HTML with <code>NewsArticle</code> structured data so search engines and AI assistants can read your work without running JavaScript.",
             "<strong>An API.</strong> Publish programmatically with an API key if you already have a CMS or a pipeline — see the <a href=\"/api\">Content API docs</a>.",
             "<strong>Full control.</strong> Edit, unpublish or delete anything, whenever you want, and manage your subscriber list.",
@@ -522,7 +524,7 @@ const faq: MarketingPage = {
   faq: [
     {
       q: "What is NewsPlatform?",
-      a: "NewsPlatform is an independent news publishing platform at newsplatform.org. Writers, journalists, small newsrooms and organisations create channels and publish articles to them; readers browse a chronological front page, filter by category and subscribe to the channels they trust.",
+      a: "NewsPlatform is an independent news publishing platform at newsplatform.org. Writers, journalists, small newsrooms and organisations create channels and publish articles to them; readers browse a newest-first front page, filter by category and subscribe to the channels they trust.",
     },
     {
       q: "Is NewsPlatform a news aggregator?",
@@ -546,7 +548,7 @@ const faq: MarketingPage = {
     },
     {
       q: "How does NewsPlatform decide what appears on the homepage?",
-      a: "Publication time. The feed is chronological — newest published articles first — so a channel with a handful of subscribers can lead the homepage. There is no engagement-based ranking and no preferential placement, apart from sponsored items, which are always labelled.",
+      a: "Mostly time. The main story list is newest-first, by the time the article was created, so a channel with a handful of subscribers can appear at the top. Two slots work differently: the lead story is picked by a platform setting \u2014 by default the most-read story among the most recent day of articles, and it can also be set to the newest story, the most-read of all time, or an article pinned by the editor, with sponsored pins labelled as sponsored \u2014 and a \u201cMost read\u201d rail ranks by view count. Nothing is personalised to the individual reader.",
     },
     {
       q: "Can I make money writing on NewsPlatform?",
@@ -572,7 +574,7 @@ const faq: MarketingPage = {
     },
     {
       q: "Who moderates content, and what is not allowed?",
-      a: 'Articles must be original or properly attributed and must comply with the <a href="/terms">Terms of Service</a>. Spam and malicious content is removed, and readers can report problematic content for review.',
+      a: 'Articles must be original or properly attributed and must comply with the <a href="/terms">Terms of Service</a>, and spam and malicious content is removed. There is no in-page report button yet \u2014 to flag something, email the contact address on the <a href="/terms">Terms of Service</a> page, which is also where copyright complaints go.',
     },
     {
       q: "Can I advertise or sponsor content on NewsPlatform?",
@@ -595,7 +597,7 @@ const compareHub: MarketingPage = {
     "How NewsPlatform compares with Substack, Medium, Ghost and Ground News: what each one is built for, where each is stronger, and which to pick for your situation.",
   h1: "NewsPlatform compared to other platforms",
   kicker: "Comparisons",
-  lead: "NewsPlatform is a free independent news publishing platform with channels and a shared chronological front page. This page summarises how it differs from the tools writers most often weigh it against, and links to a detailed comparison for each.",
+  lead: "NewsPlatform is a free independent news publishing platform with channels and a shared, newest-first front page. This page summarises how it differs from the tools writers most often weigh it against, and links to a detailed comparison for each.",
   dated: true,
   trail: [],
   sections: [
@@ -608,7 +610,7 @@ const compareHub: MarketingPage = {
           rows: [
             [
               "NewsPlatform",
-              "Publishing news articles to a shared, chronological front page under your own channel",
+              "Publishing news articles to a shared, newest-first front page under your own channel",
               "—",
             ],
             [
@@ -727,7 +729,7 @@ const vsSubstack: MarketingPage = {
             ],
             [
               "Discovery",
-              "Shared chronological homepage, category sections, channel directory, RSS, sitemap, public JSON API",
+              "Shared newest-first homepage, category sections, channel directory, RSS, sitemap, public JSON API",
               "Substack's own network, recommendations between publications, and its app",
             ],
             [
@@ -762,8 +764,8 @@ const vsSubstack: MarketingPage = {
           t: "ul",
           items: [
             "<strong>Open by default.</strong> Every article is a free, public web page. Nothing sits behind an email signup or a paywall.",
-            "<strong>A shared front page.</strong> Your article appears on the NewsPlatform homepage next to everyone else's, in publication order. On Substack, a new publication starts with an audience of zero and has to be marketed.",
-            "<strong>News-shaped.</strong> Channels, categories like Politics, Tech and Science, location tags on stories, and a chronological feed — the site is organised like a news site, not like a mailing list.",
+            "<strong>A shared front page.</strong> Your article appears on the NewsPlatform homepage next to everyone else's, newest first. On Substack, a new publication starts with an audience of zero and has to be marketed.",
+            "<strong>News-shaped.</strong> Channels, categories like Politics, Tech and Science, location tags on stories, and a newest-first story list — the site is organised like a news site, not like a mailing list.",
             "<strong>Free with no revenue cut,</strong> because there is no revenue to cut.",
             "<strong>Built for machine readers.</strong> Prerendered article HTML with structured data, a complete sitemap, RSS and a public read-only JSON API.",
           ],
@@ -796,10 +798,10 @@ const vsMedium: MarketingPage = {
   navLabel: "vs Medium",
   title: "NewsPlatform vs Medium — where should you publish?",
   description:
-    "A fair comparison of NewsPlatform and Medium for writers: a free news publishing platform with channels and a chronological feed versus a large general-interest writing platform.",
+    "A fair comparison of NewsPlatform and Medium for writers: a free news publishing platform with channels and a newest-first feed versus a large general-interest writing platform.",
   h1: "NewsPlatform vs Medium",
   kicker: "Comparison",
-  lead: "NewsPlatform and Medium both let you publish articles on someone else's site for free, but Medium is a large general-interest writing platform with a reader membership programme, while NewsPlatform is a news site where each writer runs a channel on a shared chronological front page.",
+  lead: "NewsPlatform and Medium both let you publish articles on someone else's site for free, but Medium is a large general-interest writing platform with a reader membership programme, while NewsPlatform is a news site where each writer runs a channel on a shared, newest-first front page.",
   dated: true,
   trail: [{ name: "Compare", path: "/compare" }],
   sections: [
@@ -824,7 +826,7 @@ const vsMedium: MarketingPage = {
           rows: [
             [
               "What it is",
-              "A news publishing platform: channels, categories, chronological front page",
+              "A news publishing platform: channels, categories, newest-first front page",
               "A general-interest writing and reading platform with publications and topic tags",
             ],
             ["Cost to publish", "Free", "Free"],
@@ -835,7 +837,7 @@ const vsMedium: MarketingPage = {
             ],
             [
               "Feed ordering",
-              "Chronological — newest published first",
+              "Newest first, with an editor- or most-read-selected lead story",
               "Personalised and recommendation-driven (per Medium's website)",
             ],
             [
@@ -848,7 +850,11 @@ const vsMedium: MarketingPage = {
               "Site and per-channel RSS, XML sitemap, public read-only JSON API, authenticated write API",
               "RSS feeds and an established recommendation system",
             ],
-            ["Custom domain", "No", "Not generally offered for publications today"],
+            [
+              "Custom domain",
+              "No",
+              'Supported for profiles and publications, subject to <a href="https://help.medium.com/hc/en-us/articles/115003053487-Setting-up-a-custom-domain-for-your-profile-or-publication" rel="nofollow noopener" target="_blank">Medium\'s documented requirements</a> (an active membership and a domain you own)',
+            ],
           ],
         },
       ],
@@ -871,7 +877,7 @@ const vsMedium: MarketingPage = {
           t: "ul",
           items: [
             "<strong>Nothing is member-only.</strong> Every NewsPlatform article is free to read without an account.",
-            "<strong>Time, not taste, orders the feed.</strong> A new article is on the front page the moment it is published, rather than waiting to be recommended.",
+            "<strong>Time, not taste, orders the story list.</strong> A new article is on the front page the moment it is published, rather than waiting to be recommended.",
             "<strong>Channels are first-class.</strong> Your channel has a description, imagery, a category focus and a public subscriber count, and one account can run several.",
             "<strong>News structure.</strong> Category sections like Politics, Business, Tech, Science and Environment, plus optional location tags on stories.",
             "<strong>Machine-friendly by design.</strong> Prerendered article HTML with NewsArticle structured data, a full sitemap, RSS and a public JSON API for recent stories.",
@@ -958,8 +964,8 @@ const vsGhost: MarketingPage = {
             ],
             [
               "Built-in audience",
-              "Shared chronological homepage, category sections and channel directory",
-              "None — a new Ghost site starts empty and you bring the readers",
+              "Shared newest-first homepage, category sections and channel directory",
+              'No guaranteed starting readership \u2014 a new Ghost site begins with no subscribers \u2014 but Ghost ships discovery tools: the Ghost Explore directory, recommendations between publications, and ActivityPub distribution to the social web (per <a href="https://ghost.org/changelog/6/" rel="nofollow noopener" target="_blank">Ghost\'s 6.0 changelog</a>)',
             ],
             [
               "Ownership and portability",
@@ -990,7 +996,7 @@ const vsGhost: MarketingPage = {
             "<strong>Zero setup and zero cost.</strong> No server, no theme, no DNS, no monthly bill. Create a channel and publish.",
             "<strong>You are not starting from an empty room.</strong> Articles go straight onto a shared front page and into category sections where readers already are.",
             "<strong>No maintenance.</strong> Updates, hosting, images, search-engine plumbing and crawler prerendering are handled for you.",
-            "<strong>Collective discovery.</strong> A channel directory, chronological feed and public API that cover every writer on the platform, not just your own site.",
+            "<strong>Collective discovery.</strong> A channel directory, newest-first feed and public API that cover every writer on the platform, not just your own site.",
           ],
         },
       ],
@@ -1054,7 +1060,7 @@ const alternatives: MarketingPage = {
         },
         {
           t: "p",
-          text: 'NewsPlatform gives each writer a channel — name, description, imagery, category focus, public subscriber count — and puts every published article on a shared chronological homepage, in a category section, in the site RSS feed and in the XML sitemap. Articles are prerendered as plain HTML with <code>NewsArticle</code> structured data, so search engines and AI assistants can read them without running JavaScript. There is a public read-only JSON API for recent stories and an authenticated write API for publishing programmatically. It is free, with no revenue cut.',
+          text: 'NewsPlatform gives each writer a channel — name, description, imagery, category focus, public subscriber count — and puts every published article on a shared newest-first homepage, in a category section, in the site RSS feed and in the XML sitemap. Articles are prerendered as plain HTML with <code>NewsArticle</code> structured data, so search engines and AI assistants can read them without running JavaScript. There is a public read-only JSON API for recent stories and an authenticated write API for publishing programmatically. It is free, with no revenue cut.',
         },
         {
           t: "p",

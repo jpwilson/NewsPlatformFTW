@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "trailingSlash": false,
   "builds": [
     {
       "src": "api/index.ts",
@@ -11,6 +12,10 @@
     },
     {
       "src": "api/prerender-article.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/not-found.js",
       "use": "@vercel/node"
     },
     {
@@ -123,8 +128,120 @@
       "destination": "/assets/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/about",
+      "destination": "/about/index.html"
+    },
+    {
+      "source": "/how-it-works",
+      "destination": "/how-it-works/index.html"
+    },
+    {
+      "source": "/for-writers",
+      "destination": "/for-writers/index.html"
+    },
+    {
+      "source": "/faq",
+      "destination": "/faq/index.html"
+    },
+    {
+      "source": "/compare",
+      "destination": "/compare/index.html"
+    },
+    {
+      "source": "/compare/substack",
+      "destination": "/compare/substack/index.html"
+    },
+    {
+      "source": "/compare/medium",
+      "destination": "/compare/medium/index.html"
+    },
+    {
+      "source": "/compare/ghost",
+      "destination": "/compare/ghost/index.html"
+    },
+    {
+      "source": "/alternatives",
+      "destination": "/alternatives/index.html"
+    },
+    {
+      "source": "/channels",
       "destination": "/app.html"
+    },
+    {
+      "source": "/channels/new",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/channels/:id",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/channels/:id/subscribers",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/channels/:id/articles/new",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/articles/new",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/articles/:id/edit",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/articles/:id",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/articles/:id/:slug",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/auth",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/auth-callback",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/profile",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/users/:username",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/api",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/api-keys",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/advertise",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api/not-found.js"
     }
   ]
 }

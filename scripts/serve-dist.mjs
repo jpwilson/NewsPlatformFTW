@@ -2,7 +2,8 @@
 /**
  * Serve dist/public the way Vercel does, for local verification:
  * filesystem first (including `/<path>/index.html` for clean URLs), then the
- * SPA shell app.html as the catch-all. Mirrors the routing in vercel.json.
+ * SPA shell app.html for the app routes in shared/spa-routes.js, then a real
+ * 404 for anything else. Mirrors the routing in vercel.json.
  *
  *   npm run build && node scripts/serve-dist.mjs [port]
  *
@@ -14,6 +15,9 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { isSpaRoute } from "../shared/spa-routes.js";
+import { notFoundHtml } from "../api/not-found.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "dist", "public");
@@ -44,12 +48,37 @@ function resolveFile(urlPath) {
 
 http
   .createServer((req, res) => {
-    const file = resolveFile(req.url) ?? path.join(ROOT, "app.html");
-    const body = fs.readFileSync(file);
-    res.writeHead(200, {
-      "content-type": TYPES[path.extname(file)] ?? "application/octet-stream",
+    const url = (req.url || "/").split("?")[0];
+    const pathname = decodeURIComponent(url);
+
+    // trailingSlash: false — /about/ redirects to /about
+    if (pathname.length > 1 && pathname.endsWith("/")) {
+      res.writeHead(308, { location: pathname.replace(/\/+$/, "") });
+      res.end();
+      return;
+    }
+
+    const file = resolveFile(url);
+    if (file) {
+      res.writeHead(200, {
+        "content-type": TYPES[path.extname(file)] ?? "application/octet-stream",
+        "cache-control": "no-store",
+      });
+      res.end(fs.readFileSync(file));
+      return;
+    }
+
+    if (isSpaRoute(pathname)) {
+      res.writeHead(200, { "content-type": TYPES[".html"], "cache-control": "no-store" });
+      res.end(fs.readFileSync(path.join(ROOT, "app.html")));
+      return;
+    }
+
+    res.writeHead(404, {
+      "content-type": TYPES[".html"],
       "cache-control": "no-store",
+      "x-robots-tag": "noindex",
     });
-    res.end(body);
+    res.end(notFoundHtml(pathname));
   })
   .listen(PORT, () => console.log(`serving ${ROOT} on http://localhost:${PORT}`));

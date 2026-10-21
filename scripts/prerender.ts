@@ -34,6 +34,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const OUT = path.join(ROOT, "dist", "public");
 
+/** JSON-LD that cannot terminate its own <script> element. */
+const jsonLdScript = (data: unknown) =>
+  JSON.stringify(data)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -59,7 +66,7 @@ function headTagsFor(page: MarketingPage): string {
     `<meta data-rh="true" name="twitter:title" content="${esc(page.title)}" />`,
     `<meta data-rh="true" name="twitter:description" content="${esc(page.description)}" />`,
     `<meta data-rh="true" name="twitter:image" content="${image}" />`,
-    `<script data-rh="true" type="application/ld+json">${JSON.stringify(
+    `<script data-rh="true" type="application/ld+json">${jsonLdScript(
       pageJsonLd(page)
     )}</script>`,
   ].join("\n    ");
@@ -127,7 +134,7 @@ function buildLlmsTxt(): string {
     "- There are no paid reader subscriptions, no paywall and no revenue share for writers."
   );
   lines.push(
-    "- The homepage feed is chronological (newest published first), with no algorithmic ranking."
+    "- The homepage story list is newest-first (by article creation time) and is not personalised per reader. The lead story at the top is chosen by a platform setting \u2014 by default the most-read article among the most recent day of content, optionally the newest article, the most-read of all time, or an article pinned by the editor (sponsored pins are labelled) \u2014 and a 'Most read' rail ranks by view count."
   );
   lines.push(
     "- Articles are filed under Politics, Business, Tech, AI, Science, Sports, Culture, Lifestyle, Education, Environment, Opinion and Law."
