@@ -69,11 +69,16 @@ under `client/src` on purpose: Tailwind's content scanner only looks at
 
 ### Routing
 
-`vercel.json`'s catch-all now points at `/app.html` rather than
-`/index.html`. That matters: `index.html` is the prerendered **homepage**, so
-leaving the catch-all pointed at it would have given `/channels`,
-`/profile`, article pages and every other client route the homepage's
-canonical, title and body text.
+Three kinds of URL, three answers — no catch-all that serves everything.
+`index.html` is the prerendered **homepage**, so sending unknown or app
+routes there would give `/channels`, `/profile`, article pages and every typo
+URL the homepage's canonical, title and body text.
+
+The app routes live in one place, `shared/spa-routes.js`, and are consumed by
+`vercel.json` (production rewrites), `server/vite.ts` (the self-hosted Express
+server) and `scripts/serve-dist.mjs` (the local mirror). `scripts/check-seo.mjs`
+fails the build if `vercel.json` drifts from that list. `trailingSlash` is
+`false`, so `/about/` redirects to the canonical `/about`.
 
 | Request | Served by |
 |---|---|
@@ -81,7 +86,8 @@ canonical, title and body text.
 | `/robots.txt`, `/llms.txt`, `/llms-full.txt`, `/<indexnow-key>.txt` | static files from `client/public` |
 | `/sitemap.xml`, `/rss.xml`, `/api/*` | `api/index.ts` via rewrite |
 | `/articles/<id>/<slug>` from a bot UA | `api/prerender-article.js` via rewrite |
-| everything else | `app.html` (SPA shell) via catch-all |
+| app routes (`/profile`, `/admin`, `/channels/<id>`, `/articles/<id>/<slug>`, … — see `shared/spa-routes.js`) | `app.html` (SPA shell) |
+| everything else | `api/not-found.js` — a real **404** with `noindex`, not the SPA shell with a 200 |
 
 ### Article pages
 
@@ -97,6 +103,19 @@ only had lowercase `googlebot`/`bingbot`, which do not match the real
 
 **Keep the two lists in sync**: the `has.value` regexes in `vercel.json` and
 `isCrawlerUA()` in `api/prerender-article.js`.
+
+Two things the prerenderer must keep doing, both covered by
+`scripts/test-prerender-article.mjs` (`npm run test:prerender`):
+
+- **Published only.** It queries Supabase with the service key, which bypasses
+  RLS, so `.eq("published", true)` is the only thing keeping drafts out of a
+  public, CDN-cached response. Anything else is a `404` with `no-store`.
+- **Sanitised.** Article bodies are author-supplied. They are filtered against
+  the allowlist in `shared/article-html-policy.js` — the same policy the
+  browser renderer uses via `client/src/lib/sanitize-article-html.ts`, so the
+  SPA and the crawler HTML render the same thing. `<iframe>` is limited to
+  YouTube/Vimeo hosts, and JSON-LD is serialised with `<`, `>` and `&`
+  escaped so a headline cannot terminate the `<script>` element.
 
 ---
 
@@ -138,6 +157,7 @@ npm ci
 npm run check        # tsc
 npm run build        # vite build + prerender + esbuild
 npm run check:seo    # asserts the built HTML is actually crawlable
+npm run test:prerender  # article prerender: published-only + sanitising
 ```
 
 `scripts/check-seo.mjs` reads `dist/public` and fails if any page is missing a
@@ -147,11 +167,18 @@ does not parse, or has 300 or fewer crawler-visible words (script, style,
 noscript and svg stripped). It also checks `robots.txt`, `llms.txt`,
 `llms-full.txt`, `sitemap-pages.xml`, `app.html` and the IndexNow key file.
 
+It then boots `scripts/serve-dist.mjs` and checks real HTTP responses: each
+marketing page at its canonical slashless URL, `/about/` redirecting to
+`/about`, app routes getting the canonical-free shell, and genuine 404s for
+unknown routes (`/does-not-exist`, `/compare/wordpress`) and missing files
+(`/llms-fulll.txt`).
+
 To look at the built site the way Vercel serves it:
 
 ```bash
-node scripts/serve-dist.mjs 4287      # filesystem first, app.html catch-all
+node scripts/serve-dist.mjs 4287   # filesystem → app routes → 404
 curl -s http://localhost:4287/faq | grep -c '<h1'
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4287/nope   # 404
 ```
 
 ---
@@ -245,12 +272,17 @@ dated, and must say where the competitor is stronger.
 
 ## Known gaps
 
-- **Soft 404s.** The `vercel.json` catch-all still returns `app.html` with a
-  200 for unknown paths, so a typo URL is a soft 404 rather than a real one.
-  The files that matter most — `/llms.txt`, `/llms-full.txt`, `/robots.txt` —
-  are now real static files rather than the SPA shell, which was the
-  worst case. Fixing the general case means teaching the SPA to set a 404
-  status, which needs a server-rendered not-found route.
+- **Cached draft responses (owner step).** Before this fix the article
+  prerenderer could return an unpublished article to a crawler with
+  `s-maxage=600`, so a draft may still sit in the Vercel edge cache for up to
+  ten minutes after the next deploy. If a specific draft URL is known to have
+  leaked, purge the CDN cache for it in the Vercel dashboard
+  (Project → Settings → Data Cache / Purge Everything) after deploying.
+- **Unknown paths outside the static build.** `/does-not-exist` and missing
+  text files now return a real 404 from `api/not-found.js`. A client-side
+  navigation inside the SPA to a bogus route still renders the app's
+  `NotFound` component with whatever status the shell was served with; only
+  the self-hosted Express path sets 404 on the shell itself.
 - **`/advertise`, `/api`, `/privacy`, `/terms`, `/channels`** are still
   client-rendered. They are in the sitemap and Googlebot renders JS, but
   non-JS AI fetchers see only the shell. `/advertise` is the one worth
