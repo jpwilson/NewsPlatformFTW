@@ -3,6 +3,9 @@ import { Article, Channel } from "@shared/schema";
 import { ArticleCard } from "@/components/article-card";
 import { ChannelCard } from "@/components/channel-card";
 import { NavigationBar } from "@/components/navigation-bar";
+import { SiteFooter } from "@/components/site-footer";
+import { SeoHead } from "@/components/seo-head";
+import { PAGES_BY_PATH, renderPageHtml } from "@/content/marketing";
 import { CategoryRibbon } from "@/components/category-ribbon";
 import { MarketTicker } from "@/components/market-ticker";
 import { Button } from "@/components/ui/button";
@@ -537,6 +540,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <SeoHead page={PAGES_BY_PATH["/"]} />
       <NavigationBar selectedChannelId={user ? selectedChannelId : undefined} />
 
       {/* Market Ticker */}
@@ -1139,39 +1143,20 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="mt-12 border-t border-[hsl(var(--edition-border-hair))]">
-        <div className="container mx-auto px-4 py-8 lg:px-8">
-          <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
-            <div className="max-w-md">
-              <p className="font-display text-lg font-bold">NewsPlatform</p>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                NewsPlatform is an independent news publishing platform.
-                Writers and organisations run their own channels and publish
-                articles; readers follow the channels they trust and get the
-                day's top stories in one place.
-              </p>
-            </div>
-            <nav className="flex items-center gap-5 text-sm text-muted-foreground">
-              <Link href="/privacy" className="hover:text-foreground hover:underline">
-                Privacy Policy
-              </Link>
-              <Link href="/terms" className="hover:text-foreground hover:underline">
-                Terms of Service
-              </Link>
-              <Link href="/advertise" className="hover:text-foreground hover:underline">
-                Advertise
-              </Link>
-              <Link href="/channels" className="hover:text-foreground hover:underline">
-                Channels
-              </Link>
-            </nav>
-          </div>
-          <p className="mt-6 text-xs text-muted-foreground">
-            © {new Date().getFullYear()} NewsPlatform
-          </p>
+      {/* Crawler-visible description of what NewsPlatform is. Rendered from the
+          same source as the prerendered static homepage (see
+          client/src/content/marketing.ts and scripts/prerender.ts). */}
+      <section className="mt-12 border-t border-[hsl(var(--edition-border-hair))]">
+        <div className="container mx-auto max-w-3xl px-4 py-10">
+          <div
+            dangerouslySetInnerHTML={{
+              __html: renderPageHtml(PAGES_BY_PATH["/"], { demoteH1: true }),
+            }}
+          />
         </div>
-      </footer>
+      </section>
+
+      <SiteFooter />
     </div>
   );
 }

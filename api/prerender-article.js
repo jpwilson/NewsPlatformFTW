@@ -15,7 +15,8 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 function isCrawlerUA(userAgent) {
   if (!userAgent) return false;
-  return /(GPTBot|PerplexityBot|ClaudeBot|Google-Extended|facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot)/i.test(
+  // Keep in sync with the user-agent regex in vercel.json.
+  return /(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-SearchBot|Claude-User|PerplexityBot|Perplexity-User|Google-Extended|DuckAssistBot|meta-externalagent|CCBot|Amazonbot|Bytespider|facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|Applebot|googlebot|bingbot|yandex|baiduspider|duckduckbot|Slurp)/i.test(
     userAgent
   );
 }

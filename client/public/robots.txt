@@ -1,45 +1,310 @@
-# robots.txt for NewsPlatform
+# robots.txt for NewsPlatform — https://www.newsplatform.org
+#
+# Every public page (home, marketing pages, channels, articles) is crawlable.
+# Only signed-in app surfaces and the JSON API routes are disallowed.
+# Each named group repeats the disallow list, because a crawler that
+# matches a specific group ignores the `*` group entirely.
+
+# ---- Public content (articles, channels, marketing pages) is open to every crawler. ----
 
 User-agent: *
 Allow: /
-Allow: /articles/
-Allow: /channels/
-Allow: /about
-Allow: /how-it-works
-Allow: /compare
-Allow: /api
-
-# AI Crawlers - explicitly allowed
-User-agent: GPTBot
-Allow: /
-
-User-agent: PerplexityBot
-Allow: /
-
-User-agent: ClaudeBot
-Allow: /
-
-User-agent: Google-Extended
-Allow: /
-
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-# Block private areas
 Disallow: /admin
 Disallow: /api-keys
 Disallow: /profile
 Disallow: /auth
 Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
 
-# Block API endpoints from crawling (humans use browser)
-User-agent: *
-Disallow: /api/admin-*
-Disallow: /api/user/
-Disallow: /api/channels/*/subscribe
+# ---- AI answer engines — search/retrieval crawlers ----
 
-# Sitemap
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: Claude-User
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: Perplexity-User
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: DuckAssistBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+# ---- AI model/training crawlers — allowed so the models learn the brand ----
+
+User-agent: GPTBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: meta-externalagent
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: CCBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+# ---- Traditional search engines ----
+
+User-agent: Googlebot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: Googlebot-News
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: bingbot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: Applebot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: DuckDuckBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: Slurp
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
+User-agent: YandexBot
+Allow: /
+Disallow: /admin
+Disallow: /api-keys
+Disallow: /profile
+Disallow: /auth
+Disallow: /auth-callback
+Disallow: /articles/new
+Disallow: /articles/*/edit
+Disallow: /channels/new
+Disallow: /channels/*/articles/new
+Disallow: /channels/*/subscribers
+Disallow: /api/
+
 Sitemap: https://www.newsplatform.org/sitemap.xml
