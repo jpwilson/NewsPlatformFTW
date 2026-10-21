@@ -1,3 +1,10 @@
+> **Superseded (October 2026).** The user-agent rewrite described below never
+> fired — Vercel checks the filesystem before applying `rewrites`, and `/`
+> already matched the static `index.html`. The marketing pages are now
+> prerendered to static HTML at build time and `api/prerender-homepage.js`
+> has been removed. See [SEO.md](./SEO.md) for the current setup. The API,
+> OpenAPI spec and MCP config described here are still accurate.
+
 # AI Discoverability Implementation - Testing & Deployment Guide
 
 ## ✅ What Was Completed

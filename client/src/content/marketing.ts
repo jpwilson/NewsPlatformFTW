@@ -175,15 +175,6 @@ const home: MarketingPage = {
         },
       ],
     },
-    {
-      h2: "Common questions",
-      blocks: [
-        {
-          t: "p",
-          text: 'A few of the questions people ask most often. The full list is on the <a href="/faq">FAQ page</a>.',
-        },
-      ],
-    },
   ],
   faq: [
     {
