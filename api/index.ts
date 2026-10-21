@@ -6420,6 +6420,9 @@ app.put("/api/homepage/settings", async (req, res) => {
 // ---- SEO: sitemap + RSS feeds ----
 // Served via vercel.json rewrites (/sitemap.xml, /rss.xml, /channels/:id/rss.xml).
 const SITE_BASE = "https://www.newsplatform.org"; // canonical host (apex 308s here)
+// Last content change to the static marketing pages (see
+// client/src/content/marketing.ts LAST_UPDATED_ISO).
+const PAGES_LASTMOD = "2026-10-21";
 
 function xmlEscape(s: any): string {
   return String(s || "")
@@ -6461,10 +6464,19 @@ app.get("/sitemap.xml", async (req, res) => {
     const urls: string[] = [
       `<url><loc>${SITE_BASE}/</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>`,
       `<url><loc>${SITE_BASE}/channels</loc><changefreq>daily</changefreq><priority>0.7</priority></url>`,
-      `<url><loc>${SITE_BASE}/about</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>`,
-      `<url><loc>${SITE_BASE}/how-it-works</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>`,
-      `<url><loc>${SITE_BASE}/compare</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>`,
+      // Prerendered marketing pages — keep in sync with
+      // client/src/content/marketing.ts (MARKETING_PAGES).
+      `<url><loc>${SITE_BASE}/about</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
+      `<url><loc>${SITE_BASE}/how-it-works</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
+      `<url><loc>${SITE_BASE}/for-writers</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
+      `<url><loc>${SITE_BASE}/faq</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`,
+      `<url><loc>${SITE_BASE}/compare</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`,
+      `<url><loc>${SITE_BASE}/compare/substack</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`,
+      `<url><loc>${SITE_BASE}/compare/medium</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`,
+      `<url><loc>${SITE_BASE}/compare/ghost</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`,
+      `<url><loc>${SITE_BASE}/alternatives</loc><lastmod>${PAGES_LASTMOD}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`,
       `<url><loc>${SITE_BASE}/api</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>`,
+      `<url><loc>${SITE_BASE}/advertise</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>`,
       `<url><loc>${SITE_BASE}/privacy</loc><priority>0.2</priority></url>`,
       `<url><loc>${SITE_BASE}/terms</loc><priority>0.2</priority></url>`,
     ];
