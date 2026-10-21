@@ -14,6 +14,7 @@
     "db:push": "drizzle-kit push",
     "prerender": "tsx scripts/prerender.ts",
     "check:seo": "node scripts/check-seo.mjs",
+    "test:prerender": "node scripts/test-prerender-article.mjs",
     "indexnow": "node scripts/indexnow.mjs"
   },
   "dependencies": {
@@ -79,6 +80,7 @@
     "cmdk": "^1.0.0",
     "connect-pg-simple": "^10.0.0",
     "date-fns": "^3.6.0",
+    "dompurify": "^3.4.17",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.39.3",
     "drizzle-zod": "^0.7.0",
@@ -104,6 +106,7 @@
     "react-icons": "^5.4.0",
     "react-resizable-panels": "^2.1.4",
     "recharts": "^2.13.0",
+    "sanitize-html": "^2.18.1",
     "tailwind-merge": "^2.5.4",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.0",

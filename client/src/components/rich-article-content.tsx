@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ArticleChart } from "@/components/article-chart";
+import { sanitizeArticleHtml } from "@/lib/sanitize-article-html";
 
 interface LightboxImage {
   src: string;
@@ -31,6 +32,10 @@ export function RichArticleContent({
     index: number;
   } | null>(null);
 
+  // Article bodies are author-supplied, so they go through the same allowlist
+  // the crawler prerenderer uses (shared/article-html-policy.js).
+  const safeHtml = useMemo(() => sanitizeArticleHtml(html), [html]);
+
   // Hydrate chart placeholders
   useEffect(() => {
     const container = containerRef.current;
@@ -52,7 +57,7 @@ export function RichArticleContent({
       // Deferred unmount avoids React warning about sync unmount during render
       setTimeout(() => roots.forEach((r) => r.unmount()), 0);
     };
-  }, [html]);
+  }, [safeHtml]);
 
   // Lightbox: event delegation over all content images
   const handleClick = useCallback((e: React.MouseEvent) => {
@@ -97,7 +102,7 @@ export function RichArticleContent({
         ref={containerRef}
         className={className}
         onClick={handleClick}
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
 
       <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
