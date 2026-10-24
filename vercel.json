@@ -1,127 +1,247 @@
 {
-    "version": 2,
-    "builds": [
+  "version": 2,
+  "trailingSlash": false,
+  "builds": [
+    {
+      "src": "api/index.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/debug.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/prerender-article.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/not-found.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist/public"
+      }
+    }
+  ],
+  "headers": [
+    {
+      "source": "/articles/(.*)",
+      "headers": [
         {
-            "src": "api/index.ts",
-            "use": "@vercel/node"
-        },
-        {
-            "src": "api/debug.ts",
-            "use": "@vercel/node"
-        },
-        {
-            "src": "api/prerender-article.js",
-            "use": "@vercel/node"
-        },
-        {
-            "src": "api/prerender-homepage.js",
-            "use": "@vercel/node"
-        },
-        {
-            "src": "package.json",
-            "use": "@vercel/static-build",
-            "config": {
-                "distDir": "dist/public"
-            }
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
         }
-    ],
-    "headers": [
+      ]
+    },
+    {
+      "source": "/api/prerender-article",
+      "headers": [
         {
-            "source": "/articles/(.*)",
-            "headers": [
-                {
-                    "key": "Access-Control-Allow-Origin",
-                    "value": "*"
-                }
-            ]
-        },
-        {
-            "source": "/api/prerender-article",
-            "headers": [
-                {
-                    "key": "Access-Control-Allow-Origin",
-                    "value": "*"
-                }
-            ]
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
         }
-    ],
-    "rewrites": [
+      ]
+    },
+    {
+      "source": "/llms.txt",
+      "headers": [
         {
-            "source": "/",
-            "has": [
-                {
-                    "type": "header",
-                    "key": "user-agent",
-                    "value": ".*(GPTBot|PerplexityBot|ClaudeBot|Google-Extended|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
-                }
-            ],
-            "destination": "/api/prerender-homepage.js"
-        },
-        {
-            "source": "/api/debug",
-            "destination": "/api/debug.ts"
-        },
-        {
-            "source": "/api/debug/:path*",
-            "destination": "/api/debug.ts"
-        },
-        {
-            "source": "/api/user/:path*",
-            "destination": "/api/index.ts"
-        },
-        {
-            "source": "/api/channels/:path*",
-            "destination": "/api/index.ts"
-        },
-        {
-            "source": "/api/:path*",
-            "destination": "/api/index.ts"
-        },
-        {
-            "source": "/sitemap.xml",
-            "destination": "/api/index.ts"
-        },
-        {
-            "source": "/rss.xml",
-            "destination": "/api/index.ts"
-        },
-        {
-            "source": "/channels/:id/rss.xml",
-            "destination": "/api/index.ts"
-        },
-        {
-            "source": "/articles/:id/:slug?",
-            "has": [
-                {
-                    "type": "header",
-                    "key": "user-agent",
-                    "value": ".*(GPTBot|PerplexityBot|ClaudeBot|Google-Extended|facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
-                }
-            ],
-            "destination": "/api/prerender-article.js?path=/articles/:id/:slug"
-        },
-        {
-            "source": "/articles/:slug",
-            "has": [
-                {
-                    "type": "header",
-                    "key": "user-agent",
-                    "value": ".*(GPTBot|PerplexityBot|ClaudeBot|Google-Extended|facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|googlebot|bingbot|yandex|baiduspider|duckduckbot).*"
-                }
-            ],
-            "destination": "/api/prerender-article.js?path=/articles/:slug"
-        },
-        {
-            "source": "/auth-callback",
-            "destination": "/index.html"
-        },
-        {
-            "source": "/assets/:path*",
-            "destination": "/assets/:path*"
-        },
-        {
-            "source": "/(.*)",
-            "destination": "/index.html"
+          "key": "Content-Type",
+          "value": "text/plain; charset=utf-8"
         }
-    ]
+      ]
+    },
+    {
+      "source": "/llms-full.txt",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/plain; charset=utf-8"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/debug",
+      "destination": "/api/debug.ts"
+    },
+    {
+      "source": "/api/debug/:path*",
+      "destination": "/api/debug.ts"
+    },
+    {
+      "source": "/api/user/:path*",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/api/channels/:path*",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/rss.xml",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/channels/:id/rss.xml",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/articles/:id/:slug?",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-SearchBot|Claude-User|PerplexityBot|Perplexity-User|Google-Extended|DuckAssistBot|meta-externalagent|CCBot|Amazonbot|Bytespider|[Ff]acebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|Applebot|[Gg]ooglebot|[Bb]ingbot|[Yy]andex|[Bb]aiduspider|[Dd]uck[Dd]uck[Bb]ot|Slurp).*"
+        }
+      ],
+      "destination": "/api/prerender-article.js?path=/articles/:id/:slug"
+    },
+    {
+      "source": "/articles/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-SearchBot|Claude-User|PerplexityBot|Perplexity-User|Google-Extended|DuckAssistBot|meta-externalagent|CCBot|Amazonbot|Bytespider|[Ff]acebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|Applebot|[Gg]ooglebot|[Bb]ingbot|[Yy]andex|[Bb]aiduspider|[Dd]uck[Dd]uck[Bb]ot|Slurp).*"
+        }
+      ],
+      "destination": "/api/prerender-article.js?path=/articles/:slug"
+    },
+    {
+      "source": "/auth-callback",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/about",
+      "destination": "/about/index.html"
+    },
+    {
+      "source": "/how-it-works",
+      "destination": "/how-it-works/index.html"
+    },
+    {
+      "source": "/for-writers",
+      "destination": "/for-writers/index.html"
+    },
+    {
+      "source": "/faq",
+      "destination": "/faq/index.html"
+    },
+    {
+      "source": "/compare",
+      "destination": "/compare/index.html"
+    },
+    {
+      "source": "/compare/substack",
+      "destination": "/compare/substack/index.html"
+    },
+    {
+      "source": "/compare/medium",
+      "destination": "/compare/medium/index.html"
+    },
+    {
+      "source": "/compare/ghost",
+      "destination": "/compare/ghost/index.html"
+    },
+    {
+      "source": "/alternatives",
+      "destination": "/alternatives/index.html"
+    },
+    {
+      "source": "/channels",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/channels/new",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/channels/:id",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/channels/:id/subscribers",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/channels/:id/articles/new",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/articles/new",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/articles/:id/edit",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/articles/:id",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/articles/:id/:slug",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/auth",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/auth-callback",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/profile",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/users/:username",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/api",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/api-keys",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/admin",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/advertise",
+      "destination": "/app.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/api/not-found.js"
+    }
+  ]
 }
