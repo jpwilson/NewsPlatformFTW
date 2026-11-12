@@ -3527,6 +3527,36 @@ app.delete("/api/articles/:id", async (req, res) => {
   }
 });
 
+// Search users by username (admin-only, for the grant UI)
+app.get("/api/users/search", async (req, res) => {
+  try {
+    const uid = await getSupabaseUid(req);
+    if (!uid || !(await isAdminUser(uid))) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const q = (req.query.q as string || "").trim();
+    if (!q) {
+      return res.json([]);
+    }
+
+    const { data: users, error } = await supabase
+      .from("users")
+      .select("id, username")
+      .ilike("username", `%${q}%`)
+      .limit(10);
+
+    if (error) {
+      return res.status(500).json({ error: "Search failed" });
+    }
+
+    return res.json(users || []);
+  } catch (error) {
+    console.error("Error in GET /api/users/search:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 // Get user information by ID
 app.get("/api/users/:id", async (req, res) => {
   try {
@@ -4462,202 +4492,6 @@ app.post("/api/articles/:id/toggle-status", async (req, res) => {
   }
 });
 
-// Article endpoint
-app.get("/api/articles/:idOrSlug", async (req, res) => {
-  try {
-    console.log("Article endpoint called");
-
-    // Get article ID or slug from URL parameter
-    const idOrSlug = req.params.idOrSlug;
-    console.log("Looking up article:", idOrSlug);
-
-    let article;
-    let fetchError;
-
-    if (/^\d+$/.test(idOrSlug)) {
-      // It's a numeric ID
-      console.log("Fetching article by ID:", idOrSlug);
-      const result = await supabase
-        .from("articles")
-        .select(
-          `
-          *,
-          user:user_id (id, username, supabase_uid),
-          channel:channel_id (id, name, slug, description, profile_image, user_id),
-          images:article_images (id, image_url, caption, "order"),
-          categories:article_categories (
-            category_id, 
-            is_primary,
-            category:category_id (id, name, parent_id)
-          )
-        `
-        )
-        .eq("id", parseInt(idOrSlug))
-        .single();
-      article = result.data;
-      fetchError = result.error;
-    } else {
-      // Try slug lookup
-      console.log("Fetching article by slug:", idOrSlug);
-      const result = await supabase
-        .from("articles")
-        .select(
-          `
-          *,
-          user:user_id (id, username, supabase_uid),
-          channel:channel_id (id, name, slug, description, profile_image, user_id),
-          images:article_images (id, image_url, caption, "order"),
-          categories:article_categories (
-            category_id, 
-            is_primary,
-            category:category_id (id, name, parent_id)
-          )
-        `
-        )
-        .eq("slug", idOrSlug)
-        .single();
-      article = result.data;
-      fetchError = result.error;
-    }
-
-    if (fetchError || !article) {
-      console.error("Error fetching article:", fetchError);
-      return res.status(404).json({ message: "Article not found" });
-    }
-
-    console.log(`Found article: "${article.title}"`);
-
-    // Get reaction counts
-    const { data: likes, error: likesError } = await supabase
-      .from("reactions")
-      .select("id")
-      .eq("article_id", article.id)
-      .eq("is_like", true)
-      .gt("user_id", 0); // Only count real user reactions here
-
-    if (likesError) {
-      console.error("Error fetching likes:", likesError);
-    }
-
-    const { data: dislikes, error: dislikesError } = await supabase
-      .from("reactions")
-      .select("id")
-      .eq("article_id", article.id)
-      .eq("is_like", false)
-      .gt("user_id", 0); // Only count real user reactions here
-
-    if (dislikesError) {
-      console.error("Error fetching dislikes:", dislikesError);
-    }
-
-    // Get comment count - this needs to actually count the comments
-    const { data: comments, error: commentsError } = await supabase
-      .from("comments")
-      .select("id")
-      .eq("article_id", article.id);
-
-    if (commentsError) {
-      console.error("Error fetching comment count:", commentsError);
-    }
-
-    console.log(`DEBUG: Raw comments data:`, comments);
-
-    // Store comment count in article._count - use actual comment array length
-    const commentCount = comments?.length || 0;
-    console.log(`DEBUG: Comment count calculated:`, commentCount);
-
-    article._count = {
-      ...article._count,
-      comments: commentCount,
-    };
-
-    // Also expose comment count in multiple formats for backward compatibility
-    article.comment_count = commentCount;
-    article.commentCount = commentCount;
-
-    console.log(`DEBUG: Article comment counts set:`, {
-      _count: article._count,
-      comment_count: article.comment_count,
-      commentCount: article.commentCount,
-    });
-
-    // Get user's reaction if authenticated
-    let userReaction = null;
-
-    if (req.headers.authorization) {
-      const token = req.headers.authorization.replace("Bearer ", "");
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser(token);
-
-      if (!authError && user) {
-        // Get internal user ID from Supabase Auth ID
-        const { data: dbUser } = await supabase
-          .from("users")
-          .select("id")
-          .eq("supabase_uid", user.id)
-          .single();
-
-        if (dbUser) {
-          const { data: reaction } = await supabase
-            .from("reactions")
-            .select("is_like")
-            .eq("article_id", article.id)
-            .eq("user_id", dbUser.id)
-            .maybeSingle();
-
-          if (reaction) {
-            userReaction = reaction.is_like;
-          }
-        }
-      }
-    }
-
-    // Add reaction data to article
-    const userLikes = likes?.length || 0;
-    const userDislikes = dislikes?.length || 0;
-    const adminLikes = article.admin_like_count || 0;
-    const adminDislikes = article.admin_dislike_count || 0;
-
-    // The frontend expects like_count and dislike_count, not likes and dislikes
-    article.like_count = userLikes + adminLikes;
-    article.dislike_count = userDislikes + adminDislikes;
-    article.userReaction = userReaction;
-
-    console.log(
-      `Article ${article.id} reactions: ${userLikes} user likes + ${adminLikes} admin likes = ${article.like_count} total likes`
-    );
-    console.log(
-      `Article ${article.id} reactions: ${userDislikes} user dislikes + ${adminDislikes} admin dislikes = ${article.dislike_count} total dislikes`
-    );
-    console.log(`Article ${article.id} has ${commentCount} comments`);
-
-    // Keep these for backwards compatibility
-    article.likes = article.like_count;
-    article.dislikes = article.dislike_count;
-
-    // Sort images by order field
-    if (article.images) {
-      article.images.sort((a, b) => (a.order || 0) - (b.order || 0));
-    }
-
-    // Format categories to match expected client structure
-    if (article.categories) {
-      article.categories = article.categories.map((cat) => ({
-        id: cat.category_id,
-        name: cat.category?.name,
-        isPrimary: cat.is_primary,
-      }));
-    }
-
-    res.json(article);
-  } catch (error) {
-    console.error("Error in article endpoint:", error);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-
 // API endpoint to find an article ID by slug (used for redirecting old URLs)
 app.get("/api/articles/by-slug/:slug", async (req, res) => {
   try {
@@ -4957,36 +4791,6 @@ app.delete("/api/v1/api-access-users/:userId", async (req, res) => {
     return res.json({ message: "API access revoked" });
   } catch (error) {
     console.error("Error in DELETE /api/v1/api-access-users:", error);
-    return res.status(500).json({ error: "Server error" });
-  }
-});
-
-// Search users by username (admin-only, for the grant UI)
-app.get("/api/users/search", async (req, res) => {
-  try {
-    const uid = await getSupabaseUid(req);
-    if (!uid || !(await isAdminUser(uid))) {
-      return res.status(403).json({ error: "Admin access required" });
-    }
-
-    const q = (req.query.q as string || "").trim();
-    if (!q) {
-      return res.json([]);
-    }
-
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("id, username")
-      .ilike("username", `%${q}%`)
-      .limit(10);
-
-    if (error) {
-      return res.status(500).json({ error: "Search failed" });
-    }
-
-    return res.json(users || []);
-  } catch (error) {
-    console.error("Error in GET /api/users/search:", error);
     return res.status(500).json({ error: "Server error" });
   }
 });
