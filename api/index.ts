@@ -3001,14 +3001,14 @@ app.post("/api/articles/:id/comments", async (req, res) => {
 
     const userId = dbUser.id;
 
-    // Check if article exists
+    // Check if article exists and is published
     const { data: article, error: articleError } = await supabase
       .from("articles")
-      .select("id")
+      .select("id, published")
       .eq("id", articleId)
       .single();
 
-    if (articleError || !article) {
+    if (articleError || !article || !article.published) {
       console.error(`Article ${articleId} not found:`, articleError);
       return res.status(404).json({ error: "Article not found" });
     }
@@ -3026,6 +3026,12 @@ app.post("/api/articles/:id/comments", async (req, res) => {
       return res.status(400).json({ error: "Comment content is required" });
     }
 
+    if (content.trim().length > 5000) {
+      return res
+        .status(400)
+        .json({ error: "Comment must be at most 5,000 characters" });
+    }
+
     const commentData: {
       article_id: number;
       user_id: number;
@@ -3039,9 +3045,21 @@ app.post("/api/articles/:id/comments", async (req, res) => {
       created_at: new Date().toISOString(),
     };
 
-    // Add parent_id if it's provided
+    // Add parent_id if it's provided; it must be a comment on this article
     if (parent_id) {
-      commentData.parent_id = parseInt(parent_id, 10);
+      const parentId = parseInt(parent_id, 10);
+      const { data: parentComment } = isNaN(parentId)
+        ? { data: null }
+        : await supabase
+            .from("comments")
+            .select("id")
+            .eq("id", parentId)
+            .eq("article_id", articleId)
+            .maybeSingle();
+      if (!parentComment) {
+        return res.status(400).json({ error: "Invalid parent comment" });
+      }
+      commentData.parent_id = parentId;
     }
 
     console.log("Final comment data to insert:", commentData);
@@ -3816,6 +3834,10 @@ app.post("/api/articles/:slug/reactions", async (req, res) => {
       return res.status(401).json({ error: "No authorization header" });
     }
 
+    if (typeof isLike !== "boolean") {
+      return res.status(400).json({ error: "isLike must be a boolean" });
+    }
+
     const token = req.headers.authorization.replace("Bearer ", "");
     const {
       data: { user },
@@ -3827,11 +3849,12 @@ app.post("/api/articles/:slug/reactions", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // First, get the article ID from the slug
+    // First, get the article ID from the slug (published articles only)
     const { data: article, error: articleError } = await supabase
       .from("articles")
       .select("id")
       .eq("slug", articleSlug)
+      .eq("published", true)
       .single();
 
     if (articleError || !article) {
