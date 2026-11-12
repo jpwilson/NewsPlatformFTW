@@ -11,6 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
+import http from "node:http";
 
 import { startStubSupabase } from "./lib/stub-supabase.mjs";
 import { loadApi } from "./lib/load-api.mjs";
@@ -106,6 +107,31 @@ function seed() {
     article_views: [],
   };
 }
+
+/* A stub image host for Content-API downloads. */
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(300, 5)]);
+const JPEG_B = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(300, 6)]);
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(100, 3)]);
+const imageHits = {};
+const imageHost = http.createServer((req, res) => {
+  const p = new URL(req.url, "http://x").pathname;
+  imageHits[p] = (imageHits[p] || 0) + 1;
+  const files = { "/one.jpg": ["image/jpeg", JPEG], "/two.jpg": ["image/jpeg", JPEG_B], "/three.png": ["image/png", PNG], "/fake.jpg": ["image/jpeg", Buffer.from("<html>")] };
+  const f = files[p];
+  if (p === "/wiki/Special:FilePath/One.jpg") {
+    res.writeHead(302, { location: "/one.jpg" });
+    return res.end();
+  }
+  if (!f) {
+    res.writeHead(404);
+    return res.end();
+  }
+  res.writeHead(200, { "content-type": f[0] });
+  res.end(f[1]);
+});
+await new Promise((r) => imageHost.listen(0, "127.0.0.1", r));
+const IMG = `http://127.0.0.1:${imageHost.address().port}`;
+process.env.NP_INGEST_ALLOW_HOSTS = `127.0.0.1:${imageHost.address().port}`;
 
 const stub = await startStubSupabase({
   tables: seed(),
@@ -215,6 +241,75 @@ section("session DELETE /api/articles/:id");
   check("no storage object deleted", stub.storage.removed.length === 0, stub.storage.removed);
 }
 
+/* --------------------------------------------- v1: POST create (compat) */
+
+section("POST /api/v1/content/articles");
+const key = (k) => ({ "x-api-key": k });
+{
+  stub.reset(seed());
+  // The writer agent's habit: the same photos in `images` and in the body.
+  const r = await api.request("POST", "/api/v1/content/articles", {
+    headers: { ...key(OWNER_KEY), "x-forwarded-host": "www.newsplatform.org" },
+    body: {
+      title: "Legacy payload",
+      content: `Intro paragraph that is long enough.\n\n![Caption one. Photo: Someone](${IMG}/one.jpg?width=1920)\n\nMore text.\n\n![Caption two](${IMG}/two.jpg)`,
+      channelId: 10,
+      categoryIds: [1],
+      images: [{ url: `${IMG}/one.jpg?width=800` }, { url: `${IMG}/two.jpg`, caption: "" }, { url: `${IMG}/fake.jpg` }],
+      published: false,
+    },
+  });
+  check("201", r.status === 201, r.json);
+  const j = r.json || {};
+  check("legacy fields present", ["id", "title", "slug", "channelId", "status", "published", "createdAt", "url", "images", "categories"].every((k) => k in j), Object.keys(j));
+  check("draft stays a draft", j.status === "draft" && j.published === false);
+  check("images[] are the inserted rows", Array.isArray(j.images) && j.images.length === 2 && j.images.every((i) => i.id && i.article_id === j.id), j.images);
+  check("image URLs are permanent and absolute", j.images.every((i) => /^https:\/\/www\.newsplatform\.org\/media\/c\/[0-9a-f]{32}\.jpg$/.test(i.image_url)), j.images.map((i) => i.image_url));
+  check("each photo downloaded once", imageHits["/one.jpg"] === 1 && imageHits["/two.jpg"] === 1, imageHits);
+  const stored = row("articles", j.id);
+  check("body images re-hosted to the same objects", stored && !stored.content.includes(IMG) && stored.content.includes(stub.url + "/storage/v1/object/public/article-images/c/"), stored?.content);
+  const cover = stub.table("article_images").filter((i) => i.article_id === j.id).sort((a, b) => a.order - b.order)[0];
+  check("cover is images[0] and equals the first body figure", cover && stored.content.indexOf(cover.image_url) > -1 && stored.content.indexOf(cover.image_url) < stored.content.indexOf("More text"), cover);
+  check("failed image reported, not fatal", j.warnings?.some((w) => w.field === "images[2]" && w.reason === "unsupported_type"), j.warnings);
+  check("new fields: coverImage, gallery, excerpt", j.coverImage?.url === j.images[0].image_url && j.gallery?.length === 1 && j.excerpt === "Intro paragraph that is long enough.", { c: j.coverImage, g: j.gallery, e: j.excerpt });
+  check("primary category name set", stored.category === "Business", stored.category);
+
+  let r2 = await api.request("POST", "/api/v1/content/articles", {
+    headers: key(OWNER_KEY),
+    body: { title: "Legacy payload", content: "x", channelId: 10 },
+  });
+  check("duplicate title within 24 h → 409 with existingArticleId", r2.status === 409 && r2.json?.existingArticleId === j.id, r2.json);
+
+  r2 = await api.request("POST", "/api/v1/content/articles", {
+    headers: key(OWNER_KEY),
+    body: {
+      title: "Explicit cover",
+      content: "<p>Lede text for the explicit-cover article.</p>",
+      contentFormat: "html",
+      channelId: 10,
+      coverImage: { url: `${IMG}/wiki/Special:FilePath/One.jpg`, caption: "Cover caption.", credit: "Agency" },
+      gallery: [`${IMG}/three.png`],
+      excerpt: "A standfirst.",
+    },
+  });
+  check("coverImage + gallery → 201", r2.status === 201, r2.json);
+  check("cover caption carries the credit", r2.json?.coverImage?.caption === "Cover caption. Photo: Agency", r2.json?.coverImage);
+  check("gallery after the cover", r2.json?.gallery?.length === 1 && /\.png$/.test(r2.json.gallery[0].url), r2.json?.gallery);
+  check("identical bytes reuse one object (one.jpg via a redirect)", r2.json?.coverImage?.url?.split("/media/")[1] === j.coverImage?.url?.split("/media/")[1], [r2.json?.coverImage?.url, j.coverImage?.url]);
+  check("excerpt stored as the dek", row("articles", r2.json?.id)?.content.startsWith('<p class="article-dek">A standfirst.</p>') && r2.json.excerpt === "A standfirst.");
+
+  r2 = await api.request("POST", "/api/v1/content/articles", { headers: key(OWNER_KEY), body: { title: "Mixed", content: "x", channelId: 10, images: [], coverImage: "x" } });
+  check("images with coverImage → 400", r2.status === 400 && r2.json?.error === "Use either images or coverImage/gallery, not both", r2.json);
+  r2 = await api.request("POST", "/api/v1/content/articles", { headers: key(OWNER_KEY), body: { title: "Foreign", content: "x", channelId: 20 } });
+  check("foreign channel → 403 (unchanged)", r2.status === 403 && r2.json?.error === "Not authorized for this channel", r2.json);
+  r2 = await api.request("POST", "/api/v1/content/articles", { headers: key(OWNER_KEY), body: { title: "Nowhere", content: "x", channelId: 999 } });
+  check("missing channel → 404 (unchanged)", r2.status === 404 && r2.json?.error === "Channel not found", r2.json);
+  r2 = await api.request("POST", "/api/v1/content/articles", { body: { title: "No key", content: "x", channelId: 10 } });
+  check("no key → 401", r2.status === 401, r2.json);
+  r2 = await api.request("POST", "/api/v1/content/articles", { headers: key("nk_wrong"), body: { title: "Bad key", content: "x", channelId: 10 } });
+  check("bad key → 401", r2.status === 401, r2.json);
+}
+
 /* ------------------------------------------------------------ logging */
 
 section("request logs");
@@ -241,6 +336,7 @@ section("request logs");
 
 await api.close();
 await stub.close();
+imageHost.close();
 api.restoreConsole();
 console.log(out.join("\n"));
 console.log("");

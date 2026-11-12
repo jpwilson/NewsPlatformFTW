@@ -6,11 +6,14 @@ import { createClient } from "@supabase/supabase-js";
 // Plain ESM modules with no npm imports; the explicit .js extension is what
 // the Vercel builder needs (see SEO.md, "The October 2026 crawler outage").
 import {
+  deriveExcerpt,
+  setDek,
   sortImages,
   storeMediaUrls,
   toStoredUrl,
 } from "../shared/article-media.js";
 import { installJsonImageRewrite } from "./_lib/json-image-rewrite.js";
+import { ingestArticleMedia, parseImageFields } from "./_lib/image-ingest.js";
 import {
   deleteArticle,
   findArticle,
@@ -310,35 +313,6 @@ function normalizeContent(content: string, format?: string): string {
   if (format === "markdown") return markdownToHtml(content);
   if (/<[a-z][\s\S]*>/i.test(content.trim())) return content;
   return markdownToHtml(content);
-}
-
-async function downloadAndUploadImage(imageInput: any, articleId: number, index: number, sb: any): Promise<any> {
-  const { url, caption = "", order } = imageInput;
-  try {
-    const parsedUrl = new URL(url);
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) return null;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "NewsPlatform-ContentAPI/1.0" } });
-    clearTimeout(timeoutId);
-    if (!response.ok) return null;
-    const contentType = (response.headers.get("content-type") || "").split(";")[0].trim();
-    const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!validTypes.includes(contentType)) return null;
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > 10 * 1024 * 1024) return null;
-    const extMap: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp" };
-    const ext = extMap[contentType] || "jpg";
-    const filename = `api_${articleId}_${Date.now()}_${index}.${ext}`;
-    const { data: uploadData, error: uploadError } = await sb.storage.from("article-images").upload(filename, buffer, { contentType, upsert: false });
-    if (uploadError || !uploadData) return null;
-    // Public URL: the bucket is public and signed URLs expire after a year.
-    const imageUrl = sb.storage.from("article-images").getPublicUrl(uploadData.path).data.publicUrl;
-    return { imageUrl, originalUrl: url, caption, order: order ?? index };
-  } catch (error) {
-    console.error(`Error processing image from ${url}:`, error);
-    return null;
-  }
 }
 
 // Unified auth: try X-API-Key first, then fall back to Bearer JWT
@@ -5688,7 +5662,7 @@ async function createSingleArticle(
     locationLat,
     locationLng,
     published = true,
-    images = [],
+    excerpt,
   } = articleData;
 
   // Validation
@@ -5696,10 +5670,15 @@ async function createSingleArticle(
   if (!content?.trim()) throw new Error("Content is required");
   if (!channelId) throw new Error("channelId is required");
   if (categoryIds.length > 3) throw new Error("Maximum 3 categories allowed");
-  if (images.length > 5) throw new Error("Maximum 5 images allowed");
+  const imageFields = parseImageFields(articleData);
+  if (imageFields.error) throw new Error(imageFields.error);
+  if (excerpt !== undefined && excerpt !== null && (typeof excerpt !== "string" || excerpt.length > 300)) {
+    throw new Error("excerpt must be a string of at most 300 characters");
+  }
 
   // Convert content to HTML (our /media URLs stored as public bucket URLs)
-  const htmlContent = storeUrls(normalizeContent(content, contentFormat));
+  let htmlContent = storeUrls(normalizeContent(content, contentFormat));
+  if (typeof excerpt === "string" && excerpt.trim()) htmlContent = setDek(htmlContent, excerpt);
 
   // Verify channel ownership
   const { data: channel, error: channelError } = await supabase
@@ -5761,6 +5740,18 @@ async function createSingleArticle(
       slugAttempt++;
     }
   }
+
+  // Images: the attached list (legacy `images`, or coverImage + gallery) and
+  // every external body image are downloaded once per photo and stored by
+  // content, so a photo sent both as an image and in the body is one object
+  // and renders once. Lenient on create: a failed image is skipped (attached)
+  // or keeps its URL (body), and is reported in `warnings`.
+  const attached = imageFields.legacy
+    ? imageFields.legacy
+    : [...(imageFields.cover ? [imageFields.cover] : []), ...(imageFields.gallery || [])];
+  const media = await ingestArticleMedia(supabase, { attached, html: htmlContent, supabaseUrl });
+  htmlContent = media.html;
+  const warnings = [...imageFields.warnings, ...media.failures, ...media.warnings];
 
   // Build article record
   const articleRecord: any = {
@@ -5824,24 +5815,24 @@ async function createSingleArticle(
     }
   }
 
-  // Handle images (download from URLs, upload to storage)
-  const processedImages = [];
-  for (let i = 0; i < images.length; i++) {
-    const result = await downloadAndUploadImage(images[i], article.id, i, supabase);
-    if (result) {
-      const { data: imgRecord } = await supabase
-        .from("article_images")
-        .insert([{
-          article_id: article.id,
-          image_url: result.imageUrl,
-          caption: result.caption,
-          order: result.order,
-        }])
-        .select()
-        .single();
-      if (imgRecord) processedImages.push(imgRecord);
+  // Attach the stored images (cover first). Legacy callers may set `order`.
+  let processedImages: any[] = [];
+  if (media.rows.length > 0) {
+    const orderByField = new Map(attached.map((img: any, i: number) => [img.field, img.order ?? i]));
+    try {
+      processedImages = await replaceArticleImages(
+        supabase,
+        article.id,
+        media.rows.map((r: any) => ({ image_url: r.image_url, caption: r.caption, order: orderByField.get(r.field) })),
+        { renumber: !imageFields.legacy }
+      );
+    } catch (err) {
+      console.error("Error attaching images:", err);
+      warnings.push({ field: "images", url: "", reason: "attach_failed" });
     }
   }
+  const sortedImages = sortImages(processedImages);
+  const asImage = (r: any) => ({ url: r.image_url, caption: r.caption || "" });
 
   return {
     id: article.id,
@@ -5854,6 +5845,10 @@ async function createSingleArticle(
     url: `/articles/${article.id}/${article.slug}`,
     images: processedImages,
     categories: categoryResults,
+    coverImage: sortedImages[0] ? asImage(sortedImages[0]) : null,
+    gallery: sortedImages.slice(1).map(asImage),
+    excerpt: deriveExcerpt(article.content || htmlContent),
+    warnings,
   };
 }
 

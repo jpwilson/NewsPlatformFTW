@@ -270,7 +270,7 @@ export function imageKey(url) {
   parsed.searchParams.forEach((v, k) => {
     if (!SIZING_PARAMS.has(k.toLowerCase())) kept.push(`${k}=${v}`);
   });
-  return `u:${host}${parsed.pathname}${kept.length ? `?${kept.join("&")}` : ""}`;
+  return `u:${parsed.host.toLowerCase()}${parsed.pathname}${kept.length ? `?${kept.join("&")}` : ""}`;
 }
 
 /* -------------------------------------------------------------- captions */
