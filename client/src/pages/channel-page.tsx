@@ -252,28 +252,17 @@ export default function ChannelPage() {
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("article-images")
-        .upload(filename, croppedImage);
+        .upload(filename, croppedImage, { cacheControl: "31536000" });
 
       if (uploadError) {
         console.error("Upload error:", uploadError);
         throw uploadError;
       }
 
-      // Get signed URL (valid for 1 year)
-      const { data: urlData } = await supabase.storage
-        .from("article-images")
-        .createSignedUrl(uploadData.path, 31536000);
-
-      let imageUrl: string;
-      if (!urlData?.signedUrl) {
-        // Fallback to regular public URL if signed URL fails
-        const { data: { publicUrl } } = supabase.storage
-          .from("article-images")
-          .getPublicUrl(uploadData.path);
-        imageUrl = publicUrl;
-      } else {
-        imageUrl = urlData.signedUrl;
-      }
+      // The bucket is public: store the permanent public URL (signed URLs expired after a year).
+      const {
+        data: { publicUrl: imageUrl },
+      } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);
 
       console.log("Profile upload - uploadData.path:", uploadData.path);
       console.log("Profile upload - imageUrl:", imageUrl);
@@ -331,28 +320,17 @@ export default function ChannelPage() {
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("article-images")
-        .upload(filename, file);
+        .upload(filename, file, { cacheControl: "31536000" });
 
       if (uploadError) {
         console.error("Upload error:", uploadError);
         throw uploadError;
       }
 
-      // Get signed URL (valid for 1 year)
-      const { data: urlData } = await supabase.storage
-        .from("article-images")
-        .createSignedUrl(uploadData.path, 31536000);
-
-      let imageUrl: string;
-      if (!urlData?.signedUrl) {
-        // Fallback to regular public URL if signed URL fails
-        const { data: { publicUrl } } = supabase.storage
-          .from("article-images")
-          .getPublicUrl(uploadData.path);
-        imageUrl = publicUrl;
-      } else {
-        imageUrl = urlData.signedUrl;
-      }
+      // The bucket is public: store the permanent public URL (signed URLs expired after a year).
+      const {
+        data: { publicUrl: imageUrl },
+      } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);
 
       console.log("Banner upload - uploadData.path:", uploadData.path);
       console.log("Banner upload - imageUrl:", imageUrl);
