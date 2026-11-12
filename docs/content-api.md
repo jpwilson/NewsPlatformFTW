@@ -138,6 +138,10 @@ curl -X POST https://www.newsplatform.org/api/v1/content/articles \
 ```
 
 - `content` is HTML. To edit it and send it back, use `"contentFormat": "html"`.
+- `content` is stored sanitised (POST and PATCH alike, markdown or HTML): only
+  the elements and attributes the reader renders are kept (everything in
+  `docs/article-format.md`); scripts, event handlers, `javascript:` links and
+  iframes other than YouTube and Vimeo are removed.
 - `excerptSource` is `"dek"` when the article has a standfirst, else
   `"derived"` (the first paragraph outside callouts and figures, else the first
   summary bullet, at most 200 characters).
