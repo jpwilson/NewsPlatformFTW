@@ -4137,25 +4137,9 @@ app.patch("/api/articles/:id", async (req, res) => {
 
     // Construct update object with only provided fields
     const updates: any = {};
-    if (title !== undefined) {
-      updates.title = title;
-
-      // Update slug if title changes
-      const baseSlug = title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .substring(0, 60);
-
-      // Add date to make it more unique
-      const date = new Date();
-      const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1)
-        .toString()
-        .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
-      updates.slug = `${dateStr}-${baseSlug}`;
-
-      console.log("Generated new slug for article update:", updates.slug);
-    }
+    // The slug (and so the URL) changes only when the title actually changes:
+    // the inline editor sends the title on every save.
+    if (title !== undefined) updates.title = title;
     if (content !== undefined) updates.content = storeUrls(content);
     if (category !== undefined) updates.category = category;
 
@@ -4189,7 +4173,7 @@ app.patch("/api/articles/:id", async (req, res) => {
     // Update the article
     let updatedArticle;
     try {
-      ({ article: updatedArticle } = await updateArticleFields(supabase, article, updates, { slugMode: "keep" }));
+      ({ article: updatedArticle } = await updateArticleFields(supabase, article, updates, { slugMode: "if-title-changed" }));
     } catch (updateError) {
       console.error("Error updating article:", updateError);
       return res.status(500).json({

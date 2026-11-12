@@ -141,7 +141,21 @@ section("session PATCH /api/articles/:id");
   check("slug unchanged without a title", row("articles", 100).slug === "2026-01-02-original-title");
   check("location mirrored to location_name", row("articles", 100).location_name === "Madrid");
 
-  r = await api.request("PATCH", "/2026-01-02-original-title".replace(/^/, "/api/articles"), { headers: owner, body: { category: "Tech" } });
+  r = await api.request("PATCH", "/api/articles/100", { headers: owner, body: { title: "Original title", content: "<p>Saved again.</p>" } });
+  check("same title (editor save) keeps the slug", r.status === 200 && row("articles", 100).slug === "2026-01-02-original-title", row("articles", 100).slug);
+
+  stub.table("articles").push({ id: 101, title: "Taken", slug: "2026-01-02-new-headline", channel_id: 10, user_id: 1, status: "draft", created_at: "2026-01-02T09:00:00.000Z" });
+  r = await api.request("PATCH", "/api/articles/100", { headers: owner, body: { title: "New headline" } });
+  check(
+    "changed title: new slug dated by created_at, collision-suffixed",
+    r.status === 200 && row("articles", 100).slug === "2026-01-02-new-headline-2",
+    row("articles", 100).slug
+  );
+  check("response carries the new slug", r.json?.slug === "2026-01-02-new-headline-2", r.json?.slug);
+  r = await api.request("PATCH", "/api/articles/100", { headers: owner, body: { title: "New headline" } });
+  check("repeating the title keeps it", row("articles", 100).slug === "2026-01-02-new-headline-2", row("articles", 100).slug);
+
+  r = await api.request("PATCH", "/api/articles/2026-01-02-new-headline-2", { headers: owner, body: { category: "Tech" } });
   check("lookup by slug works", r.status === 200 && row("articles", 100).category === "Tech", r.json);
 
   r = await api.request("PATCH", "/api/articles/100", { headers: owner, body: { categoryIds: [2, 1] } });

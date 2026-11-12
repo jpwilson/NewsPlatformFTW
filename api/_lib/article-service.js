@@ -46,10 +46,10 @@ export function slugBase(title) {
     .substring(0, 60);
 }
 
-/** YYYY-MM-DD in local time, as creation does. */
+/** YYYY-MM-DD in UTC (creation uses server local time, which is UTC on Vercel). */
 export function slugDate(date) {
   const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
 /**
