@@ -581,25 +581,36 @@ app.get("/api/user", async (req, res) => {
 // Add Supabase callback endpoint for Google OAuth
 app.post("/api/auth/supabase-callback", async (req, res) => {
   try {
-    const { supabase_uid, email, name } = req.body;
-
-    console.log("Supabase OAuth callback received:", {
-      supabase_uid: supabase_uid ? "✓" : "✗",
-      email: email ? "✓" : "✗",
-      name: name ? "✓" : "✗",
-    });
-
-    if (!supabase_uid) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing Supabase user ID",
-      });
+    // The Supabase id and email come only from the verified access token;
+    // anything in the request body is ignored.
+    const authHeader = req.headers.authorization;
+    const token =
+      authHeader && authHeader.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]
+        : "";
+    if (!token) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
     }
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAuth.auth.getUser(token);
+    if (authError || !user) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const supabase_uid = user.id;
+    const email = user.email || "";
+
+    console.log("Supabase OAuth callback received for a verified user");
+
+    const publicUserColumns = "id, username, description, created_at";
 
     // Try to find existing user with this Supabase ID
     const { data: existingUser, error: findError } = await supabase
       .from("users")
-      .select("*")
+      .select(publicUserColumns)
       .eq("supabase_uid", supabase_uid)
       .single();
 
@@ -619,23 +630,36 @@ app.post("/api/auth/supabase-callback", async (req, res) => {
       });
     }
 
-    // Create a new user
-    const username = email ? email.split("@")[0] : `user_${Date.now()}`;
-    console.log("Creating new user with username:", username);
+    // Create a new user, username derived from the verified email
+    const baseUsername =
+      (email.split("@")[0] || "").replace(/[^a-z0-9_]/gi, "").slice(0, 30) ||
+      `user_${randomBytes(3).toString("hex")}`;
 
-    const { data: newUser, error: createError } = await supabase
-      .from("users")
-      .insert([
-        {
-          username,
-          password: "", // No password needed
-          supabase_uid,
-        },
-      ])
-      .select()
-      .single();
+    let newUser = null;
+    let createError = null;
+    for (let attempt = 0; attempt < 3 && !newUser; attempt++) {
+      const username =
+        attempt === 0
+          ? baseUsername
+          : `${baseUsername.slice(0, 25)}_${randomBytes(2).toString("hex")}`;
+      console.log("Creating new user with username:", username);
 
-    if (createError) {
+      ({ data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert([
+          {
+            username,
+            password: "", // No password needed
+            supabase_uid,
+          },
+        ])
+        .select(publicUserColumns)
+        .single());
+
+      if (createError && createError.code !== "23505") break;
+    }
+
+    if (createError || !newUser) {
       console.error("Error creating user:", createError);
       return res.status(500).json({
         success: false,
