@@ -9,18 +9,21 @@ import {
   LAST_EDITED_IS_TRUSTWORTHY,
   deriveExcerpt,
   extractDek,
+  rewriteStorageUrls,
   setDek,
   sortImages,
   storeMediaUrls,
   toStoredUrl,
 } from "../shared/article-media.js";
+import { sanitizeArticleHtml } from "./_lib/sanitize-article-html.js";
 import { installJsonImageRewrite } from "./_lib/json-image-rewrite.js";
 import { ingestArticleMedia, parseImageFields } from "./_lib/image-ingest.js";
 import { recordPageEvent, registerAnalyticsRoutes } from "./_lib/analytics.js";
 import {
-  NEWS_WINDOW_HOURS,
   LIST_COLUMNS,
+  NEWS_WINDOW_HOURS,
   PAGE_SIZE,
+  coverImageUrl,
   crawlerName,
   fetchAllRows,
   newsSitemapXml,
@@ -5632,23 +5635,41 @@ function xmlEscape(s: any): string {
     .replace(/'/g, "&apos;");
 }
 
-function rssItemXml(a: any): string {
-  const link = `${SITE_BASE}/articles/${a.id}${a.slug ? `/${a.slug}` : ""}`;
-  const desc = String(a.content || "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 300);
-  const pub = a.published_at || a.created_at;
-  return `<item><title>${xmlEscape(a.title)}</title><link>${xmlEscape(link)}</link><guid isPermaLink="true">${xmlEscape(link)}</guid>${
-    pub ? `<pubDate>${new Date(pub).toUTCString()}</pubDate>` : ""
-  }${a.category ? `<category>${xmlEscape(a.category)}</category>` : ""}<description>${xmlEscape(desc)}</description></item>`;
+/** Image MIME type from a URL's extension (RSS enclosures need one). */
+function imageTypeFromUrl(url: string): string {
+  const ext = (String(url).split("?")[0].match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
+  return ({ png: "image/png", gif: "image/gif", webp: "image/webp", avif: "image/avif" } as any)[ext] || "image/jpeg";
 }
 
-function rssFeedXml(title: string, link: string, description: string, items: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0"><channel><title>${xmlEscape(title)}</title><link>${xmlEscape(link)}</link><description>${xmlEscape(description)}</description><language>en</language>${items}</channel></rss>`;
+/**
+ * Feed body: the sanitised article HTML (same allowlist as the crawler
+ * page), our photos as permanent absolute /media URLs, relative links made
+ * absolute (feed readers have no base URL), safe inside CDATA.
+ */
+function rssBodyHtml(content: any): string {
+  const safe = rewriteStorageUrls(sanitizeArticleHtml(String(content || "")), SITE_BASE);
+  return safe.replace(/(\s(?:src|href)=")\/(?!\/)/g, `$1${SITE_BASE}/`).replace(/]]>/g, "]]]]><![CDATA[>");
 }
+
+function rssItemXml(a: any): string {
+  const link = `${SITE_BASE}/articles/${a.id}${a.slug ? `/${a.slug}` : ""}`;
+  const desc = deriveExcerpt(String(a.content || ""), 300);
+  const pub = a.published_at || a.created_at;
+  const cover = coverImageUrl(a.images);
+  return `<item><title>${xmlEscape(a.title)}</title><link>${xmlEscape(link)}</link><guid isPermaLink="true">${xmlEscape(link)}</guid>${
+    pub ? `<pubDate>${new Date(pub).toUTCString()}</pubDate>` : ""
+  }${a.category ? `<category>${xmlEscape(a.category)}</category>` : ""}<description>${xmlEscape(desc)}</description>${
+    cover ? `<enclosure url="${xmlEscape(cover)}" type="${imageTypeFromUrl(cover)}" length="0"/>` : ""
+  }<content:encoded><![CDATA[${rssBodyHtml(a.content)}]]></content:encoded></item>`;
+}
+
+function rssFeedXml(title: string, link: string, description: string, items: string, selfUrl: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>${xmlEscape(title)}</title><link>${xmlEscape(link)}</link><atom:link href="${xmlEscape(selfUrl)}" rel="self" type="application/rss+xml"/><description>${xmlEscape(description)}</description><language>en</language>${items}</channel></rss>`;
+}
+
+/** Feed columns: the body for content:encoded, images for the enclosure. */
+const RSS_COLUMNS = "id, slug, title, content, category, created_at, published_at, images:article_images ( id, image_url, order )";
 
 app.get("/sitemap.xml", async (req, res) => {
   try {
@@ -5736,7 +5757,7 @@ app.get("/rss.xml", async (req, res) => {
   try {
     const { data: articles } = await supabase
       .from("articles")
-      .select("id, slug, title, content, category, created_at, published_at")
+      .select(RSS_COLUMNS)
       .eq("published", true)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -5745,7 +5766,8 @@ app.get("/rss.xml", async (req, res) => {
       "NewsPlatform",
       SITE_BASE,
       "Today's top stories from independent channels on NewsPlatform.",
-      items
+      items,
+      `${SITE_BASE}/rss.xml`
     );
     res.setHeader("Content-Type", "application/rss+xml");
     res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=3600");
@@ -5771,7 +5793,7 @@ app.get("/channels/:id/rss.xml", async (req, res) => {
 
     const { data: articles } = await supabase
       .from("articles")
-      .select("id, slug, title, content, category, created_at, published_at")
+      .select(RSS_COLUMNS)
       .eq("channel_id", channelId)
       .eq("published", true)
       .order("created_at", { ascending: false })
@@ -5782,7 +5804,8 @@ app.get("/channels/:id/rss.xml", async (req, res) => {
       `${channel.name} — NewsPlatform`,
       `${SITE_BASE}/channels/${channel.id}`,
       channel.description || `Latest articles from ${channel.name} on NewsPlatform.`,
-      items
+      items,
+      `${SITE_BASE}/channels/${channel.id}/rss.xml`
     );
     res.setHeader("Content-Type", "application/rss+xml");
     res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=3600");

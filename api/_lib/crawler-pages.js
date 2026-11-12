@@ -260,7 +260,7 @@ function documentHtml({ title, description, canonical, head = "", header, main, 
     <meta name="theme-color" content="#111111" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Playfair+Display:wght@700;800;900&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="${SITE_STYLESHEET}" />
     <link rel="alternate" type="application/rss+xml" title="NewsPlatform" href="${SITE}/rss.xml" />
     <style>${PAGE_STYLE}</style>

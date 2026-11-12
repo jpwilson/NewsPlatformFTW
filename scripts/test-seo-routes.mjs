@@ -261,6 +261,41 @@ section("channel pages for crawlers (api/prerender-article.js)");
   process.env.NODE_ENV = "test";
 }
 
+/* ------------------------------------------------------------------ RSS */
+
+section("RSS feeds");
+{
+  const data = seed();
+  data.articles[0].content =
+    '<p class="article-dek">The standfirst.</p><p>Lede with a <a href="/articles/2/x">link</a>.</p>' +
+    `<figure class="article-figure"><img src="${SB_HOST_URL}/storage/v1/object/sign/article-images/c/body.jpg?token=secret"><figcaption>Cap</figcaption></figure>` +
+    '<script>alert(1)</script><img src=x onerror=alert(2)><p>Odd ]]> sequence.</p>' +
+    '<aside class="callout callout-summary" data-callout="summary"><div class="callout-title">In brief</div><div class="callout-body"><ul><li>Point</li></ul></div></aside>';
+  data.article_images.push({ id: 9, article_id: 2, image_url: `${SB_HOST_URL}/storage/v1/object/public/article-images/c/two.png`, caption: "", order: 0 });
+  stub.reset(data);
+  const r = await api.request("GET", "/rss.xml");
+  const xml = r.text;
+  check("200 application/rss+xml", r.status === 200 && /rss\+xml/.test(r.headers.get("content-type") || ""), r.status);
+  check("content and atom namespaces", xml.includes('xmlns:content="http://purl.org/rss/1.0/modules/content/"') && xml.includes('xmlns:atom="http://www.w3.org/2005/Atom"'));
+  check("atom:link rel=self", xml.includes(`<atom:link href="${SITE}/rss.xml" rel="self" type="application/rss+xml"/>`));
+  const item1 = xml.match(/<item><title>Fresh[\s\S]*?<\/item>/)?.[0] || "";
+  check("description is the excerpt (standfirst)", item1.includes("<description>The standfirst.</description>"), item1.slice(0, 400));
+  check("enclosure: permanent cover URL with an image type", item1.includes(`<enclosure url="${SITE}/media/c/cover.jpg" type="image/jpeg" length="0"/>`), item1);
+  const body = item1.match(/<content:encoded><!\[CDATA\[([\s\S]*)\]\]><\/content:encoded>/)?.[1] || "";
+  check("content:encoded carries the body", body.includes("Lede with a") && body.includes("callout-summary") && body.includes("<figcaption>Cap</figcaption>"), body);
+  check("content:encoded is sanitised", !/<script/i.test(body) && !/onerror/i.test(body), body);
+  check("photos as absolute /media URLs, no token", body.includes(`src="${SITE}/media/c/body.jpg"`) && !xml.includes("token=") && !xml.includes("/object/sign/"), body);
+  check("relative links made absolute", body.includes(`href="${SITE}/articles/2/x"`), body);
+  check("]]> inside the body cannot end the CDATA section", item1.split("]]></content:encoded>").length === 2 && !/Odd ]]> sequence/.test(item1), item1.slice(-200));
+  const item2 = xml.match(/<item><title>Yesterday[\s\S]*?<\/item>/)?.[0] || "";
+  check("png cover → image/png enclosure", item2.includes(`<enclosure url="${SITE}/media/c/two.png" type="image/png" length="0"/>`), item2);
+  check("article without photos has no enclosure", !(xml.match(/<item><title>Last week[\s\S]*?<\/item>/)?.[0] || "<enclosure").includes("<enclosure"));
+  check("drafts never in the feed", !xml.includes("Secret draft") && !xml.includes("draft.jpg"));
+  const ch = await api.request("GET", "/channels/10/rss.xml");
+  check("channel feed: atom self link", ch.status === 200 && ch.text.includes(`<atom:link href="${SITE}/channels/10/rss.xml" rel="self"`), ch.status);
+  check("channel feed: enclosure + content:encoded, no drafts", ch.text.includes("<enclosure ") && ch.text.includes("<content:encoded>") && !ch.text.includes("Secret draft"));
+}
+
 /* ------------------------------------------------------------- IndexNow */
 
 section("pingIndexNow (api/_lib/indexnow.js)");
