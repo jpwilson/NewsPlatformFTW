@@ -169,6 +169,62 @@ check("path validator", isValidMediaPath("c/a.jpg") && !isValidMediaPath("a/../b
 
 app.close();
 supabase.close();
+
+/* -------------------------------------------- res.json URL rewriting */
+
+console.log("\nJSON image URL rewrite (api/_lib/json-image-rewrite.js):");
+{
+  const { default: express } = await import("express");
+  const { installJsonImageRewrite } = await import("../api/_lib/json-image-rewrite.js");
+  const SB = "https://mwrhaqghxatfwzsjjfrv.supabase.co";
+  const signedUrl = `${SB}/storage/v1/object/sign/article-images/api_1_2_0.jpg?token=eyJ.x.y`;
+  const api = express();
+  installJsonImageRewrite(api);
+  const payload = () => ({
+    images: [{ imageUrl: signedUrl }],
+    content: `<figure><img src="${signedUrl}"></figure>`,
+    channel: { profile_image: `${SB}/storage/v1/object/public/article-images/channels/1/p.jpg` },
+  });
+  api.get("/api/articles/1", (_req, res) => res.json(payload()));
+  api.get("/api/v1/content/articles/1", (_req, res) => res.status(201).json(payload()));
+  api.get("/api/ai/latest-stories", (_req, res) => res.json(payload()));
+  api.get("/api/plain", (_req, res) => res.json({ ok: true }));
+  const circular = {};
+  circular.self = circular;
+  api.get("/api/broken", (_req, res) => {
+    try {
+      res.json(circular);
+    } catch {
+      res.status(500).json({ error: "circular" });
+    }
+  });
+  const srv = await new Promise((r) => {
+    const s = api.listen(0, "127.0.0.1", () => r(s));
+  });
+  const b = `http://127.0.0.1:${srv.address().port}`;
+
+  let rr = await fetch(`${b}/api/articles/1`);
+  let j = await rr.json();
+  check("SPA route: relative /media", j.images[0].imageUrl === "/media/api_1_2_0.jpg", j.images[0].imageUrl);
+  check("SPA route: body HTML rewritten", j.content === '<figure><img src="/media/api_1_2_0.jpg"></figure>', j.content);
+  check("SPA route: channel image rewritten", j.channel.profile_image === "/media/channels/1/p.jpg");
+  check("SPA route: JSON content type", (rr.headers.get("content-type") || "").startsWith("application/json"));
+
+  rr = await fetch(`${b}/api/v1/content/articles/1`, { headers: { "x-forwarded-host": "preview-x.vercel.app", "x-forwarded-proto": "https" } });
+  j = await rr.json();
+  check("v1: status kept", rr.status === 201);
+  check("v1: absolute on the request host", j.images[0].imageUrl === "https://preview-x.vercel.app/media/api_1_2_0.jpg", j.images[0].imageUrl);
+
+  rr = await fetch(`${b}/api/ai/latest-stories`, { headers: { "x-forwarded-host": "bad host<script>" } });
+  j = await rr.json();
+  check("ai: bad host falls back to production", j.images[0].imageUrl === "https://www.newsplatform.org/media/api_1_2_0.jpg", j.images[0].imageUrl);
+
+  rr = await fetch(`${b}/api/plain`);
+  check("responses without images untouched", JSON.stringify(await rr.json()) === '{"ok":true}');
+  rr = await fetch(`${b}/api/broken`);
+  check("serialisation failure falls back to the original behaviour", rr.status === 500, String(rr.status));
+  srv.close();
+}
 console.log("");
 if (failures) {
   console.error(`test-media: ${failures} failure(s).\n`);

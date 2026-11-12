@@ -3,6 +3,14 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import express from "express";
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
+// Plain ESM modules with no npm imports; the explicit .js extension is what
+// the Vercel builder needs (see SEO.md, "The October 2026 crawler outage").
+import {
+  sortImages,
+  storeMediaUrls,
+  toStoredUrl,
+} from "../shared/article-media.js";
+import { installJsonImageRewrite } from "./_lib/json-image-rewrite.js";
 
 // Initialize Supabase client directly
 const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -24,6 +32,13 @@ if (!supabaseServiceKey) {
 // and one with admin rights for database operations
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
+
+// Stored form of our images: the public bucket URL (works with or without
+// /media deployed). Applied at every write that can carry an image URL.
+const storeUrls = (text: any) =>
+  typeof text === "string" ? storeMediaUrls(text, supabaseUrl) : text;
+const storeUrl = (url: any) =>
+  typeof url === "string" ? toStoredUrl(url, supabaseUrl) : url;
 
 // Content API utilities (inlined to avoid cross-directory import issues with @vercel/node)
 import { createHash, randomBytes } from "crypto";
@@ -310,8 +325,8 @@ async function downloadAndUploadImage(imageInput: any, articleId: number, index:
     const filename = `api_${articleId}_${Date.now()}_${index}.${ext}`;
     const { data: uploadData, error: uploadError } = await sb.storage.from("article-images").upload(filename, buffer, { contentType, upsert: false });
     if (uploadError || !uploadData) return null;
-    const { data: urlData } = await sb.storage.from("article-images").createSignedUrl(uploadData.path, 365 * 24 * 60 * 60);
-    const imageUrl = urlData?.signedUrl || sb.storage.from("article-images").getPublicUrl(uploadData.path).data.publicUrl;
+    // Public URL: the bucket is public and signed URLs expire after a year.
+    const imageUrl = sb.storage.from("article-images").getPublicUrl(uploadData.path).data.publicUrl;
     return { imageUrl, originalUrl: url, caption, order: order ?? index };
   } catch (error) {
     console.error(`Error processing image from ${url}:`, error);
@@ -388,6 +403,9 @@ console.log("Has SUPABASE_SERVICE_KEY:", !!process.env.SUPABASE_SERVICE_KEY);
 // Setup Express middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Every image URL the API emits is permanent (/media/<path>); see the module.
+installJsonImageRewrite(app);
 
 // Add CORS middleware with dynamic origin
 app.use((req, res, next) => {
@@ -1145,6 +1163,7 @@ app.get("/api/articles", async (req, res) => {
         `
         *,
         images:article_images (
+          id,
           image_url,
           caption,
           order
@@ -1341,7 +1360,8 @@ app.get("/api/articles", async (req, res) => {
 
             // Transform images data to match the expected format
             if (article.images) {
-              article.images = article.images.map((img) => ({
+              // Cover = lowest (order, id); embedded rows come back unordered.
+              article.images = sortImages(article.images).map((img) => ({
                 imageUrl: img.image_url,
                 caption: img.caption || "",
               }));
@@ -1489,7 +1509,7 @@ app.post("/api/articles", async (req, res) => {
     // Prepare the article object
     const articleData: any = {
       title: title.trim(),
-      content: content,
+      content: storeUrls(content),
       channel_id: channelIdNumber,
       user_id: userId,
       category: category || "",
@@ -1819,7 +1839,8 @@ app.get("/api/articles/:id", async (req, res) => {
         .from("article_images")
         .select("*")
         .eq("article_id", articleId)
-        .order("order", { ascending: true });
+        .order("order", { ascending: true })
+        .order("id", { ascending: true });
 
       if (!imageError && imageData) {
         console.log(
@@ -3330,6 +3351,7 @@ app.get("/api/channels/:id/articles", async (req, res) => {
         `
         *,
         images:article_images (
+          id,
           image_url,
           caption,
           order
@@ -3462,7 +3484,7 @@ app.get("/api/channels/:id/articles", async (req, res) => {
 
         // Transform images data to match the expected format
         const transformedImages = article.images
-          ? article.images.map((img) => ({
+          ? sortImages(article.images).map((img) => ({
               imageUrl: img.image_url,
               caption: img.caption || "",
             }))
@@ -3729,8 +3751,8 @@ app.patch("/api/channels/:id", async (req, res) => {
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (category !== undefined) updateData.category = category;
-    if (profileImage !== undefined) updateData.profile_image = profileImage;
-    if (bannerImage !== undefined) updateData.banner_image = bannerImage;
+    if (profileImage !== undefined) updateData.profile_image = storeUrl(profileImage);
+    if (bannerImage !== undefined) updateData.banner_image = storeUrl(bannerImage);
 
     console.log(`[PATCH /api/channels/${channelId}] Request body:`, { name, description, category, profileImage, bannerImage });
     console.log(`[PATCH /api/channels/${channelId}] Update data to send to DB:`, updateData);
@@ -4148,7 +4170,7 @@ app.patch("/api/articles/:id", async (req, res) => {
 
       console.log("Generated new slug for article update:", updates.slug);
     }
-    if (content !== undefined) updates.content = content;
+    if (content !== undefined) updates.content = storeUrls(content);
     if (category !== undefined) updates.category = category;
 
     // Handle location fields with the new structure
@@ -4922,29 +4944,8 @@ app.put("/api/articles/:id/images", async (req, res) => {
         .json({ message: "Failed to fetch current images" });
     }
 
-    // Find images to delete (images in currentImages but not in new images array)
-    const newImageUrls = new Set(images.map((img) => img.image_url));
-    const imagesToDelete =
-      currentImages?.filter((img) => !newImageUrls.has(img.image_url)) || [];
-
-    // Delete removed images from storage
-    if (imagesToDelete.length > 0) {
-      const storage = supabase.storage.from("article-images");
-      for (const image of imagesToDelete) {
-        const filename = image.image_url.split("/").pop();
-        if (filename) {
-          const { error: deleteStorageError } = await storage.remove([
-            filename,
-          ]);
-          if (deleteStorageError) {
-            console.error(
-              "Error deleting image from storage:",
-              deleteStorageError
-            );
-          }
-        }
-      }
-    }
+    // Storage objects are never deleted here: the same object can back
+    // another article, a body figure or a cached /media URL.
 
     // Delete all current images from the database (we'll reinsert the kept ones)
     const { error: deleteError } = await supabase
@@ -4964,7 +4965,7 @@ app.put("/api/articles/:id/images", async (req, res) => {
         .insert(
           images.map((img) => ({
             article_id: articleId,
-            image_url: img.image_url,
+            image_url: storeUrl(img.image_url),
             caption: img.caption,
             order: img.order,
           }))
@@ -5044,7 +5045,7 @@ app.post("/api/articles/:id/images", async (req, res) => {
       .insert(
         imageData.map((img) => ({
           article_id: articleId,
-          image_url: img.image_url,
+          image_url: storeUrl(img.image_url),
           caption: img.caption || "",
           order: img.order || 0,
         }))
@@ -5840,8 +5841,8 @@ async function createSingleArticle(
   if (categoryIds.length > 3) throw new Error("Maximum 3 categories allowed");
   if (images.length > 5) throw new Error("Maximum 5 images allowed");
 
-  // Convert content to HTML
-  const htmlContent = normalizeContent(content, contentFormat);
+  // Convert content to HTML (our /media URLs stored as public bucket URLs)
+  const htmlContent = storeUrls(normalizeContent(content, contentFormat));
 
   // Verify channel ownership
   const { data: channel, error: channelError } = await supabase
@@ -6155,7 +6156,8 @@ app.get("/api/v1/content/articles/:id", async (req, res) => {
       .from("article_images")
       .select("*")
       .eq("article_id", article.id)
-      .order("order");
+      .order("order")
+      .order("id");
 
     // Get categories
     const { data: categories } = await supabase
