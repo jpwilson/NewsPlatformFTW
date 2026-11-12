@@ -7,6 +7,7 @@
     "dev": "tsx server/index.ts",
     "dev:serverless": "concurrently \"npm run dev:api\" \"vite\"",
     "dev:api": "tsx scripts/dev-serverless.ts",
+    "dev:client": "NP_API_TARGET=https://www.newsplatform.org vite --mode production",
     "build": "vite build && tsx scripts/prerender.ts && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "vercel-build": "vite build && tsx scripts/prerender.ts && esbuild api/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
