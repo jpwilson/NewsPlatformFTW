@@ -215,6 +215,20 @@ section("session DELETE /api/articles/:id");
   check("no storage object deleted", stub.storage.removed.length === 0, stub.storage.removed);
 }
 
+/* ------------------------------------------------------------ logging */
+
+section("request logs");
+{
+  await api.request("POST", "/api/v1/content/articles", { headers: { "x-api-key": OWNER_KEY, cookie: "sb=secret-cookie" }, body: { title: "" } });
+  await api.request("POST", "/api/auth/session-from-hash", { body: { access_token: "secret-access-token", refresh_token: "secret-refresh" } });
+  const all = api.logs.join("\n");
+  check("logs were captured", all.length > 0);
+  check("no bearer token in the logs", !all.includes(OWNER_TOKEN) && !all.includes(OTHER_TOKEN));
+  check("no API key in the logs", !all.includes(OWNER_KEY));
+  check("no cookie in the logs", !all.includes("secret-cookie"));
+  check("no body tokens in the logs", !all.includes("secret-access-token") && !all.includes("secret-refresh"));
+}
+
 /* ------------------------------------------------------------------ end */
 
 await api.close();

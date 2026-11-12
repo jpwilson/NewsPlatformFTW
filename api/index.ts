@@ -398,6 +398,24 @@ async function authenticateUser(
   return { userId: dbUser.id };
 }
 
+// Logs must never carry credentials: API keys, bearer tokens, cookies, or
+// the auth tokens some request bodies carry.
+const SECRET_HEADERS = new Set(["authorization", "x-api-key", "cookie", "set-cookie"]);
+const SECRET_BODY_KEYS = new Set(["access_token", "refresh_token", "provider_token", "password", "token"]);
+function redactHeaders(headers: any) {
+  const out: any = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    out[k] = SECRET_HEADERS.has(k.toLowerCase()) ? "[redacted]" : v;
+  }
+  return out;
+}
+function redactBody(body: any) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const out: any = {};
+  for (const [k, v] of Object.entries(body)) out[k] = SECRET_BODY_KEYS.has(k) ? "[redacted]" : v;
+  return out;
+}
+
 // Create Express app
 const app = express();
 
@@ -450,14 +468,14 @@ app.use((req, res, next) => {
 
   // Log request details
   console.log(`[${requestId}] 🔍 REQUEST ${req.method} ${req.url}`);
-  console.log(`[${requestId}] Headers: ${JSON.stringify(req.headers)}`);
+  console.log(`[${requestId}] Headers: ${JSON.stringify(redactHeaders(req.headers))}`);
 
   if (Object.keys(req.query).length > 0) {
     console.log(`[${requestId}] Query params: ${JSON.stringify(req.query)}`);
   }
 
   if (req.body && Object.keys(req.body).length > 0) {
-    console.log(`[${requestId}] Body: ${JSON.stringify(req.body)}`);
+    console.log(`[${requestId}] Body: ${JSON.stringify(redactBody(req.body))}`);
   }
 
   // Capture response data
@@ -1669,7 +1687,7 @@ app.get("/api/articles/:id", async (req, res) => {
     const { id } = req.params;
     console.log("====== ARTICLE LOOKUP DEBUG ======");
     console.log("Article lookup request for:", id);
-    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
+    console.log("Request headers:", JSON.stringify(redactHeaders(req.headers), null, 2));
 
     let article;
     let error;
@@ -4365,7 +4383,7 @@ app.get("/api/channels/:id/subscribers", async (req, res) => {
     console.log(`API: Fetching subscribers for channel ID: ${channelId}`);
 
     // Debug log to check all request headers
-    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
+    console.log("Request headers:", JSON.stringify(redactHeaders(req.headers), null, 2));
 
     // Extract the Authorization header (if any)
     const authHeader = req.headers.authorization;
@@ -4999,7 +5017,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Enhanced debugging for Vercel serverless environment
   console.log(`[${requestId}] 🚀 SERVERLESS FUNCTION INVOKED`);
   console.log(`[${requestId}] Method: ${req.method}, URL: ${req.url}`);
-  console.log(`[${requestId}] Headers: ${JSON.stringify(req.headers)}`);
+  console.log(`[${requestId}] Headers: ${JSON.stringify(redactHeaders(req.headers))}`);
   console.log(`[${requestId}] Query params: ${JSON.stringify(req.query)}`);
   console.log(
     `[${requestId}] Environment: Vercel=${
@@ -5011,7 +5029,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.body && Object.keys(req.body).length > 0) {
     try {
-      console.log(`[${requestId}] Request body: ${JSON.stringify(req.body)}`);
+      console.log(`[${requestId}] Request body: ${JSON.stringify(redactBody(req.body))}`);
     } catch (err) {
       console.log(
         `[${requestId}] Request body present but not JSON serializable`
