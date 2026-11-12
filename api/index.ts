@@ -4061,10 +4061,28 @@ app.get("/api/locations", async (req, res) => {
 });
 
 // Update article images
+// An article image URL must be an https: URL or a site path under /media/.
+function isAllowedImageUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  if (value.startsWith("/media/")) return true;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 app.put("/api/articles/:id/images", async (req, res) => {
   try {
     const articleId = parseInt(req.params.id);
     const { images } = req.body; // Array of { image_url, caption, order }
+
+    if (!Array.isArray(images)) {
+      return res.status(400).json({ message: "images must be an array" });
+    }
+    if (!images.every((img) => isAllowedImageUrl(img?.image_url))) {
+      return res.status(400).json({ message: "Invalid image URL" });
+    }
 
     // Authenticate the user
     const { userId, error: authError } = await authenticateUser(req);
@@ -4089,43 +4107,8 @@ app.put("/api/articles/:id/images", async (req, res) => {
       });
     }
 
-    // Get current images
-    const { data: currentImages, error: getCurrentError } = await supabase
-      .from("article_images")
-      .select("*")
-      .eq("article_id", articleId);
-
-    if (getCurrentError) {
-      console.error("Error fetching current images:", getCurrentError);
-      return res
-        .status(500)
-        .json({ message: "Failed to fetch current images" });
-    }
-
-    // Find images to delete (images in currentImages but not in new images array)
-    const newImageUrls = new Set(images.map((img) => img.image_url));
-    const imagesToDelete =
-      currentImages?.filter((img) => !newImageUrls.has(img.image_url)) || [];
-
-    // Delete removed images from storage
-    if (imagesToDelete.length > 0) {
-      const storage = supabase.storage.from("article-images");
-      for (const image of imagesToDelete) {
-        const filename = image.image_url.split("/").pop();
-        if (filename) {
-          const { error: deleteStorageError } = await storage.remove([
-            filename,
-          ]);
-          if (deleteStorageError) {
-            console.error(
-              "Error deleting image from storage:",
-              deleteStorageError
-            );
-          }
-        }
-      }
-    }
-
+    // Only the article_images rows are replaced; storage objects are never
+    // deleted here.
     // Delete all current images from the database (we'll reinsert the kept ones)
     const { error: deleteError } = await supabase
       .from("article_images")
@@ -4168,9 +4151,7 @@ app.put("/api/articles/:id/images", async (req, res) => {
 app.post("/api/articles/:id/images", async (req, res) => {
   try {
     console.log("=== DEBUG: POST /api/articles/:id/images ===");
-    console.log("Request body:", JSON.stringify(req.body, null, 2));
     console.log("Request params:", JSON.stringify(req.params, null, 2));
-    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
 
     const { userId, error: authError } = await authenticateUser(req);
     console.log("Auth result - userId:", userId, "authError:", authError);
@@ -4214,10 +4195,9 @@ app.post("/api/articles/:id/images", async (req, res) => {
 
     // Insert the image metadata
     const imageData = Array.isArray(req.body) ? req.body : [req.body];
-    console.log(
-      "Preparing to insert image metadata:",
-      JSON.stringify(imageData, null, 2)
-    );
+    if (!imageData.every((img) => isAllowedImageUrl(img?.image_url))) {
+      return res.status(400).json({ message: "Invalid image URL" });
+    }
 
     const { data: insertedImages, error: insertError } = await supabase
       .from("article_images")
