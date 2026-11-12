@@ -485,6 +485,98 @@
     color: hsl(var(--edition-text-dim));
   }
 
+  /* ===== Article page reading column (pages/article-page.tsx) ===== */
+
+  /* Typography colours follow the edition tokens in both themes. `html` lifts the
+     specificity above .prose / .dark:prose-invert, which set the same variables. */
+  html .article-body.prose {
+    --tw-prose-body: hsl(var(--edition-text) / 0.88);
+    --tw-prose-headings: hsl(var(--edition-text));
+    --tw-prose-bold: hsl(var(--edition-text));
+    --tw-prose-links: hsl(var(--edition-text));
+    --tw-prose-quotes: hsl(var(--edition-text));
+    --tw-prose-counters: hsl(var(--edition-text-muted));
+    --tw-prose-bullets: hsl(var(--edition-text-dim));
+    --tw-prose-hr: hsl(var(--edition-border));
+    --tw-prose-captions: hsl(var(--edition-text-muted));
+    font-size: 17px;
+    line-height: 1.72;
+  }
+  @media (min-width: 768px) {
+    html .article-body.prose { font-size: 18px; }
+  }
+  html .article-body.prose > :first-child { margin-top: 0; }
+  .article-body.prose p { margin-top: 1.1em; margin-bottom: 1.1em; }
+  .article-body.prose h2 {
+    font-size: 1.6em;
+    line-height: 1.2;
+    font-weight: 800;
+    margin-top: 1.9em;
+    margin-bottom: 0.6em;
+  }
+  .article-body.prose h3 {
+    font-size: 1.25em;
+    font-weight: 700;
+    margin-top: 1.6em;
+  }
+
+  /* Underlined links in the accent colour */
+  .article-body a {
+    color: hsl(var(--edition-accent));
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    text-decoration-color: hsl(var(--edition-accent) / 0.45);
+    font-weight: 500;
+  }
+  .article-body a:hover { text-decoration-color: currentColor; }
+
+  /* Standfirst left in the body (legacy path; normally shown in the header) */
+  .article-body .article-dek {
+    font-size: 1.15em;
+    line-height: 1.45;
+    color: hsl(var(--edition-text-secondary));
+  }
+
+  /* Photos: keyboard focus, captions left-aligned */
+  .article-body img[role="button"]:focus-visible {
+    outline: 2px solid hsl(var(--edition-accent));
+    outline-offset: 3px;
+  }
+  .article-body .article-figure figcaption { text-align: left; }
+
+  /* Wide screens: lead figures and galleries break out of the text column */
+  @media (min-width: 1024px) {
+    .article-body > .article-figure,
+    .article-body > .article-gallery {
+      margin-left: -64px;
+      margin-right: -64px;
+    }
+    .article-body > .article-figure > figcaption {
+      padding-left: 64px;
+      padding-right: 64px;
+    }
+  }
+
+  /* Phones: top-level figures go edge to edge with square corners */
+  @media (max-width: 639px) {
+    .article-body > .article-figure,
+    .article-body > .article-gallery {
+      margin-left: -1rem;
+      margin-right: -1rem;
+    }
+    .article-body > .article-figure img,
+    .article-body > .article-gallery img {
+      border-radius: 0;
+    }
+    .article-body > .article-figure > figcaption,
+    .article-body > .article-gallery {
+      padding-left: 1rem;
+      padding-right: 1rem;
+    }
+    .article-body > .article-gallery { padding: 0; }
+  }
+
   /* ===== Editor (TipTap) affordances — WYSIWYG parity with the reader ===== */
 
   .article-body .ProseMirror .article-figure figcaption {
