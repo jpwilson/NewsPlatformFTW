@@ -31,6 +31,7 @@ import {
   sortImages,
   toMediaUrl,
 } from "@shared/article-media";
+import { SITE_URL } from "@/content/marketing";
 
 // The owner's inline editor is only downloaded when Edit is pressed.
 const ArticleEditMode = lazy(() => import("@/components/article/article-edit-mode"));
@@ -116,6 +117,9 @@ export default function ArticlePage() {
     liveCommentCount ?? (article._count?.comments || article.commentCount || article.comment_count || 0);
   const cover = sortImages(article.images || [])[0] as { imageUrl?: string } | undefined;
   const articleUrl = createSlugUrl("/articles/", article.slug || "", articleId);
+  const coverUrl = cover?.imageUrl ? toMediaUrl(cover.imageUrl) : undefined;
+  const publishedRaw = article.published_at || article.created_at || article.createdAt;
+  const published = publishedRaw ? new Date(publishedRaw).toISOString() : undefined;
 
   const rawAvatar = channel?.profileImage || channel?.profile_image;
   const avatar = rawAvatar ? toMediaUrl(rawAvatar) : null;
@@ -128,8 +132,38 @@ export default function ArticlePage() {
       <MetaHead
         title={article.title || "News Article"}
         description={excerpt}
-        imageUrl={cover?.imageUrl ? toMediaUrl(cover.imageUrl) : undefined}
+        imageUrl={coverUrl}
         url={articleUrl}
+        jsonLd={
+          isDraft
+            ? undefined
+            : {
+                "@context": "https://schema.org",
+                "@type": "NewsArticle",
+                headline: article.title,
+                description: excerpt,
+                ...(coverUrl ? { image: [`${SITE_URL}${coverUrl}`] } : {}),
+                datePublished: published,
+                // last_edited is bumped by every view, so it is not a real modification time.
+                dateModified: published,
+                mainEntityOfPage: `${SITE_URL}${articleUrl}`,
+                isAccessibleForFree: true,
+                ...(channel
+                  ? {
+                      author: {
+                        "@type": "Organization",
+                        name: channel.name,
+                        url: `${SITE_URL}${createSlugUrl("/channels/", channel.slug || "", String(channel.id))}`,
+                      },
+                    }
+                  : {}),
+                publisher: {
+                  "@type": "Organization",
+                  name: "NewsPlatform",
+                  logo: { "@type": "ImageObject", url: `${SITE_URL}/logo-stacked.png` },
+                },
+              }
+        }
       />
 
       <div className="min-h-screen bg-background">

@@ -3,6 +3,7 @@ import { Article } from "@shared/schema";
 // Define a more flexible type for article that accommodates both camelCase and snake_case
 export type ArticleWithSnakeCase = Article & {
   created_at?: string | Date;
+  published_at?: string | Date | null;
   channel_id?: number;
   user_id?: number;
   title?: string;
