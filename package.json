@@ -24,6 +24,7 @@
     "test:security": "tsx scripts/test-api-security.mjs",
     "test:seo": "node scripts/test-seo-routes.mjs",
     "gen:shell": "tsx scripts/gen-site-shell.ts",
+    "test:analytics": "node scripts/test-analytics.mjs",
     "check:live": "node scripts/check-live.mjs",
     "indexnow": "node scripts/indexnow.mjs"
   },

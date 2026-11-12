@@ -46,6 +46,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { useSelectedChannel } from "@/hooks/use-selected-channel";
 import { createSlugUrl } from "@/lib/slug-utils";
+import { usePageView } from "@/lib/track";
 
 // Define ordering options
 type OrderField = "createdAt" | "viewCount" | "comments" | "likes" | "dislikes";
@@ -90,6 +91,7 @@ interface OrderOption {
 }
 
 export default function HomePage() {
+  usePageView("home");
   const { user } = useAuth();
   const { selectedChannelId } = useSelectedChannel();
   const [orderField, setOrderField] = useState<OrderField>("createdAt");

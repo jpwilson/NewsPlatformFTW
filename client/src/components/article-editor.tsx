@@ -49,6 +49,7 @@ import imageCompression from "browser-image-compression";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase as defaultSupabase } from "@/lib/supabase"; // Import the default client
 import { RichTextEditor } from "./rich-text-editor";
+import { uploadUserImage } from "@/lib/storage-upload";
 
 // Re-export the MapboxLocationPicker, StandaloneLocationPicker, and MapboxLocation for use in other components
 export { MapboxLocation };
@@ -1058,26 +1059,8 @@ export function ArticleEditor({
         imageFile = await imageCompression(file, options);
       }
 
-      // Create a sanitized filename
-      const timestamp = Date.now();
-      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const filename = `${timestamp}_${sanitizedFilename}`;
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("article-images")
-        .upload(filename, imageFile, { cacheControl: "31536000" });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw uploadError;
-      }
-
-      // The bucket is public: store the permanent public URL (signed URLs expired after a year).
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);
-      return publicUrl;
+      // Upload into the user's own folder (<uid>/<timestamp>_<name>); returns the public URL.
+      return await uploadUserImage(imageFile, file.name);
     } catch (error) {
       console.error("Error in handleImageUpload:", error);
       throw error;
