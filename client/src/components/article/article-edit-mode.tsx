@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import type { ArticleWithSnakeCase } from "./article-types";
+import { uploadUserImage } from "@/lib/storage-upload";
 
 /**
  * The owner's inline edit mode for an article, moved verbatim out of
@@ -343,26 +344,8 @@ export default function ArticleEditMode({
         imageFile = await imageCompression(file, options);
       }
 
-      // Create a sanitized filename
-      const timestamp = Date.now();
-      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const filename = `${timestamp}_${sanitizedFilename}`;
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("article-images")
-        .upload(filename, imageFile, { cacheControl: "31536000" });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw uploadError;
-      }
-
-      // The bucket is public: store the permanent public URL (signed URLs expired after a year).
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);
-      return publicUrl;
+      // Upload into the user's own folder (<uid>/<timestamp>_<name>); returns the public URL.
+      return await uploadUserImage(imageFile, file.name);
     } catch (error) {
       console.error("Error in handleImageUpload:", error);
       throw error;

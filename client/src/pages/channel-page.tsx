@@ -66,6 +66,7 @@ import {
 import { ImageCropModal } from "@/components/image-crop-modal";
 import { usePostHog } from "@/lib/posthog";
 import { usePageView } from "@/lib/track";
+import { uploadUserImage } from "@/lib/storage-upload";
 
 type SortField =
   | "title"
@@ -247,26 +248,9 @@ export default function ChannelPage() {
         throw new Error("Storage service is not available");
       }
 
-      // Create sanitized filename
-      const timestamp = Date.now();
-      const filename = `channels/${id}/profile_${timestamp}.jpg`;
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("article-images")
-        .upload(filename, croppedImage, { cacheControl: "31536000" });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw uploadError;
-      }
-
-      // The bucket is public: store the permanent public URL (signed URLs expired after a year).
-      const {
-        data: { publicUrl: imageUrl },
-      } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);
-
-      console.log("Profile upload - uploadData.path:", uploadData.path);
+      // Upload into the user's own folder (<uid>/<timestamp>_<name>); the bucket is public,
+      // so the public URL is permanent.
+      const imageUrl = await uploadUserImage(croppedImage, `channel-${id}-profile.jpg`);
       console.log("Profile upload - imageUrl:", imageUrl);
 
       // Update channel with new profile image
@@ -314,27 +298,9 @@ export default function ChannelPage() {
         throw new Error("Storage service is not available");
       }
 
-      // Create sanitized filename
-      const timestamp = Date.now();
-      const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const filename = `channels/${id}/banner_${timestamp}_${sanitizedFilename}`;
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("article-images")
-        .upload(filename, file, { cacheControl: "31536000" });
-
-      if (uploadError) {
-        console.error("Upload error:", uploadError);
-        throw uploadError;
-      }
-
-      // The bucket is public: store the permanent public URL (signed URLs expired after a year).
-      const {
-        data: { publicUrl: imageUrl },
-      } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);
-
-      console.log("Banner upload - uploadData.path:", uploadData.path);
+      // Upload into the user's own folder (<uid>/<timestamp>_<name>); the bucket is public,
+      // so the public URL is permanent.
+      const imageUrl = await uploadUserImage(file, file.name);
       console.log("Banner upload - imageUrl:", imageUrl);
 
       // Update channel with new banner image
