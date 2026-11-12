@@ -9,6 +9,7 @@ import { createClient } from '@supabase/supabase-js';
 
 import { sanitizeArticleHtml } from './_lib/sanitize-article-html.js';
 import { isSafeUrl } from '../shared/article-html-policy.js';
+import { sortImages } from '../shared/article-media.js';
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 // Service key (bypasses RLS) with anon fallback
@@ -111,7 +112,7 @@ export default async function handler(req, res) {
     const selectStatement = `
       *,
       channel:channels ( id, name, slug ),
-      images:article_images ( image_url, caption, order )
+      images:article_images ( id, image_url, caption, order )
     `;
 
     // Published only. The Supabase client here uses the service key, which
@@ -144,7 +145,7 @@ export default async function handler(req, res) {
       if (!u.startsWith('http')) return `${siteUrl}/${u}`;
       return u;
     };
-    const imageUrls = (Array.isArray(article.images) ? article.images : [])
+    const imageUrls = sortImages(article.images)
       .map((img) => toAbsolute(img && (img.image_url || img.imageUrl)))
       .filter((u) => u && /^https?:\/\//i.test(u));
     const primaryImage = imageUrls[0] || 'https://newsplatform.org/logo-stacked.png';

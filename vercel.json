@@ -15,6 +15,10 @@
       "use": "@vercel/node"
     },
     {
+      "src": "api/media.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "api/not-found.js",
       "use": "@vercel/node"
     },
@@ -84,6 +88,10 @@
     {
       "source": "/api/:path*",
       "destination": "/api/index.ts"
+    },
+    {
+      "source": "/media/:path*",
+      "destination": "/api/media.js"
     },
     {
       "source": "/sitemap.xml",
