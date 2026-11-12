@@ -11,6 +11,13 @@ import {
   toStoredUrl,
 } from "../shared/article-media.js";
 import { installJsonImageRewrite } from "./_lib/json-image-rewrite.js";
+import {
+  deleteArticle,
+  findArticle,
+  replaceArticleCategories,
+  replaceArticleImages,
+  updateArticleFields,
+} from "./_lib/article-service.js";
 
 // Initialize Supabase client directly
 const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -4100,32 +4107,11 @@ app.patch("/api/articles/:id", async (req, res) => {
       return res.status(401).json({ message: authError });
     }
 
-    // Fetch the article to check ownership - try both ID and slug
-    let article;
-    let fetchError;
+    // Fetch the article to check ownership (numeric id or slug)
+    const article = await findArticle(supabase, idOrSlug);
 
-    if (/^\d+$/.test(idOrSlug)) {
-      // It's a numeric ID
-      const result = await supabase
-        .from("articles")
-        .select("*")
-        .eq("id", parseInt(idOrSlug))
-        .single();
-      article = result.data;
-      fetchError = result.error;
-    } else {
-      // Try slug lookup
-      const result = await supabase
-        .from("articles")
-        .select("*")
-        .eq("slug", idOrSlug)
-        .single();
-      article = result.data;
-      fetchError = result.error;
-    }
-
-    if (fetchError || !article) {
-      console.error("Error fetching article:", fetchError);
+    if (!article) {
+      console.error("Article not found:", idOrSlug);
       return res.status(404).json({ message: "Article not found" });
     }
 
@@ -4201,14 +4187,10 @@ app.patch("/api/articles/:id", async (req, res) => {
     if (categoryId !== undefined) updates.category_id = categoryId;
 
     // Update the article
-    const { data: updatedArticle, error: updateError } = await supabase
-      .from("articles")
-      .update(updates)
-      .eq("id", article.id) // Always use numeric ID for update
-      .select()
-      .single();
-
-    if (updateError) {
+    let updatedArticle;
+    try {
+      ({ article: updatedArticle } = await updateArticleFields(supabase, article, updates, { slugMode: "keep" }));
+    } catch (updateError) {
       console.error("Error updating article:", updateError);
       return res.status(500).json({
         message: "Failed to update article",
@@ -4218,22 +4200,7 @@ app.patch("/api/articles/:id", async (req, res) => {
 
     // Handle category relationships if categoryIds is provided
     if (categoryIds && Array.isArray(categoryIds)) {
-      // First remove all existing category relationships
-      await supabase
-        .from("article_categories")
-        .delete()
-        .eq("article_id", article.id);
-
-      // Then add new ones
-      if (categoryIds.length > 0) {
-        const categoryRelations = categoryIds.map((catId, index) => ({
-          article_id: article.id,
-          category_id: catId,
-          is_primary: index === 0,
-        }));
-
-        await supabase.from("article_categories").insert(categoryRelations);
-      }
+      await replaceArticleCategories(supabase, article.id, categoryIds);
     }
 
     return res.json(updatedArticle);
@@ -4258,32 +4225,11 @@ app.delete("/api/articles/:id", async (req, res) => {
       return res.status(401).json({ message: authError });
     }
 
-    // Verify that article exists and belongs to this user - try both ID and slug
-    let article;
-    let getError;
+    // Verify that article exists and belongs to this user (numeric id or slug)
+    const article = await findArticle(supabase, idOrSlug);
 
-    if (/^\d+$/.test(idOrSlug)) {
-      // It's a numeric ID
-      const result = await supabase
-        .from("articles")
-        .select("*")
-        .eq("id", parseInt(idOrSlug))
-        .single();
-      article = result.data;
-      getError = result.error;
-    } else {
-      // Try slug lookup
-      const result = await supabase
-        .from("articles")
-        .select("*")
-        .eq("slug", idOrSlug)
-        .single();
-      article = result.data;
-      getError = result.error;
-    }
-
-    if (getError || !article) {
-      console.error("Error getting article to delete:", getError);
+    if (!article) {
+      console.error("Article to delete not found:", idOrSlug);
       return res.status(404).json({ message: "Article not found" });
     }
 
@@ -4293,71 +4239,18 @@ app.delete("/api/articles/:id", async (req, res) => {
         .json({ message: "You don't have permission to delete this article" });
     }
 
-    console.log(`Deleting article ${article.id} with a direct SQL approach`);
+    console.log(`Deleting article ${article.id}`);
 
     try {
-      // Step 1: Delete all comments for this article
-      const { error: commentsError } = await supabase
-        .from("comments")
-        .delete()
-        .eq("article_id", article.id);
-
-      if (commentsError) {
-        console.error("Error deleting comments:", commentsError);
-      }
-
-      // Step 2: Delete all reactions for this article
-      const { error: reactionsError } = await supabase
-        .from("reactions")
-        .delete()
-        .eq("article_id", article.id);
-
-      if (reactionsError) {
-        console.error("Error deleting reactions:", reactionsError);
-      }
-
-      // Step 3: Delete all images for this article
-      const { error: imagesError } = await supabase
-        .from("article_images")
-        .delete()
-        .eq("article_id", article.id);
-
-      if (imagesError) {
-        console.error("Error deleting images:", imagesError);
-      }
-
-      // Step 4: Delete all category associations
-      const { error: categoriesError } = await supabase
-        .from("article_categories")
-        .delete()
-        .eq("article_id", article.id);
-
-      if (categoriesError) {
-        console.error("Error deleting article categories:", categoriesError);
-      }
-
-      // Step 5: Finally, delete the article
-      const { error: articleError } = await supabase
-        .from("articles")
-        .delete()
-        .eq("id", article.id);
-
-      if (articleError) {
-        console.error("Error deleting article:", articleError);
-        return res.status(500).json({
-          message: "Failed to delete article",
-          error: articleError.message,
-          details: articleError,
-        });
-      }
-
+      await deleteArticle(supabase, article, { permanent: true });
       console.log(`Successfully deleted article ${article.id}`);
       return res.status(204).send();
     } catch (err) {
-      console.error("Error during article deletion sequence:", err);
+      console.error("Error deleting article:", err);
       return res.status(500).json({
         message: "Failed to delete article",
         error: err instanceof Error ? err.message : String(err),
+        details: err?.cause ?? err,
       });
     }
   } catch (error) {
@@ -4931,50 +4824,18 @@ app.put("/api/articles/:id/images", async (req, res) => {
       });
     }
 
-    // Get current images
-    const { data: currentImages, error: getCurrentError } = await supabase
-      .from("article_images")
-      .select("*")
-      .eq("article_id", articleId);
-
-    if (getCurrentError) {
-      console.error("Error fetching current images:", getCurrentError);
-      return res
-        .status(500)
-        .json({ message: "Failed to fetch current images" });
-    }
-
-    // Storage objects are never deleted here: the same object can back
-    // another article, a body figure or a cached /media URL.
-
-    // Delete all current images from the database (we'll reinsert the kept ones)
-    const { error: deleteError } = await supabase
-      .from("article_images")
-      .delete()
-      .eq("article_id", articleId);
-
-    if (deleteError) {
-      console.error("Error deleting current images:", deleteError);
+    // Replace the rows (storage objects are never deleted: the same object
+    // can back another article, a body figure or a cached /media URL).
+    const rows = images.map((img) => ({
+      image_url: storeUrl(img.image_url),
+      caption: img.caption,
+      order: img.order,
+    }));
+    try {
+      await replaceArticleImages(supabase, articleId, rows);
+    } catch (err) {
+      console.error("Error replacing images:", err);
       return res.status(500).json({ message: "Failed to update images" });
-    }
-
-    // Insert new/kept images
-    if (images.length > 0) {
-      const { error: insertError } = await supabase
-        .from("article_images")
-        .insert(
-          images.map((img) => ({
-            article_id: articleId,
-            image_url: storeUrl(img.image_url),
-            caption: img.caption,
-            order: img.order,
-          }))
-        );
-
-      if (insertError) {
-        console.error("Error inserting new images:", insertError);
-        return res.status(500).json({ message: "Failed to update images" });
-      }
     }
 
     return res.json({ message: "Images updated successfully" });
