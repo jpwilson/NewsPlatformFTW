@@ -606,6 +606,15 @@ export default function ArticleEditMode({
     setExistingImages(updatedImages);
   };
 
+  // The first kept image is the cover (the server stores it at order 0).
+  const firstKeptIndex = existingImages.findIndex((img) => img.toKeep);
+  const makeCover = (index: number) => {
+    const updatedImages = [...existingImages];
+    const [chosen] = updatedImages.splice(index, 1);
+    updatedImages.unshift(chosen);
+    setExistingImages(updatedImages);
+  };
+
   // Function to update caption for an existing image
   const updateExistingImageCaption = (index: number, caption: string) => {
     const updatedImages = [...existingImages];
@@ -872,8 +881,8 @@ export default function ArticleEditMode({
           <div className="mt-8 border-t pt-8">
             <h3 className="text-lg font-semibold mb-4">Article Images</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              You can add up to 5 images. The first image will be
-              displayed as the article preview.
+              You can add up to 5 images. The cover is shown at the top of
+              the article and as its preview.
             </p>
 
             {/* Existing images */}
@@ -905,9 +914,24 @@ export default function ArticleEditMode({
                             </Button>
                           </div>
                           <div className="flex-grow">
-                            <p className="text-sm font-medium mb-1">
-                              Image {index + 1}
-                            </p>
+                            <div className="mb-1 flex items-center gap-2">
+                              <p className="text-sm font-medium">Image {index + 1}</p>
+                              {index === firstKeptIndex ? (
+                                <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
+                                  Cover
+                                </span>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => makeCover(index)}
+                                >
+                                  Make cover
+                                </Button>
+                              )}
+                            </div>
                             <Input
                               type="text"
                               placeholder="Add a caption (optional)"
