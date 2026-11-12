@@ -220,6 +220,14 @@ section("session DELETE /api/articles/:id");
 section("request logs");
 {
   await api.request("POST", "/api/v1/content/articles", { headers: { "x-api-key": OWNER_KEY, cookie: "sb=secret-cookie" }, body: { title: "" } });
+  stub.reset(seed());
+  const r = await api.request("POST", "/api/articles/100/images", {
+    headers: owner,
+    body: [{ article_id: 100, image_url: "/media/c/new.jpg", caption: "New", order: 2 }],
+  });
+  check("POST images → 200 with rows", r.status === 200 && Array.isArray(r.json) && r.json[0]?.caption === "New", r.json);
+  check("POST images stores the public URL", stub.table("article_images").some((i) => i.image_url === PUBLIC("c/new.jpg")));
+  check("POST images response serves /media", r.json?.[0]?.image_url === "/media/c/new.jpg", r.json?.[0]?.image_url);
   await api.request("POST", "/api/auth/session-from-hash", { body: { access_token: "secret-access-token", refresh_token: "secret-refresh" } });
   const all = api.logs.join("\n");
   check("logs were captured", all.length > 0);

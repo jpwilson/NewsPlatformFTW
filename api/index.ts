@@ -4851,11 +4851,6 @@ app.put("/api/articles/:id/images", async (req, res) => {
 // Handle article image metadata
 app.post("/api/articles/:id/images", async (req, res) => {
   try {
-    console.log("=== DEBUG: POST /api/articles/:id/images ===");
-    console.log("Request body:", JSON.stringify(req.body, null, 2));
-    console.log("Request params:", JSON.stringify(req.params, null, 2));
-    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
-
     const { userId, error: authError } = await authenticateUser(req);
     console.log("Auth result - userId:", userId, "authError:", authError);
 
@@ -4880,7 +4875,6 @@ app.post("/api/articles/:id/images", async (req, res) => {
       .eq("id", articleId)
       .single();
 
-    console.log("Article fetch result - article:", article, "error:", getError);
 
     if (getError || !article) {
       console.error("Error getting article:", getError);
