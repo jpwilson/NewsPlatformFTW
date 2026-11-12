@@ -72,12 +72,9 @@ async function uploadEditorImage(file: File): Promise<string> {
     .slice(2, 8)}.${ext}`;
   const { data: uploadData, error } = await supabase.storage
     .from("article-images")
-    .upload(filename, file);
+    .upload(filename, file, { cacheControl: "31536000" });
   if (error || !uploadData) throw error || new Error("Upload failed");
-  const { data: urlData } = await supabase.storage
-    .from("article-images")
-    .createSignedUrl(uploadData.path, 31536000); // 1 year
-  if (urlData?.signedUrl) return urlData.signedUrl;
+  // The bucket is public: the public URL is permanent (signed URLs expired after a year).
   const {
     data: { publicUrl },
   } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);

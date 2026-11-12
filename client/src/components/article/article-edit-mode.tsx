@@ -351,30 +351,18 @@ export default function ArticleEditMode({
       // Upload to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("article-images")
-        .upload(filename, imageFile);
+        .upload(filename, imageFile, { cacheControl: "31536000" });
 
       if (uploadError) {
         console.error("Upload error:", uploadError);
         throw uploadError;
       }
 
-      // Get public URL with download token
-      const { data: urlData } = await supabase.storage
-        .from("article-images")
-        .createSignedUrl(uploadData.path, 31536000); // URL valid for 1 year
-
-      if (!urlData?.signedUrl) {
-        // Fallback to regular public URL if signed URL fails
-        const {
-          data: { publicUrl },
-        } = supabase.storage
-          .from("article-images")
-          .getPublicUrl(uploadData.path);
-
-        return publicUrl;
-      }
-
-      return urlData.signedUrl;
+      // The bucket is public: store the permanent public URL (signed URLs expired after a year).
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);
+      return publicUrl;
     } catch (error) {
       console.error("Error in handleImageUpload:", error);
       throw error;
