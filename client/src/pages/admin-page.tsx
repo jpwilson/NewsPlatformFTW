@@ -1,6 +1,7 @@
 import React from "react";
 import { AdminArticleTable } from "@/components/admin-article-table";
 import { AdminChannelTable } from "@/components/admin-channel-table";
+import { AdminAnalytics } from "@/components/admin-analytics";
 import { Link } from "wouter";
 import { ExternalLink, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -444,16 +445,21 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <div className="container mx-auto py-8">
+      <div className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
 
-        <Tabs defaultValue="articles" className="mt-8">
-          <TabsList className="mb-6">
+        <Tabs defaultValue="analytics" className="mt-8">
+          <TabsList className="mb-6 h-auto flex-wrap justify-start">
+            <TabsTrigger value="analytics">Analytics</TabsTrigger>
             <TabsTrigger value="articles">Manage Articles</TabsTrigger>
             <TabsTrigger value="channels">Manage Channels</TabsTrigger>
             <TabsTrigger value="api">API</TabsTrigger>
             <TabsTrigger value="homepage">Homepage</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="analytics">
+            <AdminAnalytics />
+          </TabsContent>
 
           <TabsContent value="articles">
             <section>
