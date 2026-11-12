@@ -9,7 +9,17 @@ import { createClient } from '@supabase/supabase-js';
 
 import { sanitizeArticleHtml } from './_lib/sanitize-article-html.js';
 import { isSafeUrl } from '../shared/article-html-policy.js';
-import { sortImages } from '../shared/article-media.js';
+import {
+  LAST_EDITED_IS_TRUSTWORTHY,
+  composeArticleMedia,
+  deriveExcerpt,
+  sortImages,
+  toMediaUrl,
+} from '../shared/article-media.js';
+
+/** Permanent, publicly fetchable image URLs always use the production host. */
+const SITE = 'https://www.newsplatform.org';
+const FALLBACK_IMAGE = `${SITE}/logo-stacked.png`;
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 // Service key (bypasses RLS) with anon fallback
@@ -40,18 +50,6 @@ function extractArticleRef(path) {
   const slugMatch = cleanPath.match(/^\/articles\/([^\/?#]+)/);
   if (slugMatch) return { slug: decodeURIComponent(slugMatch[1]) };
   return null;
-}
-
-function createDescription(content, maxLength = 160) {
-  if (!content) return '';
-  const text = content.replace(/<[^>]*>/g, ' ');
-  const cleanText = text.replace(/\s+/g, ' ').trim();
-  if (cleanText.length <= maxLength) return cleanText;
-  const truncated = cleanText.substring(0, maxLength);
-  const lastPeriod = truncated.lastIndexOf('.');
-  if (lastPeriod > maxLength * 0.7) return truncated.substring(0, lastPeriod + 1);
-  const lastSpace = truncated.lastIndexOf(' ');
-  return truncated.substring(0, lastSpace) + '...';
 }
 
 const escapeHtml = (text) =>
@@ -137,31 +135,50 @@ export default async function handler(req, res) {
       req.headers['x-forwarded-host'] || req.headers.host || 'newsplatform.org';
     const siteUrl = `${protocol}://${host}`;
 
-    // Collect image URLs (attached gallery + absolute-ify)
-    const toAbsolute = (u) => {
-      if (!u) return null;
-      if (u.startsWith('//')) return `https:${u}`;
-      if (u.startsWith('/')) return `${siteUrl}${u}`;
-      if (!u.startsWith('http')) return `${siteUrl}/${u}`;
-      return u;
-    };
-    const imageUrls = sortImages(article.images)
-      .map((img) => toAbsolute(img && (img.image_url || img.imageUrl)))
-      .filter((u) => u && /^https?:\/\//i.test(u));
-    const primaryImage = imageUrls[0] || 'https://newsplatform.org/logo-stacked.png';
-
     const articleUrl = `${siteUrl}/articles/${encodeURIComponent(article.id)}${
       article.slug ? `/${encodeURIComponent(article.slug)}` : ''
     }`;
     const articleUrlAttr = escapeHtml(articleUrl);
-    // Author-supplied body HTML, reduced to the shared allowlist.
+
+    // Author-supplied body HTML, reduced to the shared allowlist, then the
+    // same cover/duplicate decision the SPA makes: the hero shows once, a
+    // body copy of it is removed, storage URLs become permanent /media URLs.
     const safeContent = sanitizeArticleHtml(article.content);
-    const description = createDescription(article.content);
+    const media = composeArticleMedia({ images: article.images, html: safeContent, origin: SITE });
+
+    // Cards and social previews use the attached cover (lowest order, id).
+    const isHttp = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
+    const cover = sortImages(article.images).find((img) => img && (img.image_url || img.imageUrl));
+    const coverUrl = cover ? toMediaUrl(cover.image_url || cover.imageUrl, SITE) : null;
+    const bodyFirst = media.slides.find((sl) => sl.origin !== 'gallery' && isHttp(sl.src));
+    const primaryImage = isHttp(coverUrl) ? coverUrl : bodyFirst ? bodyFirst.src : null;
+    const primaryAlt =
+      (media.hero && (media.hero.alt || media.hero.caption)) || (bodyFirst && bodyFirst.alt) || article.title || '';
+    const ldImages = [...new Set([primaryImage, ...media.slides.map((sl) => sl.src)].filter(isHttp))].slice(0, 3);
+
+    const description = deriveExcerpt(safeContent, 160);
     const title = escapeHtml(article.title || 'News Article');
     const escapedDescription = escapeHtml(description);
-    const channelName = article.channel?.name || 'NewsPlatform';
+    const channel = article.channel || null;
+    const channelName = channel?.name || 'NewsPlatform';
+    const channelUrl = channel?.id ? `${SITE}/channels/${encodeURIComponent(channel.id)}` : null;
     const publishedAt = article.published_at || article.created_at || null;
-    const modifiedAt = article.last_edited || publishedAt;
+    // last_edited is bumped by every view (see shared/article-media.js).
+    const modifiedAt = LAST_EDITED_IS_TRUSTWORTHY ? article.last_edited || publishedAt : publishedAt;
+
+    // Other stories from the channel: real links for crawlers to follow.
+    let moreFromChannel = [];
+    if (channel?.id) {
+      const { data: more } = await supabase
+        .from('articles')
+        .select('id, slug, title, created_at')
+        .eq('published', true)
+        .eq('channel_id', channel.id)
+        .neq('id', article.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      moreFromChannel = (Array.isArray(more) ? more : []).filter((a) => a && a.id !== article.id).slice(0, 5);
+    }
 
     // NewsArticle structured data
     const jsonLd = {
@@ -169,21 +186,56 @@ export default async function handler(req, res) {
       '@type': 'NewsArticle',
       headline: article.title || '',
       description,
-      image: imageUrls.length ? imageUrls : [primaryImage],
+      image: ldImages.length ? ldImages : [FALLBACK_IMAGE],
       datePublished: publishedAt,
       dateModified: modifiedAt,
-      author: { '@type': 'Organization', name: channelName },
+      author: { '@type': 'Organization', name: channelName, ...(channelUrl ? { url: channelUrl } : {}) },
       publisher: {
         '@type': 'Organization',
         name: 'NewsPlatform',
         logo: {
           '@type': 'ImageObject',
-          url: 'https://newsplatform.org/logo-mark.png',
+          url: `${SITE}/logo-mark.png`,
         },
       },
       mainEntityOfPage: { '@type': 'WebPage', '@id': articleUrl },
+      isAccessibleForFree: true,
       ...(article.category ? { articleSection: article.category } : {}),
     };
+    const breadcrumbs = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'NewsPlatform', item: `${SITE}/` },
+        ...(channelUrl ? [{ '@type': 'ListItem', position: 2, name: channelName, item: channelUrl }] : []),
+        { '@type': 'ListItem', position: channelUrl ? 3 : 2, name: article.title || '', item: articleUrl },
+      ],
+    };
+
+    const figure = (slide, extraClass = '') => {
+      const caption = slide.caption ? escapeHtml(slide.caption) : '';
+      const credit = slide.credit ? `<small class="credit">${escapeHtml(slide.credit)}</small>` : '';
+      return `<figure${extraClass ? ` class="${extraClass}"` : ''}><img src="${safeUrlAttr(slide.src)}" alt="${escapeHtml(
+        slide.alt || slide.caption || ''
+      )}"${extraClass === 'hero' ? '' : ' loading="lazy"'}>${
+        caption || credit ? `<figcaption>${caption}${caption && credit ? ' ' : ''}${credit}</figcaption>` : ''
+      }</figure>`;
+    };
+    const heroHtml = media.hero && isSafeUrl(media.hero.src) ? figure(media.hero, 'hero') : '';
+    const dekHtml = media.dek ? `<p class="dek">${escapeHtml(media.dek)}</p>` : '';
+    const galleryHtml = media.gallery.length
+      ? `<section class="photos"><h2>Photos</h2>${media.gallery.map((sl) => figure(sl)).join('')}</section>`
+      : '';
+    const moreHtml = moreFromChannel.length
+      ? `<section><h2>More from ${escapeHtml(channelName)}</h2><ul>${moreFromChannel
+          .map(
+            (a) =>
+              `<li><a href="${escapeHtml(
+                `${SITE}/articles/${encodeURIComponent(a.id)}${a.slug ? `/${encodeURIComponent(a.slug)}` : ''}`
+              )}">${escapeHtml(a.title || '')}</a></li>`
+          )
+          .join('')}</ul></section>`
+      : '';
 
     // Search engines get the full page with NO redirect (dynamic rendering);
     // humans who land here (dev/test) get a fast redirect to the SPA.
@@ -206,37 +258,51 @@ export default async function handler(req, res) {
     <meta property="og:url" content="${articleUrlAttr}" />
     <meta property="og:title" content="${title}" />
     <meta property="og:description" content="${escapedDescription}" />
-    <meta property="og:image" content="${safeUrlAttr(primaryImage)}" />
+    <meta property="og:image" content="${safeUrlAttr(primaryImage || FALLBACK_IMAGE)}" />
+    ${primaryImage ? `<meta property="og:image:alt" content="${escapeHtml(primaryAlt)}" />` : ''}
     <meta property="og:site_name" content="NewsPlatform" />
+    <meta name="robots" content="max-image-preview:large" />
     ${publishedAt ? `<meta property="article:published_time" content="${escapeHtml(publishedAt)}" />` : ''}
     ${modifiedAt ? `<meta property="article:modified_time" content="${escapeHtml(modifiedAt)}" />` : ''}
     ${article.category ? `<meta property="article:section" content="${escapeHtml(article.category)}" />` : ''}
 
     <!-- Twitter -->
-    <meta name="twitter:card" content="${imageUrls.length ? 'summary_large_image' : 'summary'}" />
+    <meta name="twitter:card" content="${primaryImage ? 'summary_large_image' : 'summary'}" />
     <meta name="twitter:title" content="${title}" />
     <meta name="twitter:description" content="${escapedDescription}" />
-    <meta name="twitter:image" content="${safeUrlAttr(primaryImage)}" />
+    <meta name="twitter:image" content="${safeUrlAttr(primaryImage || FALLBACK_IMAGE)}" />
+    ${primaryImage ? `<meta name="twitter:image:alt" content="${escapeHtml(primaryAlt)}" />` : ''}
 
     <script type="application/ld+json">${jsonLdScript(jsonLd)}</script>
+    <script type="application/ld+json">${jsonLdScript(breadcrumbs)}</script>
     ${refreshTag}
     <style>
       body { font-family: Georgia, serif; max-width: 44rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.7; color: #1a1a1a; }
       img { max-width: 100%; height: auto; }
+      figure { margin: 1.5rem 0; }
       figcaption { font-size: 0.85rem; color: #666; }
+      figcaption .credit { text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.04em; }
+      .dek { font-size: 1.2rem; color: #444; }
       .byline { color: #666; font-size: 0.9rem; }
     </style>
   </head>
   <body>
     <article>
       <h1>${title}</h1>
-      <p class="byline">By ${escapeHtml(channelName)}${
-        publishedAt ? ` · ${new Date(publishedAt).toDateString()}` : ''
-      }</p>
-      ${imageUrls.length ? `<img src="${safeUrlAttr(imageUrls[0])}" alt="${title}">` : ''}
-      ${safeContent || `<p>${escapedDescription}</p>`}
-      <p><a href="${articleUrlAttr}">Read on NewsPlatform</a> · <a href="${escapeHtml(siteUrl)}">More stories</a></p>
+      ${dekHtml}
+      <p class="byline">By ${
+        channelUrl ? `<a href="${escapeHtml(channelUrl)}">${escapeHtml(channelName)}</a>` : escapeHtml(channelName)
+      }${publishedAt ? ` · <time datetime="${escapeHtml(publishedAt)}">${new Date(publishedAt).toDateString()}</time>` : ''}</p>
+      ${heroHtml}
+      ${media.bodyHtml || `<p>${escapedDescription}</p>`}
+      ${galleryHtml}
     </article>
+    <nav>
+      ${moreHtml}
+      <p><a href="${articleUrlAttr}">Read on NewsPlatform</a> · ${
+        channelUrl ? `<a href="${escapeHtml(channelUrl)}">${escapeHtml(channelName)}</a> · ` : ''
+      }<a href="${SITE}/">More stories</a></p>
+    </nav>
   </body>
 </html>`;
 
