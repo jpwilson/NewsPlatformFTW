@@ -3643,10 +3643,10 @@ app.get("/api/channels/:id/subscribers", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
 
     const channelId = parseInt(req.params.id);
+    if (isNaN(channelId)) {
+      return res.status(400).json({ error: "Invalid channel ID" });
+    }
     console.log(`API: Fetching subscribers for channel ID: ${channelId}`);
-
-    // Debug log to check all request headers
-    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
 
     // Extract the Authorization header (if any)
     const authHeader = req.headers.authorization;
@@ -3690,6 +3690,24 @@ app.get("/api/channels/:id/subscribers", async (req, res) => {
     }
 
     console.log(`API: Found user ID: ${dbUser.id}`);
+
+    // Only the channel owner (or an admin) may list its subscribers
+    const { data: channel, error: channelError } = await supabase
+      .from("channels")
+      .select("user_id")
+      .eq("id", channelId)
+      .single();
+
+    if (channelError || !channel) {
+      return res.status(404).json({ error: "Channel not found" });
+    }
+
+    if (
+      channel.user_id !== dbUser.id &&
+      !(await isAdminUser(userData.user.id))
+    ) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     // Simplified query that just gets subscriptions and user info directly
     try {
