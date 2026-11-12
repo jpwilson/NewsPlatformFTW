@@ -555,7 +555,7 @@ app.get("/api/user", async (req, res) => {
     console.log("Looking up user in database with Supabase UID:", supabaseUid);
     const { data: dbUser, error: dbError } = await supabase
       .from("users")
-      .select("*")
+      .select("id, username, description, created_at")
       .eq("supabase_uid", supabaseUid)
       .single();
 
@@ -1825,7 +1825,7 @@ app.get("/api/user/channels", async (req, res) => {
     console.log("Looking up user in database with Supabase UID:", supabaseUid);
     const { data: dbUser, error: dbError } = await supabase
       .from("users")
-      .select("*")
+      .select("id, username")
       .eq("supabase_uid", supabaseUid)
       .single();
 
@@ -1949,7 +1949,7 @@ app.get("/api/user/subscriptions", async (req, res) => {
     console.log("Looking up user in database with Supabase UID:", supabaseUid);
     const { data: dbUser, error: dbError } = await supabase
       .from("users")
-      .select("*")
+      .select("id, username")
       .eq("supabase_uid", supabaseUid)
       .single();
 
@@ -3619,7 +3619,7 @@ app.patch("/api/users/:id", async (req, res) => {
       .from("users")
       .update(updates)
       .eq("id", userId)
-      .select()
+      .select("id, username, description, created_at")
       .single();
 
     if (updateError) {
