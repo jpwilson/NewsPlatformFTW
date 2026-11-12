@@ -22,6 +22,7 @@
     "test:ingest": "node scripts/test-image-ingest.mjs",
     "test:repair": "node scripts/test-repair-article-images.mjs",
     "test:security": "tsx scripts/test-api-security.mjs",
+    "test:analytics": "node scripts/test-analytics.mjs",
     "check:live": "node scripts/check-live.mjs",
     "indexnow": "node scripts/indexnow.mjs"
   },
