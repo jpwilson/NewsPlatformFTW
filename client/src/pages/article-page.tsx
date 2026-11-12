@@ -19,8 +19,6 @@ import {
   Trash2,
   ExternalLink,
   FileDown,
-  ChevronLeft,
-  ChevronRight,
   X,
   Image as ImageIcon,
   ImageOff,
@@ -56,7 +54,12 @@ import {
   MapboxLocation,
   StandaloneLocationPicker,
 } from "@/components/article-editor";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import {
+  LightboxProvider,
+  useLightbox,
+  type LightboxSlide,
+} from "@/components/lightbox/lightbox-context";
+import { sanitizeArticleHtml } from "@/lib/sanitize-article-html";
 import { supabase } from "@/lib/supabase";
 import { ImageUpload } from "@/components/image-upload";
 import imageCompression from "browser-image-compression";
@@ -235,8 +238,6 @@ export default function ArticlePage() {
   );
 
   const [showImages, setShowImages] = useState(true);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [showImageModal, setShowImageModal] = useState(false);
   const { trackEvent } = usePostHog();
 
   const {
@@ -1077,17 +1078,19 @@ export default function ArticlePage() {
     setExistingImages(updatedImages);
   };
 
-  const handleNextImage = () => {
-    if (!article?.images?.length) return;
-    setSelectedImageIndex((prev) => (prev + 1) % article.images!.length);
-  };
-
-  const handlePrevImage = () => {
-    if (!article?.images?.length) return;
-    setSelectedImageIndex(
-      (prev) => (prev - 1 + article.images!.length) % article.images!.length
-    );
-  };
+  // Body HTML as rendered, and the photo viewer's slides (attached images, then body images).
+  const bodyHtml = useMemo(
+    () =>
+      isPlainText(article?.content)
+        ? convertPlainTextToHtml(article?.content)
+        : article?.content || "",
+    [article?.content]
+  );
+  const slides = useMemo(
+    () => interimSlides(article?.images || [], bodyHtml),
+    [article?.images, bodyHtml]
+  );
+  const attachedCount = article?.images?.length || 0;
 
   // Add a state for real-time comment count
   const [realTimeCommentCount, setRealTimeCommentCount] = useState<
@@ -1230,7 +1233,7 @@ export default function ArticlePage() {
     : "";
 
   return (
-    <>
+    <LightboxProvider slides={slides}>
       {/* Add meta tags for social sharing when article is loaded */}
       {article && (
         <MetaHead
@@ -1740,15 +1743,7 @@ export default function ArticlePage() {
 
               {showImages && article.images[0] && (
                 <div className="relative">
-                  <img
-                    src={article.images[0].imageUrl}
-                    alt="Article main image"
-                    className="w-full max-h-[480px] h-auto object-cover object-[50%_25%] rounded-lg cursor-pointer aspect-[16/9]"
-                    onClick={() => {
-                      setSelectedImageIndex(0);
-                      setShowImageModal(true);
-                    }}
-                  />
+                  <HeroPhoto src={article.images[0].imageUrl} />
                   {article.images[0].caption && (
                     <p className="mt-2 text-sm text-muted-foreground">
                       {article.images[0].caption}
@@ -1758,79 +1753,6 @@ export default function ArticlePage() {
               )}
             </div>
           )}
-
-          {/* Image Modal */}
-          {article?.images &&
-            article.images.length > 0 &&
-            article.images[selectedImageIndex] && (
-              <Dialog open={showImageModal} onOpenChange={setShowImageModal}>
-                <DialogContent className="max-w-4xl h-[80vh] p-0">
-                  <div className="relative h-full flex flex-col">
-                    <div className="absolute top-2 right-2 z-10">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowImageModal(false)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    <div className="flex-1 relative">
-                      <img
-                        src={article.images[selectedImageIndex].imageUrl}
-                        alt={`Article image ${selectedImageIndex + 1}`}
-                        className="w-full h-full object-contain"
-                      />
-
-                      {article.images.length > 1 && (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="absolute left-2 top-1/2 transform -translate-y-1/2"
-                            onClick={handlePrevImage}
-                          >
-                            <ChevronLeft className="h-6 w-6" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="absolute right-2 top-1/2 transform -translate-y-1/2"
-                            onClick={handleNextImage}
-                          >
-                            <ChevronRight className="h-6 w-6" />
-                          </Button>
-                        </>
-                      )}
-                    </div>
-
-                    {article.images[selectedImageIndex].caption && (
-                      <div className="p-4 bg-background border-t">
-                        <p className="text-sm text-muted-foreground">
-                          {article.images[selectedImageIndex].caption}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="p-2 bg-background border-t flex justify-center gap-2">
-                      {article.images.map((_, index) => (
-                        <Button
-                          key={index}
-                          variant={
-                            index === selectedImageIndex ? "default" : "ghost"
-                          }
-                          size="sm"
-                          onClick={() => setSelectedImageIndex(index)}
-                        >
-                          {index + 1}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            )}
 
           {/* Article content */}
           <div className="prose dark:prose-invert max-w-none">
@@ -1916,14 +1838,7 @@ export default function ArticlePage() {
               </>
             ) : (
               // Rich article content: charts hydrate, figures open a lightbox
-              <RichArticleContent
-                className="article-body prose dark:prose-invert max-w-none"
-                html={
-                  isPlainText(article.content)
-                    ? convertPlainTextToHtml(article.content)
-                    : article.content || ""
-                }
-              />
+              <BodyWithViewer html={bodyHtml} firstBodySlide={attachedCount} />
             )}
           </div>
 
@@ -2025,6 +1940,82 @@ export default function ArticlePage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </LightboxProvider>
+  );
+}
+
+/**
+ * Interim slide list for the photo viewer (replaced by composeArticleMedia from
+ * shared/article-media.js in step B3): the attached images, then the body's images
+ * in document order, captioned from their <figcaption> or alt text.
+ */
+function interimSlides(
+  images: Array<{ imageUrl: string; caption?: string }>,
+  html: string
+): LightboxSlide[] {
+  const slides: LightboxSlide[] = images.map((img, i) => ({
+    src: img.imageUrl,
+    caption: img.caption || "",
+    credit: "",
+    alt: img.caption || `Photo ${i + 1}`,
+    origin: i === 0 ? "hero" : "gallery",
+  }));
+  if (typeof DOMParser === "undefined" || !html) return slides;
+  const doc = new DOMParser().parseFromString(sanitizeArticleHtml(html), "text/html");
+  doc.querySelectorAll("img").forEach((img) => {
+    const fig = img.closest("figure");
+    const caption =
+      fig?.querySelector("figcaption")?.textContent?.trim() || img.getAttribute("alt") || "";
+    slides.push({
+      src: img.getAttribute("src") || "",
+      caption,
+      credit: "",
+      alt: img.getAttribute("alt") || "",
+      origin: "body",
+    });
+  });
+  return slides;
+}
+
+function HeroPhoto({ src }: { src: string }) {
+  const { open } = useLightbox();
+  return (
+    <button
+      type="button"
+      aria-label="Open photo viewer"
+      className="block w-full cursor-zoom-in rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={(e) => open(0, e.currentTarget)}
+    >
+      <img
+        src={src}
+        alt="Article main image"
+        className="w-full max-h-[480px] h-auto object-cover object-[50%_25%] rounded-lg aspect-[16/9]"
+      />
+    </button>
+  );
+}
+
+function BodyWithViewer({
+  html,
+  firstBodySlide,
+}: {
+  html: string;
+  firstBodySlide: number;
+}) {
+  const { open, slides } = useLightbox();
+  return (
+    <RichArticleContent
+      className="article-body prose dark:prose-invert max-w-none"
+      html={html}
+      onImageActivate={(img, i) => {
+        const src = img.getAttribute("src");
+        const at = firstBodySlide + i;
+        const index =
+          slides[at]?.src === src
+            ? at
+            : slides.findIndex((s) => s.origin === "body" && s.src === src);
+        if (index >= 0) open(index, img);
+      }}
+    />
   );
 }
