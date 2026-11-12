@@ -18,6 +18,7 @@ import {
   useChannelFollow,
   useReaction,
   useRecordView,
+  useRelated,
 } from "@/components/article/use-article";
 import type { ArticleWithSnakeCase } from "@/components/article/article-types";
 import { useAuth } from "@/hooks/use-auth";
@@ -71,6 +72,7 @@ export default function ArticlePage() {
   const reaction = useReaction(article, askToLogIn("Log in to react to stories."));
   const channel = article?.channel ?? null;
   const follow = useChannelFollow(channel, askToLogIn("Log in to follow channels."));
+  const related = useRelated(article);
 
   // Hero, body and gallery decided once: each photo appears once (shared/article-media.js).
   const media = useMemo(
@@ -114,6 +116,9 @@ export default function ArticlePage() {
     liveCommentCount ?? (article._count?.comments || article.commentCount || article.comment_count || 0);
   const cover = sortImages(article.images || [])[0] as { imageUrl?: string } | undefined;
   const articleUrl = createSlugUrl("/articles/", article.slug || "", articleId);
+
+  const rawAvatar = channel?.profileImage || channel?.profile_image;
+  const avatar = rawAvatar ? toMediaUrl(rawAvatar) : null;
 
   const hero =
     showImages && media.hero ? <ArticleHero slide={media.hero} total={media.slides.length} /> : null;
@@ -162,7 +167,7 @@ export default function ArticlePage() {
                         id: channel.id,
                         name: channel.name,
                         slug: channel.slug,
-                        profileImage: channel.profileImage || channel.profile_image,
+                        profileImage: avatar,
                       }
                     : null
                 }
@@ -193,7 +198,26 @@ export default function ArticlePage() {
             </article>
             <ArticleEnd
               articleId={article.id}
+              title={article.title}
+              shareText={excerpt}
               isDraft={isDraft}
+              showImages={showImages}
+              gallery={media.gallery}
+              channel={
+                channel
+                  ? {
+                      id: channel.id,
+                      name: channel.name,
+                      slug: channel.slug,
+                      profileImage: avatar,
+                      description: (channel as { description?: string | null }).description,
+                      subscriberCount: (channel as { subscriberCount?: number | null }).subscriberCount,
+                    }
+                  : null
+              }
+              related={related}
+              reaction={reaction}
+              follow={follow}
               onCommentsLoaded={setLiveCommentCount}
             />
           </main>

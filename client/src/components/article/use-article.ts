@@ -25,23 +25,28 @@ async function authHeaders(): Promise<Record<string, string>> {
  * and with the page's `?preview=<token>` forwarded. A missing article resolves to null.
  * The cache key stays `/api/articles/:id` so existing invalidations keep working.
  */
+export async function fetchArticle(
+  articleId: string,
+  preview?: string | null
+): Promise<ArticleWithSnakeCase | null> {
+  const url = `/api/articles/${articleId}${preview ? `?preview=${encodeURIComponent(preview)}` : ""}`;
+  const res = await fetch(url, { headers: await authHeaders() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to fetch article (${res.status})`);
+  return res.json();
+}
+
 export function useArticle(articleId: string) {
   return useQuery<ArticleWithSnakeCase | null>({
     queryKey: [`/api/articles/${articleId}`],
     enabled: !!articleId,
-    queryFn: async () => {
-      const preview =
+    queryFn: () =>
+      fetchArticle(
+        articleId,
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("preview")
-          : null;
-      const url = `/api/articles/${articleId}${
-        preview ? `?preview=${encodeURIComponent(preview)}` : ""
-      }`;
-      const res = await fetch(url, { headers: await authHeaders() });
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`Failed to fetch article (${res.status})`);
-      return res.json();
-    },
+          : null
+      ),
   });
 }
 
