@@ -4438,8 +4438,8 @@ app.patch("/api/users/:id", async (req, res) => {
     const updates: any = {};
     if (description !== undefined) updates.description = description;
     if (username !== undefined) updates.username = username;
-    if (profileImage !== undefined) updates.profile_image = profileImage;
-    if (bannerImage !== undefined) updates.banner_image = bannerImage;
+    if (profileImage !== undefined) updates.profile_image = storeUrl(profileImage);
+    if (bannerImage !== undefined) updates.banner_image = storeUrl(bannerImage);
 
     // Update the user
     const { data: updatedUser, error: updateError } = await supabase
