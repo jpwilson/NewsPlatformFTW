@@ -27,7 +27,9 @@ export function absoluteOrigin(req) {
   const first = (v) => String(v || "").split(",")[0].trim();
   let host = first(req.headers["x-forwarded-host"]) || first(req.headers.host);
   if (!/^[A-Za-z0-9.-]+(:\d+)?$/.test(host)) host = DEFAULT_HOST;
-  const proto = first(req.headers["x-forwarded-proto"]) === "http" && /^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? "http" : "https";
+  // http only for local development; everything else is https.
+  const wanted = first(req.headers["x-forwarded-proto"]) || req.protocol || "https";
+  const proto = wanted === "http" && /^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? "http" : "https";
   return `${proto}://${host}`;
 }
 

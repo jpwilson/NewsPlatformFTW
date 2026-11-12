@@ -330,6 +330,13 @@ export async function startStubSupabase({ tables = {}, tokens = {}, objects = {}
           storage.uploads.push(key);
           return send(res, 200, { Key: key, Id: key });
         }
+        const pub = u.pathname.match(/^\/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+        if (pub && (req.method === "GET" || req.method === "HEAD")) {
+          const obj = storage.objects[`${pub[1]}/${decodeURIComponent(pub[2])}`];
+          if (!obj) return send(res, 400, { statusCode: "404", error: "not_found", message: "Object not found" });
+          res.writeHead(200, { "content-type": obj.type || "application/octet-stream", "content-length": String(obj.bytes.length) });
+          return res.end(req.method === "HEAD" ? undefined : obj.bytes);
+        }
         if (u.pathname.startsWith("/storage/v1/object/") && req.method === "DELETE") {
           storage.removed.push(u.pathname);
           return send(res, 200, []);

@@ -92,6 +92,7 @@ export async function loadApi({ supabaseUrl, env = {} } = {}) {
 
   return {
     base,
+    handler,
     request,
     logs,
     restoreConsole: () => Object.assign(console, saved),
