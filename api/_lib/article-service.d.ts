@@ -23,3 +23,10 @@ export declare function deleteArticle(
   article: { id: number },
   options?: { permanent?: boolean }
 ): Promise<{ id: number; deleted: boolean; unpublished?: boolean; status?: string }>;
+export declare function previewToken(articleId: number | string, secret: string): string;
+export declare function isValidPreviewToken(articleId: number | string, token: unknown, secret: string): boolean;
+export declare function serializeArticle(
+  sb: any,
+  article: any,
+  options?: { previousSlug?: string | null; warnings?: unknown[]; previewSecret?: string }
+): Promise<Record<string, unknown>>;

@@ -10,6 +10,10 @@
  * Storage objects are never deleted here.
  */
 
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+import { deriveExcerpt, extractDek, sortImages } from "../../shared/article-media.js";
+
 /** A numeric id or a slug. */
 export function isNumericId(idOrSlug) {
   return /^\d+$/.test(String(idOrSlug));
@@ -183,4 +187,73 @@ export async function deleteArticle(sb, article, { permanent = false } = {}) {
     throw err;
   }
   return { id: article.id, deleted: true };
+}
+
+/* ------------------------------------------------------------- preview */
+
+/**
+ * Preview token for a non-published article: first 32 hex chars of
+ * HMAC-SHA256(secret, "preview:" + id). Stateless; changes only with the key.
+ */
+export function previewToken(articleId, secret) {
+  return createHmac("sha256", String(secret || "")).update(`preview:${articleId}`).digest("hex").slice(0, 32);
+}
+
+/** Constant-time check of a ?preview= value. */
+export function isValidPreviewToken(articleId, token, secret) {
+  if (typeof token !== "string" || !secret) return false;
+  const expected = Buffer.from(previewToken(articleId, secret));
+  const given = Buffer.from(token);
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+
+/* ----------------------------------------------------------- serialise */
+
+const asImage = (row) => ({ url: row.image_url, caption: row.caption || "" });
+
+/**
+ * The v1 Content API shape of an article (GET, PATCH; POST is a subset).
+ * Image URLs are stored public URLs here; the JSON rewrite turns them into
+ * absolute /media URLs on the way out.
+ */
+export async function serializeArticle(sb, article, { previousSlug, warnings, previewSecret } = {}) {
+  const [{ data: channel }, { data: images }, { data: categories }] = await Promise.all([
+    sb.from("channels").select("id, name, slug").eq("id", article.channel_id).limit(1).maybeSingle(),
+    sb.from("article_images").select("*").eq("article_id", article.id).order("order").order("id"),
+    sb.from("article_categories").select("category_id, is_primary, categories(id, name)").eq("article_id", article.id),
+  ]);
+  const sorted = sortImages(images || []);
+  const content = article.content || "";
+  const dek = extractDek(content).dek;
+  const published = article.status === "published" || (article.status == null && !!article.published);
+  const out = {
+    id: article.id,
+    title: article.title,
+    slug: article.slug,
+    url: `/articles/${article.id}/${article.slug}`,
+    channelId: article.channel_id,
+    channelName: channel?.name || null,
+    status: article.status,
+    published: !!article.published,
+    createdAt: article.created_at,
+    viewCount: article.view_count,
+    excerpt: dek || deriveExcerpt(content) || "",
+    excerptSource: dek ? "dek" : "derived",
+    content,
+    contentFormat: "html",
+    coverImage: sorted[0] ? asImage(sorted[0]) : null,
+    gallery: sorted.slice(1).map(asImage),
+    images: sorted,
+    categories: categories || [],
+    location: article.location_name || article.location || null,
+    locationLat: article.location_lat ?? null,
+    locationLng: article.location_lng ?? null,
+    previewUrl: null,
+  };
+  if (!published && previewSecret) {
+    out.previewUrl = `/articles/${article.id}/${article.slug}?preview=${previewToken(article.id, previewSecret)}`;
+  }
+  if (previousSlug !== undefined) out.previousSlug = previousSlug;
+  if (warnings !== undefined) out.warnings = warnings;
+  return out;
 }
