@@ -4,7 +4,7 @@ How NewsPlatform is made readable by Google, Bing and the AI answer engines
 (ChatGPT, Claude, Gemini, Perplexity, Copilot, Grok), what to do to keep it
 that way, and the owner-only steps that still need doing.
 
-Last updated: 21 October 2026.
+Last updated: 12 November 2026.
 
 ---
 
@@ -158,7 +158,16 @@ npm run check        # tsc
 npm run build        # vite build + prerender + esbuild
 npm run check:seo    # asserts the built HTML is actually crawlable
 npm run test:prerender  # article prerender: published-only + sanitising
+npm run check:live   # AFTER a deploy: do crawlers really get the article pages?
 ```
+
+`npm run check:live` is the only check that talks to the deployed site. It
+takes the newest article URLs from the live sitemap and requests each as
+Googlebot, GPTBot and Twitterbot, failing unless every one returns a full
+page with `NewsArticle` JSON-LD, an `og:image` and a canonical link. Pass a
+URL to test another deployment: `node scripts/check-live.mjs https://<preview>`.
+Run it after every deploy that touches `api/`, `vercel.json` or
+`package.json` — see "The October 2026 crawler outage" below for why.
 
 `scripts/check-seo.mjs` reads `dist/public` and fails if any page is missing a
 unique title or description, has zero or multiple canonicals, has anything
@@ -267,6 +276,39 @@ checkable in this repo or on the live site. No invented users, stats,
 testimonials, ratings or prices. Competitor facts must be general, publicly
 published, linked, hedged ("as of October 2026, per their website") and
 dated, and must say where the competitor is stronger.
+
+---
+
+## The October 2026 crawler outage
+
+From 24 October to the deploy of the fix in November 2026, **every article
+URL answered crawlers with HTTP 500**: Google, Bing, the AI answer engines and
+the social scrapers (so links shared on X, Facebook, LinkedIn, WhatsApp and
+Slack showed no preview card). Human readers were unaffected, which is why
+nothing looked wrong.
+
+Cause: `api/prerender-article.js` sanitises article HTML with `sanitize-html`,
+a CommonJS package. Version 2.18 moved to `htmlparser2` 12, which is published
+as ES modules only. Vercel's function runtime cannot `require()` an ES module,
+so the function crashed while loading (`ERR_REQUIRE_ESM`) before it could
+handle a request. A recent local Node loads the same code without complaint,
+so the tests passed.
+
+What is in place now:
+
+- `sanitize-html` is pinned to exactly **2.17.5**, the last release whose
+  `htmlparser2` (10.x) ships a CommonJS build. Do not loosen the pin or bump
+  it until `npm run test:prerender` passes with the new version: its first
+  step checks that `htmlparser2` resolves to CommonJS and stops with an
+  explanation if it does not.
+- The advisories fixed after 2.17.5 (`</textarea/>` mis-close, SVG foreign
+  content, `<noscript>` discard, `<meta http-equiv>`) concern elements that
+  are not on the allowlist in `shared/article-html-policy.js`.
+  `test:prerender` feeds those payloads through the real sanitiser and fails
+  if any comes back as live markup. If the allowlist ever gains `svg`,
+  `math`, `textarea`, `xmp`, `noscript` or `meta`, upgrade first.
+- `npm run check:live` (above) tests the deployed site, which is the only
+  place this class of failure shows up.
 
 ---
 

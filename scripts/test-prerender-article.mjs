@@ -12,7 +12,10 @@
  *   node scripts/test-prerender-article.mjs
  */
 
+import fs from "node:fs";
 import http from "node:http";
+import { createRequire } from "node:module";
+import path from "node:path";
 
 /* ----------------------------------------------------- stub Supabase REST */
 
@@ -31,7 +34,41 @@ process.env.SUPABASE_URL = `http://127.0.0.1:${port}`;
 process.env.SUPABASE_SERVICE_KEY = "test-service-key";
 process.env.NODE_ENV = "production";
 
+/* ------------------------------------------------- loadable on Vercel? */
+
+// Vercel's function runtime cannot require() an ES module. sanitize-html is
+// CommonJS and require()s htmlparser2, so htmlparser2 must resolve to a
+// CommonJS build. A newer Node loads an ESM-only build happily, which is how
+// sanitize-html 2.18 (htmlparser2 12, ESM-only) passed here and then crashed
+// the function in production: every article answered crawlers with HTTP 500.
+// Keep sanitize-html pinned (see SEO.md) until this check passes on a newer one.
+{
+  const sanitizerRequire = createRequire(createRequire(import.meta.url).resolve("sanitize-html"));
+  const entry = sanitizerRequire.resolve("htmlparser2");
+  let dir = path.dirname(entry);
+  let pkg = {};
+  for (;;) {
+    const file = path.join(dir, "package.json");
+    if (fs.existsSync(file)) {
+      pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (pkg.type || pkg.name) break;
+    }
+    if (dir === path.dirname(dir)) break;
+    dir = path.dirname(dir);
+  }
+  const isEsm = entry.endsWith(".mjs") || (pkg.type === "module" && !entry.endsWith(".cjs"));
+  if (isEsm) {
+    console.error(
+      `\n  ✗ sanitize-html would require() an ES module (${entry}).\n` +
+        "    That loads on a recent local Node but crashes the Vercel function.\n" +
+        "    Pin sanitize-html to a version whose htmlparser2 ships CommonJS.\n"
+    );
+    process.exit(1);
+  }
+}
+
 const { default: handler } = await import("../api/prerender-article.js");
+const { sanitizeArticleHtml } = await import("../api/_lib/sanitize-article-html.js");
 
 /* ---------------------------------------------------------------- harness */
 
@@ -156,6 +193,27 @@ check("JSON-LD still parses", (() => {
 rows = [published];
 res = await get("/articles/7/2026-10-20-a-real-story", "Mozilla/5.0 (a human)");
 check("human UA in production → 404 (SPA serves them)", res.statusCode === 404);
+
+// 5. Raw-text elements. The pinned sanitize-html predates the fixes for
+//    GHSA-jxwj-j7wr-gfrw (`</textarea/>` mis-close) and GHSA-g8qq-57p8-ggw5
+//    (SVG foreign content); neither tag is on our allowlist, and these prove
+//    the payloads cannot come back as live markup.
+const hostile = [
+  '<textarea></textarea/><img src=x onerror=alert(1)>',
+  '<textarea>a</textarea/><script>alert(1)</script>',
+  '<xmp><img src=x onerror=alert(1)></xmp>',
+  '<xmp></xmp/><img src=x onerror=alert(1)>',
+  '<svg><textarea><img src=x onerror=alert(1)></textarea></svg>',
+  '<svg><style><img src=x onerror=alert(1)></style></svg>',
+  '<math><xmp><img src=x onerror=alert(1)></xmp></math>',
+  '<noscript><p title="</noscript><img src=x onerror=alert(1)>"></noscript>',
+  '<option><img src=x onerror=alert(1)></option>',
+];
+const leaked = hostile.filter((html) => {
+  const out = sanitizeArticleHtml(html);
+  return /<script/i.test(out) || /<[a-z][^>]*\son\w+\s*=/i.test(out) || /<(svg|math|textarea|xmp|noscript|option)\b/i.test(out);
+});
+check("raw-text element payloads stay inert", leaked.length === 0, leaked.join(" | "));
 
 supabase.close();
 console.log("");
