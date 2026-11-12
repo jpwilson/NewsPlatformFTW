@@ -20,6 +20,7 @@
     "test:media-fn": "node scripts/test-media.mjs",
     "test:api": "node scripts/test-api-routes.mjs",
     "test:ingest": "node scripts/test-image-ingest.mjs",
+    "test:repair": "node scripts/test-repair-article-images.mjs",
     "check:live": "node scripts/check-live.mjs",
     "indexnow": "node scripts/indexnow.mjs"
   },
