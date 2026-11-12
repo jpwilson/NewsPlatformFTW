@@ -2,6 +2,33 @@
 
 A dynamic news platform enabling creators to publish, manage, and share content through personalized channels.
 
+## Content API (articles by API key)
+
+Agents and scripts publish with `X-API-Key: nk_...` (keys are issued in Admin → API). Full contract: [docs/content-api.md](docs/content-api.md); body format: [docs/article-format.md](docs/article-format.md).
+
+```bash
+# Create (unchanged; coverImage/gallery/excerpt are optional additions)
+curl -X POST https://www.newsplatform.org/api/v1/content/articles -H "X-API-Key: $NP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"…","channelId":4,"content":"…markdown…","coverImage":{"url":"https://…","caption":"…","credit":"…"}}'
+
+# Edit: send only what changes. The URL stays the same unless "regenerateSlug": true.
+curl -X PATCH https://www.newsplatform.org/api/v1/content/articles/814 -H "X-API-Key: $NP_API_KEY" \
+  -H "Content-Type: application/json" -d '{"title":"…","excerpt":"…","gallery":[]}'
+# → 200 with the article (content, excerpt, coverImage, gallery, previousSlug, warnings)
+# → 422 {"code":"image_failed","details":[…]} if an image cannot be downloaded (nothing changed)
+
+# Unpublish (reversible with PATCH {"published": true}) / delete for good
+curl -X DELETE https://www.newsplatform.org/api/v1/content/articles/814 -H "X-API-Key: $NP_API_KEY"
+# → {"id":814,"deleted":false,"unpublished":true,"status":"draft","restore":"PATCH …"}
+curl -X DELETE "https://www.newsplatform.org/api/v1/content/articles/814?permanent=true" -H "X-API-Key: $NP_API_KEY"
+# → {"id":814,"deleted":true}
+```
+
+A key only sees its own user's articles; anything else is `404`. Every image URL returned is permanent (`/media/<path>`).
+
+Offline tests (no network, no real keys): `npm run test:api`, `test:ingest`, `test:media`, `test:media-fn`, `test:prerender`. Against a deployment (writes one draft article and removes it): `NP_API_KEY=nk_… node scripts/test-content-api.mjs <base-url>`.
+
 ## Current Features
 
 ### User Authentication

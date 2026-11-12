@@ -3,6 +3,30 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import express from "express";
 import "dotenv/config";
 import { createClient } from "@supabase/supabase-js";
+// Plain ESM modules with no npm imports; the explicit .js extension is what
+// the Vercel builder needs (see SEO.md, "The October 2026 crawler outage").
+import {
+  LAST_EDITED_IS_TRUSTWORTHY,
+  deriveExcerpt,
+  extractDek,
+  setDek,
+  sortImages,
+  storeMediaUrls,
+  toStoredUrl,
+} from "../shared/article-media.js";
+import { installJsonImageRewrite } from "./_lib/json-image-rewrite.js";
+import { ingestArticleMedia, parseImageFields } from "./_lib/image-ingest.js";
+import { recordPageEvent, registerAnalyticsRoutes } from "./_lib/analytics.js";
+import {
+  deleteArticle,
+  findArticle,
+  isValidPreviewToken,
+  previewToken,
+  replaceArticleCategories,
+  replaceArticleImages,
+  serializeArticle,
+  updateArticleFields,
+} from "./_lib/article-service.js";
 
 // Initialize Supabase client directly
 const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -24,6 +48,13 @@ if (!supabaseServiceKey) {
 // and one with admin rights for database operations
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
+
+// Stored form of our images: the public bucket URL (works with or without
+// /media deployed). Applied at every write that can carry an image URL.
+const storeUrls = (text: any) =>
+  typeof text === "string" ? storeMediaUrls(text, supabaseUrl) : text;
+const storeUrl = (url: any) =>
+  typeof url === "string" ? toStoredUrl(url, supabaseUrl) : url;
 
 // Content API utilities (inlined to avoid cross-directory import issues with @vercel/node)
 import { createHash, randomBytes } from "crypto";
@@ -290,35 +321,6 @@ function normalizeContent(content: string, format?: string): string {
   return markdownToHtml(content);
 }
 
-async function downloadAndUploadImage(imageInput: any, articleId: number, index: number, sb: any): Promise<any> {
-  const { url, caption = "", order } = imageInput;
-  try {
-    const parsedUrl = new URL(url);
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) return null;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    const response = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "NewsPlatform-ContentAPI/1.0" } });
-    clearTimeout(timeoutId);
-    if (!response.ok) return null;
-    const contentType = (response.headers.get("content-type") || "").split(";")[0].trim();
-    const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!validTypes.includes(contentType)) return null;
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > 10 * 1024 * 1024) return null;
-    const extMap: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp" };
-    const ext = extMap[contentType] || "jpg";
-    const filename = `api_${articleId}_${Date.now()}_${index}.${ext}`;
-    const { data: uploadData, error: uploadError } = await sb.storage.from("article-images").upload(filename, buffer, { contentType, upsert: false });
-    if (uploadError || !uploadData) return null;
-    const { data: urlData } = await sb.storage.from("article-images").createSignedUrl(uploadData.path, 365 * 24 * 60 * 60);
-    const imageUrl = urlData?.signedUrl || sb.storage.from("article-images").getPublicUrl(uploadData.path).data.publicUrl;
-    return { imageUrl, originalUrl: url, caption, order: order ?? index };
-  } catch (error) {
-    console.error(`Error processing image from ${url}:`, error);
-    return null;
-  }
-}
-
 // Unified auth: try X-API-Key first, then fall back to Bearer JWT
 async function authenticateRequest(
   req: express.Request
@@ -376,6 +378,24 @@ async function authenticateUser(
   return { userId: dbUser.id };
 }
 
+// Logs must never carry credentials: API keys, bearer tokens, cookies, or
+// the auth tokens some request bodies carry.
+const SECRET_HEADERS = new Set(["authorization", "x-api-key", "cookie", "set-cookie"]);
+const SECRET_BODY_KEYS = new Set(["access_token", "refresh_token", "provider_token", "password", "token"]);
+function redactHeaders(headers: any) {
+  const out: any = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    out[k] = SECRET_HEADERS.has(k.toLowerCase()) ? "[redacted]" : v;
+  }
+  return out;
+}
+function redactBody(body: any) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const out: any = {};
+  for (const [k, v] of Object.entries(body)) out[k] = SECRET_BODY_KEYS.has(k) ? "[redacted]" : v;
+  return out;
+}
+
 // Create Express app
 const app = express();
 
@@ -388,6 +408,12 @@ console.log("Has SUPABASE_SERVICE_KEY:", !!process.env.SUPABASE_SERVICE_KEY);
 // Setup Express middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Every image URL the API emits is permanent (/media/<path>); see the module.
+installJsonImageRewrite(app);
+
+// Analytics routes (GET /api/v1/admin/analytics, POST /api/t); see the module.
+registerAnalyticsRoutes(app, { supabase, getSupabaseUid, isAdminUser });
 
 // Add CORS middleware with dynamic origin
 app.use((req, res, next) => {
@@ -405,7 +431,7 @@ app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", origin);
     res.header(
       "Access-Control-Allow-Methods",
-      "GET, POST, PUT, DELETE, OPTIONS"
+      "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     );
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
     res.header("Access-Control-Allow-Credentials", "true");
@@ -425,14 +451,14 @@ app.use((req, res, next) => {
 
   // Log request details
   console.log(`[${requestId}] 🔍 REQUEST ${req.method} ${req.url}`);
-  console.log(`[${requestId}] Headers: ${JSON.stringify(req.headers)}`);
+  console.log(`[${requestId}] Headers: ${JSON.stringify(redactHeaders(req.headers))}`);
 
   if (Object.keys(req.query).length > 0) {
     console.log(`[${requestId}] Query params: ${JSON.stringify(req.query)}`);
   }
 
   if (req.body && Object.keys(req.body).length > 0) {
-    console.log(`[${requestId}] Body: ${JSON.stringify(req.body)}`);
+    console.log(`[${requestId}] Body: ${JSON.stringify(redactBody(req.body))}`);
   }
 
   // Capture response data
@@ -1145,6 +1171,7 @@ app.get("/api/articles", async (req, res) => {
         `
         *,
         images:article_images (
+          id,
           image_url,
           caption,
           order
@@ -1341,7 +1368,8 @@ app.get("/api/articles", async (req, res) => {
 
             // Transform images data to match the expected format
             if (article.images) {
-              article.images = article.images.map((img) => ({
+              // Cover = lowest (order, id); embedded rows come back unordered.
+              article.images = sortImages(article.images).map((img) => ({
                 imageUrl: img.image_url,
                 caption: img.caption || "",
               }));
@@ -1489,7 +1517,7 @@ app.post("/api/articles", async (req, res) => {
     // Prepare the article object
     const articleData: any = {
       title: title.trim(),
-      content: content,
+      content: storeUrls(content),
       channel_id: channelIdNumber,
       user_id: userId,
       category: category || "",
@@ -1642,7 +1670,7 @@ app.get("/api/articles/:id", async (req, res) => {
     const { id } = req.params;
     console.log("====== ARTICLE LOOKUP DEBUG ======");
     console.log("Article lookup request for:", id);
-    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
+    console.log("Request headers:", JSON.stringify(redactHeaders(req.headers), null, 2));
 
     let article;
     let error;
@@ -1765,6 +1793,19 @@ app.get("/api/articles/:id", async (req, res) => {
     console.log("Retrieved article:", article.id, article.title);
     console.log("Article slug:", article.slug);
 
+    // Drafts and unpublished articles are not public: only the owner, an
+    // admin, or a holder of the article's preview token may read them. The
+    // same 404 as a missing article, so a draft's existence is not revealed.
+    if (article.status !== "published" && !(article.status == null && article.published)) {
+      const allowed =
+        isValidPreviewToken(article.id, req.query.preview, supabaseServiceKey) ||
+        (await isOwnerOrAdmin(req, article.user_id));
+      if (!allowed) {
+        return res.status(404).json({ error: "Article not found" });
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+    }
+
     // Fetch categories for this article
     if (articleId) {
       const { data: categoryData, error: categoryError } = await supabase
@@ -1819,7 +1860,8 @@ app.get("/api/articles/:id", async (req, res) => {
         .from("article_images")
         .select("*")
         .eq("article_id", articleId)
-        .order("order", { ascending: true });
+        .order("order", { ascending: true })
+        .order("id", { ascending: true });
 
       if (!imageError && imageData) {
         console.log(
@@ -1849,6 +1891,78 @@ app.get("/api/articles/:id", async (req, res) => {
       .json({ error: "Failed to fetch article", details: String(error) });
   }
 });
+
+// Recirculation for the end of an article: { next, sameChannel, more }.
+// Cards only (no bodies), cached at the edge for five minutes.
+app.get("/api/articles/:id/related", async (req, res) => {
+  try {
+    const article = await findArticle(supabase, req.params.id, "id, channel_id, category, created_at, status, published");
+    if (!article) return res.status(404).json({ error: "Article not found" });
+    const limit = Math.min(12, Math.max(1, parseInt(String(req.query.limit || "6"), 10) || 6));
+    const cols = "id, slug, title, category, created_at, channel_id, images:article_images ( id, image_url, caption, order )";
+    const published = () => supabase.from("articles").select(cols).eq("published", true).neq("id", article.id);
+
+    const [sameRes, categoryRes, latestRes] = await Promise.all([
+      published().eq("channel_id", article.channel_id).order("created_at", { ascending: false }).limit(limit + 1),
+      article.category
+        ? published().eq("category", article.category).neq("channel_id", article.channel_id).order("created_at", { ascending: false }).limit(limit)
+        : Promise.resolve({ data: [] }),
+      published().neq("channel_id", article.channel_id).order("created_at", { ascending: false }).limit(limit * 2),
+    ]);
+    const same = sameRes.data || [];
+    const seen = new Set();
+    const more = [];
+    for (const a of [...(categoryRes.data || []), ...(latestRes.data || [])]) {
+      if (more.length >= limit || seen.has(a.id)) continue;
+      seen.add(a.id);
+      more.push(a);
+    }
+    const older = same.find((a) => a.created_at && article.created_at && a.created_at < article.created_at);
+    const next = older || more[0] || null;
+    const sameChannel = same.filter((a) => !next || a.id !== next.id).slice(0, limit);
+    const moreCards = more.filter((a) => !next || a.id !== next.id);
+
+    const channelIds = [...new Set([next, ...sameChannel, ...moreCards].filter(Boolean).map((a) => a.channel_id))];
+    const { data: channels } = channelIds.length
+      ? await supabase.from("channels").select("id, name, slug, profile_image").in("id", channelIds)
+      : { data: [] };
+    const channelMap = new Map((channels || []).map((c) => [c.id, c]));
+    const card = (a) => {
+      if (!a) return null;
+      const c = channelMap.get(a.channel_id);
+      const cover = sortImages(a.images || [])[0];
+      return {
+        id: a.id,
+        slug: a.slug,
+        title: a.title,
+        category: a.category || null,
+        createdAt: a.created_at,
+        channel: c ? { id: c.id, name: c.name, slug: c.slug, profileImage: c.profile_image || null } : null,
+        image: cover ? { url: cover.image_url, caption: cover.caption || "" } : null,
+      };
+    };
+
+    res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+    return res.json({ next: card(next), sameChannel: sameChannel.map(card), more: moreCards.map(card) });
+  } catch (error) {
+    console.error("Error in GET /api/articles/:id/related:", error);
+    return res.status(500).json({ error: "Failed to fetch related articles" });
+  }
+});
+
+/** True when the bearer token belongs to the user `ownerId` or to an admin. */
+async function isOwnerOrAdmin(req, ownerId) {
+  try {
+    const uid = await getSupabaseUid(req);
+    if (!uid) return false;
+    const { data: dbUser } = await supabase.from("users").select("id").eq("supabase_uid", uid).maybeSingle();
+    if (dbUser && dbUser.id === ownerId) return true;
+    return await isAdminUser(uid);
+  } catch (e) {
+    console.error("Owner/admin check failed:", e);
+    return false;
+  }
+}
 
 // Helper function to add reaction data to articles
 async function enrichArticleWithReactions(article, req) {
@@ -3330,6 +3444,7 @@ app.get("/api/channels/:id/articles", async (req, res) => {
         `
         *,
         images:article_images (
+          id,
           image_url,
           caption,
           order
@@ -3462,7 +3577,7 @@ app.get("/api/channels/:id/articles", async (req, res) => {
 
         // Transform images data to match the expected format
         const transformedImages = article.images
-          ? article.images.map((img) => ({
+          ? sortImages(article.images).map((img) => ({
               imageUrl: img.image_url,
               caption: img.caption || "",
             }))
@@ -3729,8 +3844,8 @@ app.patch("/api/channels/:id", async (req, res) => {
     if (name !== undefined) updateData.name = name;
     if (description !== undefined) updateData.description = description;
     if (category !== undefined) updateData.category = category;
-    if (profileImage !== undefined) updateData.profile_image = profileImage;
-    if (bannerImage !== undefined) updateData.banner_image = bannerImage;
+    if (profileImage !== undefined) updateData.profile_image = storeUrl(profileImage);
+    if (bannerImage !== undefined) updateData.banner_image = storeUrl(bannerImage);
 
     console.log(`[PATCH /api/channels/${channelId}] Request body:`, { name, description, category, profileImage, bannerImage });
     console.log(`[PATCH /api/channels/${channelId}] Update data to send to DB:`, updateData);
@@ -3948,13 +4063,24 @@ app.post("/api/articles/:slug/view", async (req, res) => {
     // Get article ID from slug
     const { data: article, error: articleError } = await supabase
       .from("articles")
-      .select("id, view_count, title")
+      .select("id, view_count, title, status, published")
       .eq("slug", req.params.slug)
       .single();
 
     if (articleError || !article) {
       console.error("Error finding article:", articleError);
       return res.status(404).json({ error: "Article not found" });
+    }
+
+    // Views of drafts (owner, admin or preview) are not readership.
+    if (article.status !== "published" && !(article.status == null && article.published)) {
+      return res.json({
+        success: true,
+        counted: false,
+        message: "Not counted (article is not published)",
+        shouldInvalidateFeeds: false,
+        view_count: article.view_count || 0,
+      });
     }
 
     const articleId = article.id;
@@ -3990,11 +4116,11 @@ app.post("/api/articles/:slug/view", async (req, res) => {
       }
     }
 
-    // Use IP address for non-authenticated users
+    // Anonymous readers: a salted hash of the visitor's IP and user agent.
+    // No raw IP is stored. On Vercel the visitor IP is the first entry of
+    // x-forwarded-for (req.ip would be the proxy).
     if (!clientIdentifier) {
-      const ip = req.ip || req.headers["x-forwarded-for"] || "127.0.0.1";
-      clientIdentifier = `ip-${ip}`;
-      console.log(`Anonymous user with IP identifier: ${clientIdentifier}`);
+      clientIdentifier = anonymousVisitorId(req);
     }
 
     // Check if this view already exists (anti-gaming mechanism)
@@ -4049,6 +4175,9 @@ app.post("/api/articles/:slug/view", async (req, res) => {
       );
     }
 
+    // Optional page_events log (no-op until the analytics module ships).
+    recordPageEvent(supabase, req, { kind: "view", articleId, userId }).catch(() => {});
+
     // Return the current view count
     res.json({
       success: true,
@@ -4062,6 +4191,15 @@ app.post("/api/articles/:slug/view", async (req, res) => {
     res.status(500).json({ error: "Failed to process view" });
   }
 });
+
+/** `anon-<24 hex>`: sha256(pepper + ip + user agent), pepper = sha256(service key). */
+function anonymousVisitorId(req) {
+  const first = (v) => String(Array.isArray(v) ? v[0] : v || "").split(",")[0].trim();
+  const ip = first(req.headers["x-forwarded-for"]) || first(req.headers["x-real-ip"]) || "unknown";
+  const ua = String(req.headers["user-agent"] || "");
+  const pepper = createHash("sha256").update(supabaseServiceKey || "np").digest("hex");
+  return `anon-${createHash("sha256").update(pepper + ip + ua).digest("hex").slice(0, 24)}`;
+}
 
 // Article update endpoint
 app.patch("/api/articles/:id", async (req, res) => {
@@ -4078,32 +4216,11 @@ app.patch("/api/articles/:id", async (req, res) => {
       return res.status(401).json({ message: authError });
     }
 
-    // Fetch the article to check ownership - try both ID and slug
-    let article;
-    let fetchError;
+    // Fetch the article to check ownership (numeric id or slug)
+    const article = await findArticle(supabase, idOrSlug);
 
-    if (/^\d+$/.test(idOrSlug)) {
-      // It's a numeric ID
-      const result = await supabase
-        .from("articles")
-        .select("*")
-        .eq("id", parseInt(idOrSlug))
-        .single();
-      article = result.data;
-      fetchError = result.error;
-    } else {
-      // Try slug lookup
-      const result = await supabase
-        .from("articles")
-        .select("*")
-        .eq("slug", idOrSlug)
-        .single();
-      article = result.data;
-      fetchError = result.error;
-    }
-
-    if (fetchError || !article) {
-      console.error("Error fetching article:", fetchError);
+    if (!article) {
+      console.error("Article not found:", idOrSlug);
       return res.status(404).json({ message: "Article not found" });
     }
 
@@ -4129,26 +4246,10 @@ app.patch("/api/articles/:id", async (req, res) => {
 
     // Construct update object with only provided fields
     const updates: any = {};
-    if (title !== undefined) {
-      updates.title = title;
-
-      // Update slug if title changes
-      const baseSlug = title
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .substring(0, 60);
-
-      // Add date to make it more unique
-      const date = new Date();
-      const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1)
-        .toString()
-        .padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
-      updates.slug = `${dateStr}-${baseSlug}`;
-
-      console.log("Generated new slug for article update:", updates.slug);
-    }
-    if (content !== undefined) updates.content = content;
+    // The slug (and so the URL) changes only when the title actually changes:
+    // the inline editor sends the title on every save.
+    if (title !== undefined) updates.title = title;
+    if (content !== undefined) updates.content = storeUrls(content);
     if (category !== undefined) updates.category = category;
 
     // Handle location fields with the new structure
@@ -4179,14 +4280,10 @@ app.patch("/api/articles/:id", async (req, res) => {
     if (categoryId !== undefined) updates.category_id = categoryId;
 
     // Update the article
-    const { data: updatedArticle, error: updateError } = await supabase
-      .from("articles")
-      .update(updates)
-      .eq("id", article.id) // Always use numeric ID for update
-      .select()
-      .single();
-
-    if (updateError) {
+    let updatedArticle;
+    try {
+      ({ article: updatedArticle } = await updateArticleFields(supabase, article, updates, { slugMode: "if-title-changed" }));
+    } catch (updateError) {
       console.error("Error updating article:", updateError);
       return res.status(500).json({
         message: "Failed to update article",
@@ -4196,22 +4293,7 @@ app.patch("/api/articles/:id", async (req, res) => {
 
     // Handle category relationships if categoryIds is provided
     if (categoryIds && Array.isArray(categoryIds)) {
-      // First remove all existing category relationships
-      await supabase
-        .from("article_categories")
-        .delete()
-        .eq("article_id", article.id);
-
-      // Then add new ones
-      if (categoryIds.length > 0) {
-        const categoryRelations = categoryIds.map((catId, index) => ({
-          article_id: article.id,
-          category_id: catId,
-          is_primary: index === 0,
-        }));
-
-        await supabase.from("article_categories").insert(categoryRelations);
-      }
+      await replaceArticleCategories(supabase, article.id, categoryIds);
     }
 
     return res.json(updatedArticle);
@@ -4236,32 +4318,11 @@ app.delete("/api/articles/:id", async (req, res) => {
       return res.status(401).json({ message: authError });
     }
 
-    // Verify that article exists and belongs to this user - try both ID and slug
-    let article;
-    let getError;
+    // Verify that article exists and belongs to this user (numeric id or slug)
+    const article = await findArticle(supabase, idOrSlug);
 
-    if (/^\d+$/.test(idOrSlug)) {
-      // It's a numeric ID
-      const result = await supabase
-        .from("articles")
-        .select("*")
-        .eq("id", parseInt(idOrSlug))
-        .single();
-      article = result.data;
-      getError = result.error;
-    } else {
-      // Try slug lookup
-      const result = await supabase
-        .from("articles")
-        .select("*")
-        .eq("slug", idOrSlug)
-        .single();
-      article = result.data;
-      getError = result.error;
-    }
-
-    if (getError || !article) {
-      console.error("Error getting article to delete:", getError);
+    if (!article) {
+      console.error("Article to delete not found:", idOrSlug);
       return res.status(404).json({ message: "Article not found" });
     }
 
@@ -4271,71 +4332,18 @@ app.delete("/api/articles/:id", async (req, res) => {
         .json({ message: "You don't have permission to delete this article" });
     }
 
-    console.log(`Deleting article ${article.id} with a direct SQL approach`);
+    console.log(`Deleting article ${article.id}`);
 
     try {
-      // Step 1: Delete all comments for this article
-      const { error: commentsError } = await supabase
-        .from("comments")
-        .delete()
-        .eq("article_id", article.id);
-
-      if (commentsError) {
-        console.error("Error deleting comments:", commentsError);
-      }
-
-      // Step 2: Delete all reactions for this article
-      const { error: reactionsError } = await supabase
-        .from("reactions")
-        .delete()
-        .eq("article_id", article.id);
-
-      if (reactionsError) {
-        console.error("Error deleting reactions:", reactionsError);
-      }
-
-      // Step 3: Delete all images for this article
-      const { error: imagesError } = await supabase
-        .from("article_images")
-        .delete()
-        .eq("article_id", article.id);
-
-      if (imagesError) {
-        console.error("Error deleting images:", imagesError);
-      }
-
-      // Step 4: Delete all category associations
-      const { error: categoriesError } = await supabase
-        .from("article_categories")
-        .delete()
-        .eq("article_id", article.id);
-
-      if (categoriesError) {
-        console.error("Error deleting article categories:", categoriesError);
-      }
-
-      // Step 5: Finally, delete the article
-      const { error: articleError } = await supabase
-        .from("articles")
-        .delete()
-        .eq("id", article.id);
-
-      if (articleError) {
-        console.error("Error deleting article:", articleError);
-        return res.status(500).json({
-          message: "Failed to delete article",
-          error: articleError.message,
-          details: articleError,
-        });
-      }
-
+      await deleteArticle(supabase, article, { permanent: true });
       console.log(`Successfully deleted article ${article.id}`);
       return res.status(204).send();
     } catch (err) {
-      console.error("Error during article deletion sequence:", err);
+      console.error("Error deleting article:", err);
       return res.status(500).json({
         message: "Failed to delete article",
         error: err instanceof Error ? err.message : String(err),
+        details: err?.cause ?? err,
       });
     }
   } catch (error) {
@@ -4431,8 +4439,8 @@ app.patch("/api/users/:id", async (req, res) => {
     const updates: any = {};
     if (description !== undefined) updates.description = description;
     if (username !== undefined) updates.username = username;
-    if (profileImage !== undefined) updates.profile_image = profileImage;
-    if (bannerImage !== undefined) updates.banner_image = bannerImage;
+    if (profileImage !== undefined) updates.profile_image = storeUrl(profileImage);
+    if (bannerImage !== undefined) updates.banner_image = storeUrl(bannerImage);
 
     // Update the user
     const { data: updatedUser, error: updateError } = await supabase
@@ -4466,7 +4474,7 @@ app.get("/api/channels/:id/subscribers", async (req, res) => {
     console.log(`API: Fetching subscribers for channel ID: ${channelId}`);
 
     // Debug log to check all request headers
-    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
+    console.log("Request headers:", JSON.stringify(redactHeaders(req.headers), null, 2));
 
     // Extract the Authorization header (if any)
     const authHeader = req.headers.authorization;
@@ -4909,71 +4917,18 @@ app.put("/api/articles/:id/images", async (req, res) => {
       });
     }
 
-    // Get current images
-    const { data: currentImages, error: getCurrentError } = await supabase
-      .from("article_images")
-      .select("*")
-      .eq("article_id", articleId);
-
-    if (getCurrentError) {
-      console.error("Error fetching current images:", getCurrentError);
-      return res
-        .status(500)
-        .json({ message: "Failed to fetch current images" });
-    }
-
-    // Find images to delete (images in currentImages but not in new images array)
-    const newImageUrls = new Set(images.map((img) => img.image_url));
-    const imagesToDelete =
-      currentImages?.filter((img) => !newImageUrls.has(img.image_url)) || [];
-
-    // Delete removed images from storage
-    if (imagesToDelete.length > 0) {
-      const storage = supabase.storage.from("article-images");
-      for (const image of imagesToDelete) {
-        const filename = image.image_url.split("/").pop();
-        if (filename) {
-          const { error: deleteStorageError } = await storage.remove([
-            filename,
-          ]);
-          if (deleteStorageError) {
-            console.error(
-              "Error deleting image from storage:",
-              deleteStorageError
-            );
-          }
-        }
-      }
-    }
-
-    // Delete all current images from the database (we'll reinsert the kept ones)
-    const { error: deleteError } = await supabase
-      .from("article_images")
-      .delete()
-      .eq("article_id", articleId);
-
-    if (deleteError) {
-      console.error("Error deleting current images:", deleteError);
+    // Replace the rows (storage objects are never deleted: the same object
+    // can back another article, a body figure or a cached /media URL).
+    const rows = images.map((img) => ({
+      image_url: storeUrl(img.image_url),
+      caption: img.caption,
+      order: img.order,
+    }));
+    try {
+      await replaceArticleImages(supabase, articleId, rows);
+    } catch (err) {
+      console.error("Error replacing images:", err);
       return res.status(500).json({ message: "Failed to update images" });
-    }
-
-    // Insert new/kept images
-    if (images.length > 0) {
-      const { error: insertError } = await supabase
-        .from("article_images")
-        .insert(
-          images.map((img) => ({
-            article_id: articleId,
-            image_url: img.image_url,
-            caption: img.caption,
-            order: img.order,
-          }))
-        );
-
-      if (insertError) {
-        console.error("Error inserting new images:", insertError);
-        return res.status(500).json({ message: "Failed to update images" });
-      }
     }
 
     return res.json({ message: "Images updated successfully" });
@@ -4987,11 +4942,6 @@ app.put("/api/articles/:id/images", async (req, res) => {
 // Handle article image metadata
 app.post("/api/articles/:id/images", async (req, res) => {
   try {
-    console.log("=== DEBUG: POST /api/articles/:id/images ===");
-    console.log("Request body:", JSON.stringify(req.body, null, 2));
-    console.log("Request params:", JSON.stringify(req.params, null, 2));
-    console.log("Request headers:", JSON.stringify(req.headers, null, 2));
-
     const { userId, error: authError } = await authenticateUser(req);
     console.log("Auth result - userId:", userId, "authError:", authError);
 
@@ -5016,7 +4966,6 @@ app.post("/api/articles/:id/images", async (req, res) => {
       .eq("id", articleId)
       .single();
 
-    console.log("Article fetch result - article:", article, "error:", getError);
 
     if (getError || !article) {
       console.error("Error getting article:", getError);
@@ -5044,7 +4993,7 @@ app.post("/api/articles/:id/images", async (req, res) => {
       .insert(
         imageData.map((img) => ({
           article_id: articleId,
-          image_url: img.image_url,
+          image_url: storeUrl(img.image_url),
           caption: img.caption || "",
           order: img.order || 0,
         }))
@@ -5153,7 +5102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Enhanced debugging for Vercel serverless environment
   console.log(`[${requestId}] 🚀 SERVERLESS FUNCTION INVOKED`);
   console.log(`[${requestId}] Method: ${req.method}, URL: ${req.url}`);
-  console.log(`[${requestId}] Headers: ${JSON.stringify(req.headers)}`);
+  console.log(`[${requestId}] Headers: ${JSON.stringify(redactHeaders(req.headers))}`);
   console.log(`[${requestId}] Query params: ${JSON.stringify(req.query)}`);
   console.log(
     `[${requestId}] Environment: Vercel=${
@@ -5165,7 +5114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.body && Object.keys(req.body).length > 0) {
     try {
-      console.log(`[${requestId}] Request body: ${JSON.stringify(req.body)}`);
+      console.log(`[${requestId}] Request body: ${JSON.stringify(redactBody(req.body))}`);
     } catch (err) {
       console.log(
         `[${requestId}] Request body present but not JSON serializable`
@@ -5830,7 +5779,7 @@ async function createSingleArticle(
     locationLat,
     locationLng,
     published = true,
-    images = [],
+    excerpt,
   } = articleData;
 
   // Validation
@@ -5838,10 +5787,15 @@ async function createSingleArticle(
   if (!content?.trim()) throw new Error("Content is required");
   if (!channelId) throw new Error("channelId is required");
   if (categoryIds.length > 3) throw new Error("Maximum 3 categories allowed");
-  if (images.length > 5) throw new Error("Maximum 5 images allowed");
+  const imageFields = parseImageFields(articleData);
+  if (imageFields.error) throw new Error(imageFields.error);
+  if (excerpt !== undefined && excerpt !== null && (typeof excerpt !== "string" || excerpt.length > 300)) {
+    throw new Error("excerpt must be a string of at most 300 characters");
+  }
 
-  // Convert content to HTML
-  const htmlContent = normalizeContent(content, contentFormat);
+  // Convert content to HTML (our /media URLs stored as public bucket URLs)
+  let htmlContent = storeUrls(normalizeContent(content, contentFormat));
+  if (typeof excerpt === "string" && excerpt.trim()) htmlContent = setDek(htmlContent, excerpt);
 
   // Verify channel ownership
   const { data: channel, error: channelError } = await supabase
@@ -5903,6 +5857,18 @@ async function createSingleArticle(
       slugAttempt++;
     }
   }
+
+  // Images: the attached list (legacy `images`, or coverImage + gallery) and
+  // every external body image are downloaded once per photo and stored by
+  // content, so a photo sent both as an image and in the body is one object
+  // and renders once. Lenient on create: a failed image is skipped (attached)
+  // or keeps its URL (body), and is reported in `warnings`.
+  const attached = imageFields.legacy
+    ? imageFields.legacy
+    : [...(imageFields.cover ? [imageFields.cover] : []), ...(imageFields.gallery || [])];
+  const media = await ingestArticleMedia(supabase, { attached, html: htmlContent, supabaseUrl });
+  htmlContent = media.html;
+  const warnings = [...imageFields.warnings, ...media.failures, ...media.warnings];
 
   // Build article record
   const articleRecord: any = {
@@ -5966,24 +5932,24 @@ async function createSingleArticle(
     }
   }
 
-  // Handle images (download from URLs, upload to storage)
-  const processedImages = [];
-  for (let i = 0; i < images.length; i++) {
-    const result = await downloadAndUploadImage(images[i], article.id, i, supabase);
-    if (result) {
-      const { data: imgRecord } = await supabase
-        .from("article_images")
-        .insert([{
-          article_id: article.id,
-          image_url: result.imageUrl,
-          caption: result.caption,
-          order: result.order,
-        }])
-        .select()
-        .single();
-      if (imgRecord) processedImages.push(imgRecord);
+  // Attach the stored images (cover first). Legacy callers may set `order`.
+  let processedImages: any[] = [];
+  if (media.rows.length > 0) {
+    const orderByField = new Map(attached.map((img: any, i: number) => [img.field, img.order ?? i]));
+    try {
+      processedImages = await replaceArticleImages(
+        supabase,
+        article.id,
+        media.rows.map((r: any) => ({ image_url: r.image_url, caption: r.caption, order: orderByField.get(r.field) })),
+        { renumber: !imageFields.legacy }
+      );
+    } catch (err) {
+      console.error("Error attaching images:", err);
+      warnings.push({ field: "images", url: "", reason: "attach_failed" });
     }
   }
+  const sortedImages = sortImages(processedImages);
+  const asImage = (r: any) => ({ url: r.image_url, caption: r.caption || "" });
 
   return {
     id: article.id,
@@ -5996,6 +5962,10 @@ async function createSingleArticle(
     url: `/articles/${article.id}/${article.slug}`,
     images: processedImages,
     categories: categoryResults,
+    coverImage: sortedImages[0] ? asImage(sortedImages[0]) : null,
+    gallery: sortedImages.slice(1).map(asImage),
+    excerpt: deriveExcerpt(article.content || htmlContent),
+    warnings,
   };
 }
 
@@ -6045,47 +6015,87 @@ app.post("/api/v1/admin/articles/:id/engagement", async (req, res) => {
 });
 
 // --- Content API Endpoints ---
+//
+// Every error body is { error, code } (plus extra fields where noted). Codes:
+// validation_failed, not_found, channel_forbidden, channel_not_found,
+// duplicate_title, image_failed, unauthorized, server_error.
+
+function v1Error(res: any, status: number, code: string, error: string, extra: any = {}) {
+  return res.status(status).json({ error, code, ...extra });
+}
+
+/** Error thrown by createSingleArticle -> status, code and body. */
+function v1CreateError(error: any) {
+  if (error?.status === 409) {
+    return {
+      status: 409,
+      body: {
+        error: "Duplicate article detected",
+        code: "duplicate_title",
+        message: error.message,
+        existingArticleId: error.existingArticleId,
+      },
+    };
+  }
+  const message = error?.message || "Server error";
+  if (message.includes("Not authorized")) return { status: 403, body: { error: message, code: "channel_forbidden" } };
+  if (message.includes("not found")) return { status: 404, body: { error: message, code: "channel_not_found" } };
+  if (message.startsWith("Failed to create article")) return { status: 400, body: { error: message, code: "server_error" } };
+  return { status: 400, body: { error: message, code: "validation_failed" } };
+}
+
+async function v1Auth(req: any, res: any): Promise<number | null> {
+  const { userId, error: authError } = await authenticateRequest(req);
+  if (authError || !userId) {
+    v1Error(res, 401, "unauthorized", authError || "Authentication required");
+    return null;
+  }
+  return userId;
+}
+
+/** The caller's article, or null after sending the same 404 for missing and not-owned. */
+async function v1OwnedArticle(req: any, res: any, userId: number) {
+  const article = await findArticle(supabase, req.params.id);
+  if (!article || article.user_id !== userId) {
+    v1Error(res, 404, "not_found", "Article not found");
+    return null;
+  }
+  return article;
+}
+
+const v1Serialize = (article: any, extra: any = {}) =>
+  serializeArticle(supabase, article, { previewSecret: supabaseServiceKey, ...extra });
 
 // Create a single article
 app.post("/api/v1/content/articles", async (req, res) => {
   try {
-    const { userId, error: authError } = await authenticateRequest(req);
-    if (authError || !userId) {
-      return res.status(401).json({ error: authError || "Authentication required" });
-    }
+    const userId = await v1Auth(req, res);
+    if (!userId) return;
 
     const result = await createSingleArticle(req.body, userId);
+    if (!result.published) {
+      result.previewUrl = `${result.url}?preview=${previewToken(result.id, supabaseServiceKey)}`;
+    }
     return res.status(201).json(result);
   } catch (error: any) {
     console.error("Error in POST /api/v1/content/articles:", error);
-    if (error.status === 409) {
-      return res.status(409).json({
-        error: "Duplicate article detected",
-        message: error.message,
-        existingArticleId: error.existingArticleId,
-      });
-    }
-    const status = error.message?.includes("Not authorized") ? 403
-      : error.message?.includes("not found") ? 404
-      : 400;
-    return res.status(status).json({ error: error.message });
+    const { status, body } = v1CreateError(error);
+    return res.status(status).json(body);
   }
 });
 
 // Batch create articles
 app.post("/api/v1/content/articles/batch", async (req, res) => {
   try {
-    const { userId, error: authError } = await authenticateRequest(req);
-    if (authError || !userId) {
-      return res.status(401).json({ error: authError || "Authentication required" });
-    }
+    const userId = await v1Auth(req, res);
+    if (!userId) return;
 
     const { articles } = req.body;
     if (!Array.isArray(articles) || articles.length === 0) {
-      return res.status(400).json({ error: "articles array is required" });
+      return v1Error(res, 400, "validation_failed", "articles array is required");
     }
     if (articles.length > 10) {
-      return res.status(400).json({ error: "Maximum 10 articles per batch request" });
+      return v1Error(res, 400, "validation_failed", "Maximum 10 articles per batch request");
     }
 
     const created: any[] = [];
@@ -6096,7 +6106,7 @@ app.post("/api/v1/content/articles/batch", async (req, res) => {
         const result = await createSingleArticle(articles[i], userId);
         created.push({ index: i, ...result });
       } catch (err: any) {
-        failed.push({ index: i, title: articles[i]?.title || "Unknown", error: err.message });
+        failed.push({ index: i, title: articles[i]?.title || "Unknown", error: err.message, code: v1CreateError(err).body.code });
       }
     }
 
@@ -6111,75 +6121,201 @@ app.post("/api/v1/content/articles/batch", async (req, res) => {
     });
   } catch (error) {
     console.error("Error in POST /api/v1/content/articles/batch:", error);
-    return res.status(500).json({ error: "Server error" });
+    return v1Error(res, 500, "server_error", "Server error");
   }
 });
 
-// Get article details
+// Get article details (the caller's own articles only; others are 404)
 app.get("/api/v1/content/articles/:id", async (req, res) => {
   try {
-    const { userId, error: authError } = await authenticateRequest(req);
-    if (authError || !userId) {
-      return res.status(401).json({ error: authError || "Authentication required" });
-    }
-
-    const articleId = req.params.id;
-    const isNumeric = /^\d+$/.test(articleId);
-
-    let query = supabase.from("articles").select("*");
-    if (isNumeric) {
-      query = query.eq("id", parseInt(articleId));
-    } else {
-      query = query.eq("slug", articleId);
-    }
-
-    const { data: article, error } = await query.single();
-    if (error || !article) {
-      return res.status(404).json({ error: "Article not found" });
-    }
-
-    // Verify ownership
-    if (article.user_id !== userId) {
-      return res.status(403).json({ error: "Not authorized to view this article details" });
-    }
-
-    // Get channel info
-    const { data: channel } = await supabase
-      .from("channels")
-      .select("id, name, slug")
-      .eq("id", article.channel_id)
-      .single();
-
-    // Get images
-    const { data: images } = await supabase
-      .from("article_images")
-      .select("*")
-      .eq("article_id", article.id)
-      .order("order");
-
-    // Get categories
-    const { data: categories } = await supabase
-      .from("article_categories")
-      .select("category_id, is_primary, categories(id, name)")
-      .eq("article_id", article.id);
-
-    return res.json({
-      id: article.id,
-      title: article.title,
-      slug: article.slug,
-      channelId: article.channel_id,
-      channelName: channel?.name || null,
-      status: article.status,
-      published: article.published,
-      createdAt: article.created_at,
-      viewCount: article.view_count,
-      url: `/articles/${article.id}/${article.slug}`,
-      images: images || [],
-      categories: categories || [],
-    });
+    const userId = await v1Auth(req, res);
+    if (!userId) return;
+    const article = await v1OwnedArticle(req, res, userId);
+    if (!article) return;
+    return res.json(await v1Serialize(article));
   } catch (error) {
     console.error("Error in GET /api/v1/content/articles/:id:", error);
-    return res.status(500).json({ error: "Server error" });
+    return v1Error(res, 500, "server_error", "Server error");
+  }
+});
+
+const PATCH_FIELDS = [
+  "title", "regenerateSlug", "content", "contentFormat", "excerpt", "channelId", "categoryIds",
+  "location", "locationLat", "locationLng", "published", "coverImage", "gallery", "images",
+];
+
+/**
+ * Validate a PATCH body. Returns an error message, or null.
+ * Omitted fields are left alone; null clears where the docs say so.
+ */
+function validateV1Patch(body: any): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "Request body must be a JSON object";
+  if (!PATCH_FIELDS.some((f) => f !== "contentFormat" && f !== "regenerateSlug" && body[f] !== undefined) && body.regenerateSlug !== true) {
+    return "No updatable fields provided";
+  }
+  const { title, regenerateSlug, content, contentFormat, excerpt, channelId, categoryIds, location, locationLat, locationLng, published } = body;
+  if (title !== undefined && (typeof title !== "string" || !title.trim() || title.trim().length > 300)) return "title must be a non-empty string of at most 300 characters";
+  if (regenerateSlug !== undefined && typeof regenerateSlug !== "boolean") return "regenerateSlug must be a boolean";
+  if (content !== undefined && (typeof content !== "string" || !content.trim())) return "content must be a non-empty string";
+  if (contentFormat !== undefined && !["markdown", "html", "auto"].includes(contentFormat)) return 'contentFormat must be "markdown", "html" or "auto"';
+  if (excerpt !== undefined && excerpt !== null && (typeof excerpt !== "string" || excerpt.length > 300)) return "excerpt must be a string of at most 300 characters, or null";
+  if (channelId !== undefined && !(Number.isInteger(channelId) && channelId > 0)) return "channelId must be a positive integer";
+  if (categoryIds !== undefined) {
+    if (!Array.isArray(categoryIds) || !categoryIds.every((c) => Number.isInteger(c) && c > 0)) return "categoryIds must be an array of category ids";
+    if (categoryIds.length > 3) return "Maximum 3 categories allowed";
+  }
+  if (location !== undefined && location !== null && typeof location !== "string") return "location must be a string or null";
+  for (const [name, v] of [["locationLat", locationLat], ["locationLng", locationLng]]) {
+    if (v !== undefined && v !== null && (typeof v !== "number" || !Number.isFinite(v))) return `${name} must be a number or null`;
+  }
+  if (published !== undefined && typeof published !== "boolean") return "published must be a boolean";
+  return null;
+}
+
+// Update an article (the caller's own; others are 404)
+app.patch("/api/v1/content/articles/:id", async (req, res) => {
+  try {
+    const userId = await v1Auth(req, res);
+    if (!userId) return;
+    const body = req.body || {};
+    const invalid = validateV1Patch(body);
+    const article = await v1OwnedArticle(req, res, userId);
+    if (!article) return;
+    if (invalid) return v1Error(res, 400, "validation_failed", invalid);
+    const imageFields = parseImageFields(body);
+    if (imageFields.error) return v1Error(res, 400, "validation_failed", imageFields.error);
+
+    // Channel move: must exist and belong to the key's user.
+    if (body.channelId !== undefined && body.channelId !== article.channel_id) {
+      const { data: channel } = await supabase.from("channels").select("id, user_id").eq("id", body.channelId).maybeSingle();
+      if (!channel) return v1Error(res, 404, "channel_not_found", "Channel not found");
+      if (channel.user_id !== userId) return v1Error(res, 403, "channel_forbidden", "Not authorized for this channel");
+    }
+
+    // Body: converted like create; the standfirst is carried across a
+    // content replace unless the new body has its own or `excerpt` is sent.
+    let html: string | undefined;
+    if (body.content !== undefined) {
+      const format = body.contentFormat === "auto" ? undefined : body.contentFormat || "markdown";
+      html = storeUrls(normalizeContent(body.content, format));
+      const oldDek = extractDek(article.content || "").dek;
+      if (body.excerpt === undefined && oldDek && !extractDek(html).dek) html = setDek(html, oldDek);
+    }
+    if (body.excerpt !== undefined) html = setDek(html ?? article.content ?? "", body.excerpt);
+
+    // Images. coverImage alone keeps the gallery; gallery alone keeps the cover.
+    const imagesTouched = imageFields.legacy !== undefined || imageFields.cover !== undefined || imageFields.gallery !== undefined;
+    const warnings: any[] = [...imageFields.warnings];
+    let target: any[] | null = null; // [{ url, caption, field, existing? }]
+    if (imagesTouched) {
+      if (imageFields.legacy) target = imageFields.legacy;
+      else {
+        const { data: currentRows } = await supabase.from("article_images").select("*").eq("article_id", article.id);
+        const current = sortImages(currentRows || []).map((r: any, i: number) => ({
+          url: r.image_url,
+          caption: r.caption || "",
+          field: i === 0 ? "coverImage" : `gallery[${i - 1}]`,
+          existing: true,
+        }));
+        let cover = imageFields.cover !== undefined ? imageFields.cover : current[0] || null;
+        const gallery = imageFields.gallery !== undefined ? imageFields.gallery : current.slice(1);
+        target = cover ? [cover, ...gallery] : [...gallery];
+        if (!cover && gallery.length) warnings.push({ field: "coverImage", url: gallery[0].url, reason: "cover_promoted_from_gallery" });
+        if (target.length > 5) return v1Error(res, 400, "validation_failed", "Maximum 5 images allowed (cover included)");
+      }
+    }
+
+    // Download everything first. Attached images are all-or-nothing; body
+    // images that fail keep their URL and become warnings.
+    const fresh = (target || []).filter((img: any) => !img.existing);
+    const media = await ingestArticleMedia(supabase, {
+      attached: fresh,
+      html: html ?? "",
+      supabaseUrl,
+      rehostBody: html !== undefined && body.content !== undefined,
+    });
+    if (media.failures.length) {
+      return v1Error(res, 422, "image_failed", "One or more images could not be downloaded; nothing was changed", {
+        details: media.failures,
+      });
+    }
+    if (html !== undefined) html = media.html;
+    warnings.push(...media.warnings);
+
+    // Write the article row.
+    const fields: any = {};
+    if (body.title !== undefined) fields.title = body.title.trim();
+    if (html !== undefined) fields.content = html;
+    if (body.channelId !== undefined) fields.channel_id = body.channelId;
+    if (body.location !== undefined) {
+      fields.location = body.location;
+      fields.location_name = body.location;
+    }
+    if (body.locationLat !== undefined) fields.location_lat = body.locationLat;
+    if (body.locationLng !== undefined) fields.location_lng = body.locationLng;
+    if (body.locationLat !== undefined || body.locationLng !== undefined) {
+      const lat = body.locationLat !== undefined ? body.locationLat : article.location_lat;
+      const lng = body.locationLng !== undefined ? body.locationLng : article.location_lng;
+      fields.geom = typeof lat === "number" && typeof lng === "number" ? `SRID=4326;POINT(${lng} ${lat})` : null;
+    }
+    if (body.published !== undefined) fields.status = body.published ? "published" : "draft";
+    if (body.categoryIds !== undefined) {
+      let primaryName = "";
+      if (body.categoryIds.length) {
+        const { data: cat } = await supabase.from("categories").select("name").eq("id", body.categoryIds[0]).maybeSingle();
+        primaryName = cat?.name || "";
+      }
+      fields.category = primaryName;
+    }
+
+    const { article: updated, previousSlug } = await updateArticleFields(supabase, article, fields, {
+      slugMode: body.regenerateSlug === true ? "regenerate" : "keep",
+    });
+    if (body.categoryIds !== undefined) await replaceArticleCategories(supabase, article.id, body.categoryIds);
+    if (target) {
+      const freshByField = new Map(media.rows.map((r: any) => [r.field, r]));
+      const rows = target.map((img: any) => ({
+        image_url: img.existing ? storeUrl(img.url) : freshByField.get(img.field).image_url,
+        caption: img.caption || "",
+      }));
+      await replaceArticleImages(supabase, article.id, rows, { renumber: true });
+    }
+
+    return res.json(await v1Serialize(updated, { previousSlug, warnings }));
+  } catch (error) {
+    console.error("Error in PATCH /api/v1/content/articles/:id:", error);
+    return v1Error(res, 500, "server_error", "Server error");
+  }
+});
+
+// Delete an article: unpublish by default, ?permanent=true to delete,
+// ?dryRun=true to report what would happen. Storage objects are kept.
+app.delete("/api/v1/content/articles/:id", async (req, res) => {
+  try {
+    const userId = await v1Auth(req, res);
+    if (!userId) return;
+    const article = await v1OwnedArticle(req, res, userId);
+    if (!article) return;
+    const permanent = String(req.query.permanent || "") === "true";
+    const restore = `PATCH /api/v1/content/articles/${article.id} {"published": true}`;
+
+    if (String(req.query.dryRun || "") === "true") {
+      return res.json({
+        id: article.id,
+        dryRun: true,
+        action: permanent ? "delete" : "unpublish",
+        currentStatus: article.status,
+        ...(permanent
+          ? { note: "Deletes the article, its comments, reactions, image rows and categories. Storage objects are kept." }
+          : { restore }),
+      });
+    }
+
+    const result = await deleteArticle(supabase, article, { permanent });
+    return res.json(permanent ? result : { ...result, restore });
+  } catch (error) {
+    console.error("Error in DELETE /api/v1/content/articles/:id:", error);
+    return v1Error(res, 500, "server_error", "Server error");
   }
 });
 
@@ -6188,7 +6324,7 @@ app.get("/api/v1/content/channels", async (req, res) => {
   try {
     const { userId, error: authError } = await authenticateRequest(req);
     if (authError || !userId) {
-      return res.status(401).json({ error: authError || "Authentication required" });
+      return res.status(401).json({ error: authError || "Authentication required", code: "unauthorized" });
     }
 
     const { data: channels, error } = await supabase
@@ -6240,7 +6376,7 @@ app.get("/api/v1/content/categories", async (req, res) => {
     // Categories are public, but still require auth for API consistency
     const { userId, error: authError } = await authenticateRequest(req);
     if (authError || !userId) {
-      return res.status(401).json({ error: authError || "Authentication required" });
+      return res.status(401).json({ error: authError || "Authentication required", code: "unauthorized" });
     }
 
     const { data: categories, error } = await supabase
@@ -6455,7 +6591,7 @@ app.get("/sitemap.xml", async (req, res) => {
   try {
     const { data: articles } = await supabase
       .from("articles")
-      .select("id, slug, created_at, last_edited")
+      .select("id, slug, created_at, published_at, last_edited")
       .eq("published", true)
       .order("created_at", { ascending: false })
       .limit(5000);
@@ -6486,7 +6622,10 @@ app.get("/sitemap.xml", async (req, res) => {
       );
     }
     for (const a of articles || []) {
-      const lastmod = String(a.last_edited || a.created_at || "").slice(0, 10);
+      // last_edited is bumped by every view (shared/article-media.js,
+      // LAST_EDITED_IS_TRUSTWORTHY), so the publish date is the honest lastmod.
+      const modified = LAST_EDITED_IS_TRUSTWORTHY ? a.last_edited : null;
+      const lastmod = String(modified || a.published_at || a.created_at || "").slice(0, 10);
       const loc = `${SITE_BASE}/articles/${a.id}${a.slug ? `/${xmlEscape(a.slug)}` : ""}`;
       urls.push(
         `<url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}<priority>0.8</priority></url>`

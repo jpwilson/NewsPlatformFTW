@@ -75,7 +75,8 @@ that a table shows better.
 ## 6. Images, captions, and galleries
 
 Standard markdown images. **The alt text is the rendered caption** — write
-real captions (who/what/where, credit), not filenames.
+real captions (who/what/where, credit), not filenames. End the caption with
+`Photo: <credit>`; the reader shows the credit separately.
 
 ```markdown
 ![The Assemblée Nationale during the final vote, 12 June 2026. Photo: AFP](https://…/vote.jpg)
@@ -91,8 +92,10 @@ through. Use 3–6 images for photo-driven stories.
 ![Caption for photo three](https://…/three.jpg)
 ```
 
-External image URLs are downloaded and re-hosted automatically at ingest.
-Aim for an image (or other visual block) roughly every 300–400 words.
+External image URLs (in the body and in the image fields) are downloaded and
+re-hosted at ingest, so they never break later. A body image that cannot be
+downloaded keeps its original URL. Aim for an image (or other visual block)
+roughly every 300–400 words.
 
 ## 7. Video embeds
 
@@ -132,9 +135,15 @@ Supported `type`: `bar`, `line`, `area`, `pie`. Multiple series allowed for
 ## 10. Submission fields (API)
 
 Alongside the markdown `content`: `title` (≤ 90 chars, specific > clever),
-`category`, `location` when relevant, and image URLs as described above. The
-first image in the article is used as the card/hero/social image — make it
-the strongest one.
+`categoryIds`, `location` when relevant, `excerpt` (the standfirst, one or two
+sentences, ≤ 300 chars) and the images. Full contract: [content-api.md](content-api.md).
+
+- `coverImage` is the card, hero and social image — make it the strongest
+  one. `gallery` holds the other attached photos (shown after the body).
+- The legacy `images` list still works: its first entry is the cover.
+- A photo may be both the cover and a figure in the body: it is stored once
+  and the page shows it once, as the hero with the figure's caption. You do
+  not need to leave it out of the body.
 
 **Hero image rules (the card/hero/social image is CROPPED to wide ratios —
 up to 21:9 on desktop — with the crop window biased toward the upper third):**
