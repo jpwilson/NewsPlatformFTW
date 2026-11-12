@@ -24,6 +24,7 @@ import {
   sitemapImageXml,
 } from "./_lib/crawler-pages.js";
 import {
+  announceArticleChange,
   deleteArticle,
   findArticle,
   isValidPreviewToken,
@@ -1430,6 +1431,9 @@ app.post("/api/articles", async (req, res) => {
         }
       }
     }
+
+    // Search engines: a new public page (production only, at most 2 s).
+    await announceArticleChange(null, article);
 
     // Return the created article
     return res.status(201).json(article);
@@ -4499,6 +4503,7 @@ app.post("/api/articles/:id/toggle-status", async (req, res) => {
         updatedArticle.published ? "published" : "draft"
       }`
     );
+    await announceArticleChange(article, updatedArticle);
     return res.json(updatedArticle);
   } catch (error) {
     console.error("Error in toggle article status endpoint:", error);
@@ -4998,6 +5003,9 @@ async function createSingleArticle(
   const sortedImages = sortImages(processedImages);
   const asImage = (r: any) => ({ url: r.image_url, caption: r.caption || "" });
 
+  // Search engines: a new public page (production only, at most 2 s).
+  await announceArticleChange(null, article);
+
   return {
     id: article.id,
     title: article.title,
@@ -5326,6 +5334,9 @@ app.patch("/api/v1/content/articles/:id", async (req, res) => {
         caption: img.caption || "",
       }));
       await replaceArticleImages(supabase, article.id, rows, { renumber: true });
+      // A photo-only change: updateArticleFields wrote nothing and so did
+      // not announce the page.
+      if (Object.keys(fields).length === 0) await announceArticleChange(article, updated);
     }
 
     return res.json(await v1Serialize(updated, { previousSlug, warnings }));

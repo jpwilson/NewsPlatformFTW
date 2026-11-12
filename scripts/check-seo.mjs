@@ -22,6 +22,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { SPA_ROUTES } from "../shared/spa-routes.js";
+import { INDEXNOW_KEY } from "../api/_lib/indexnow.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, "..", "dist", "public");
@@ -170,7 +171,7 @@ checkFile("robots.txt", [
   ["no Sitemap: line for the news sitemap", (b) => b.includes(`Sitemap: ${SITE}/news-sitemap.xml`)],
   [
     "a group lacks `Allow: /api/ai/` directly before `Disallow: /api/` (the AI endpoint must stay reachable)",
-    (b) => robotsGroups(b).every((g) => {
+    (b) => robotsGroups(b).length > 0 && robotsGroups(b).every((g) => {
       const allow = g.indexOf("Allow: /api/ai/");
       const disallow = g.indexOf("Disallow: /api/");
       return allow !== -1 && disallow === allow + 1;
@@ -210,7 +211,9 @@ else {
   const body = read(keyFile).trim();
   if (body !== path.basename(keyFile, ".txt"))
     fail(keyFile, "contents must be exactly the key");
-  else ok(`${keyFile} (IndexNow key)`);
+  else if (body !== INDEXNOW_KEY)
+    fail(keyFile, `api/_lib/indexnow.js pings with key ${INDEXNOW_KEY}; the served key file is ${keyFile} (update INDEXNOW_KEY)`);
+  else ok(`${keyFile} (IndexNow key, matches api/_lib/indexnow.js)`);
 }
 
 /* ------------------------------------------------------------ HTTP routing */

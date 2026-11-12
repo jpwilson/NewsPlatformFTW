@@ -30,3 +30,8 @@ export declare function serializeArticle(
   article: any,
   options?: { previousSlug?: string | null; warnings?: unknown[]; previewSecret?: string }
 ): Promise<Record<string, unknown>>;
+export declare function isPublishedRow(article: any): boolean;
+export declare function announceArticleChange(
+  before: any | null,
+  after: any | null
+): Promise<{ sent: boolean; status?: number; reason?: string; urls?: string[] }>;

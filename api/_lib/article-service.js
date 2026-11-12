@@ -13,6 +13,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { deriveExcerpt, extractDek, sortImages } from "../../shared/article-media.js";
+import { INDEXNOW_HOST, pingIndexNow } from "./indexnow.js";
 
 /** A numeric id or a slug. */
 export function isNumericId(idOrSlug) {
@@ -71,6 +72,40 @@ export async function uniqueSlug(sb, title, date, excludeId) {
   return `${base}-${Date.now().toString(36)}`;
 }
 
+/* -------------------------------------------------------- announcements */
+
+/** Live on the site: status "published" (or, for old rows, the flag). */
+export function isPublishedRow(article) {
+  if (!article) return false;
+  return article.status === "published" || (article.status == null && !!article.published);
+}
+
+/**
+ * Tell search engines (IndexNow) that an article's public pages changed: it
+ * was published, edited while published, unpublished or deleted. `before`
+ * is the row before the write (null for a new article), `after` the row
+ * after it (null when deleted). Nothing is sent when neither is public, and
+ * nothing outside production (see indexnow.js). Never throws; waits at most
+ * two seconds.
+ * @returns {Promise<{ sent: boolean, status?: number, reason?: string, urls?: string[] }>}
+ */
+export async function announceArticleChange(before, after) {
+  try {
+    if (!isPublishedRow(before) && !isPublishedRow(after)) return { sent: false, reason: "not_public" };
+    const origin = `https://${INDEXNOW_HOST}`;
+    const urls = [];
+    for (const row of [after, before]) {
+      if (!row || row.id == null) continue;
+      urls.push(`${origin}/articles/${encodeURIComponent(row.id)}${row.slug ? `/${encodeURIComponent(row.slug)}` : ""}`);
+      if (row.channel_id != null) urls.push(`${origin}/channels/${encodeURIComponent(row.channel_id)}`);
+    }
+    urls.push(`${origin}/latest`);
+    return await pingIndexNow(urls);
+  } catch {
+    return { sent: false, reason: "error" };
+  }
+}
+
 /* --------------------------------------------------------------- writes */
 
 /**
@@ -82,6 +117,7 @@ export async function uniqueSlug(sb, title, date, excludeId) {
  *                       article's created_at, collision-suffixed
  *   "if-title-changed"  "regenerate" only when the title actually changed
  *
+ * Announces the change to search engines when the article was or is public.
  * @returns {Promise<{ article: any, previousSlug: string | null }>}
  */
 export async function updateArticleFields(sb, article, fields, { slugMode = "keep" } = {}) {
@@ -103,6 +139,7 @@ export async function updateArticleFields(sb, article, fields, { slugMode = "kee
     err.cause = error;
     throw err;
   }
+  await announceArticleChange(article, data);
   return { article: data, previousSlug };
 }
 
@@ -159,7 +196,8 @@ export async function replaceArticleCategories(sb, articleId, categoryIds) {
 }
 
 /**
- * Unpublish (default) or permanently delete an article.
+ * Unpublish (default) or permanently delete an article. Either way search
+ * engines are told the page changed (announceArticleChange).
  *
  * Soft: status "draft" (the database trigger sets published = false), the
  * same state as the owner's "Move to Drafts". Permanent: the existing manual
@@ -173,6 +211,7 @@ export async function deleteArticle(sb, article, { permanent = false } = {}) {
       err.cause = error;
       throw err;
     }
+    await announceArticleChange(article, null);
     return { id: article.id, deleted: false, unpublished: true, status: "draft" };
   }
 
@@ -186,6 +225,7 @@ export async function deleteArticle(sb, article, { permanent = false } = {}) {
     err.cause = error;
     throw err;
   }
+  await announceArticleChange(article, null);
   return { id: article.id, deleted: true };
 }
 
