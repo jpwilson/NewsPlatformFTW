@@ -231,8 +231,10 @@ try {
     }
   }
   if (foreignId) {
-    const missing = await call("PATCH", "/api/v1/content/articles/2147483000", { body: { title: "x" } });
-    const foreignPatch = await call("PATCH", `/api/v1/content/articles/${foreignId}`, { body: { title: "x" } });
+    // Deliberately harmless requests: an empty PATCH and a dry-run DELETE. If
+    // the ownership check were ever broken, neither could change a real article.
+    const missing = await call("PATCH", "/api/v1/content/articles/2147483000", { body: {} });
+    const foreignPatch = await call("PATCH", `/api/v1/content/articles/${foreignId}`, { body: {} });
     const foreignDel = await call("DELETE", `/api/v1/content/articles/${foreignId}?dryRun=true`);
     check("PATCH foreign → 404, same body as missing", foreignPatch.status === 404 && foreignPatch.text === missing.text, [foreignPatch.text, missing.text]);
     check("DELETE foreign → 404", foreignDel.status === 404 && foreignDel.text === missing.text, foreignDel.text);
