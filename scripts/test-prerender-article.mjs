@@ -26,7 +26,9 @@ let moreRows = [];
 const supabase = http.createServer((req, res) => {
   // The "more from this channel" query selects only card columns.
   const isMore = decodeURIComponent(req.url).includes("select=id,slug,title,created_at");
-  if (!isMore) lastQuery = req.url;
+  // Only article reads count here: the handler also logs the crawler hit to
+  // page_events afterwards, which must not hide the query under test.
+  if (!isMore && req.url.startsWith("/rest/v1/articles")) lastQuery = req.url;
   res.writeHead(200, { "content-type": "application/json" });
   res.end(JSON.stringify(isMore ? moreRows : rows));
 });
