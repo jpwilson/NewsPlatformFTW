@@ -560,54 +560,7 @@ app.get("/api/user", async (req, res) => {
       .single();
 
     if (dbError) {
-      console.error("Error finding user in database:", dbError);
-      if (dbError.code === "PGRST116") {
-        console.log(
-          "No user found in the database with supabase_uid:",
-          supabaseUid
-        );
-      }
-
-      // FALLBACK: Try to get user by username if supabase_uid fails
-      const username =
-        user.email?.split("@")[0] ||
-        user.user_metadata?.name ||
-        user.user_metadata?.full_name;
-      if (username) {
-        console.log("Trying fallback: looking up user by username:", username);
-        const { data: userByUsername, error: usernameError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("username", username)
-          .single();
-
-        if (usernameError) {
-          console.error("Fallback search also failed:", usernameError);
-        } else if (userByUsername) {
-          console.log("Found user by username instead:", userByUsername);
-
-          // Update this user's supabase_uid if it's missing
-          if (!userByUsername.supabase_uid) {
-            console.log("Updating user record with correct Supabase UID");
-            const { error: updateError } = await supabase
-              .from("users")
-              .update({ supabase_uid: supabaseUid })
-              .eq("id", userByUsername.id);
-
-            if (updateError) {
-              console.error(
-                "Failed to update user with Supabase UID:",
-                updateError
-              );
-            }
-          }
-
-          // Return this user
-          return res.json(userByUsername);
-        }
-      }
-
-      return res.sendStatus(401);
+      return res.status(401).json({ error: "No profile for this account" });
     }
 
     if (!dbUser) {
@@ -1839,54 +1792,7 @@ app.get("/api/user/channels", async (req, res) => {
       .single();
 
     if (dbError) {
-      console.error("Error finding user in database:", dbError);
-      if (dbError.code === "PGRST116") {
-        console.log(
-          "No user found in the database with supabase_uid:",
-          supabaseUid
-        );
-      }
-
-      // FALLBACK: Try to get user by username if supabase_uid fails
-      const username =
-        userData.user.email?.split("@")[0] ||
-        userData.user.user_metadata?.name ||
-        userData.user.user_metadata?.full_name;
-      if (username) {
-        console.log("Trying fallback: looking up user by username:", username);
-        const { data: userByUsername, error: usernameError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("username", username)
-          .single();
-
-        if (usernameError) {
-          console.error("Fallback search also failed:", usernameError);
-        } else if (userByUsername) {
-          console.log("Found user by username instead:", userByUsername);
-
-          // Update this user's supabase_uid if it's missing
-          if (!userByUsername.supabase_uid) {
-            console.log("Updating user record with correct Supabase UID");
-            const { error: updateError } = await supabase
-              .from("users")
-              .update({ supabase_uid: supabaseUid })
-              .eq("id", userByUsername.id);
-
-            if (updateError) {
-              console.error(
-                "Failed to update user with Supabase UID:",
-                updateError
-              );
-            }
-          }
-
-          // Return this user
-          return res.json(userByUsername);
-        }
-      }
-
-      return res.sendStatus(401);
+      return res.status(401).json({ error: "No profile for this account" });
     }
 
     if (!dbUser) {
@@ -2010,64 +1916,7 @@ app.get("/api/user/subscriptions", async (req, res) => {
       .single();
 
     if (dbError) {
-      console.error("Error finding user in database:", dbError);
-      if (dbError.code === "PGRST116") {
-        console.log(
-          "No user found in the database with supabase_uid:",
-          supabaseUid
-        );
-      }
-
-      // FALLBACK: Try to get user by username if supabase_uid fails
-      const username =
-        userData.user.email?.split("@")[0] ||
-        userData.user.user_metadata?.name ||
-        userData.user.user_metadata?.full_name;
-      if (username) {
-        console.log("Trying fallback: looking up user by username:", username);
-        const { data: userByUsername, error: usernameError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("username", username)
-          .single();
-
-        if (usernameError) {
-          console.error("Fallback search also failed:", usernameError);
-          return res
-            .status(401)
-            .json({ error: "User not found in database", details: dbError });
-        }
-
-        if (userByUsername) {
-          console.log("Found user by username instead:", userByUsername);
-
-          // Update this user's supabase_uid if it's missing
-          if (!userByUsername.supabase_uid) {
-            console.log("Updating user record with correct Supabase UID");
-            const { error: updateError } = await supabase
-              .from("users")
-              .update({ supabase_uid: supabaseUid })
-              .eq("id", userByUsername.id);
-
-            if (updateError) {
-              console.error(
-                "Failed to update user with Supabase UID:",
-                updateError
-              );
-            }
-          }
-
-          // Continue with this user
-          const userId = userByUsername.id;
-          console.log(`Using user ID ${userId} found by username instead`);
-
-          return handleUserSubscriptions(userId, res);
-        }
-      }
-
-      return res
-        .status(401)
-        .json({ error: "User not found in database", details: dbError });
+      return res.status(401).json({ error: "No profile for this account" });
     }
 
     if (!dbUser) {
