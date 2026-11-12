@@ -279,6 +279,13 @@ if (shellCheck.status !== 0) fail("api/_lib/site-shell.js", (shellCheck.stderr |
 else ok("api/_lib/site-shell.js matches client/src/content/shell.ts");
 if (!read("index.html")?.includes('href="/latest"')) fail("footer", "the static footer does not link /latest");
 
+// The scheduled monitor (SEO.md, "Monitoring"): it must run the full check.
+const workflow = path.resolve(__dirname, "..", ".github", "workflows", "site-health.yml");
+const wf = fs.existsSync(workflow) ? fs.readFileSync(workflow, "utf8") : "";
+if (!/node scripts\/check-live\.mjs/.test(wf) || /--baseline|CHECK_BASELINE/.test(wf) || !/cron:/.test(wf))
+  fail(".github/workflows/site-health.yml", "must run node scripts/check-live.mjs on a schedule, without --baseline");
+else ok(".github/workflows/site-health.yml runs the full live check on a schedule");
+
 console.log("\nHTTP responses (scripts/serve-dist.mjs):");
 
 const PORT = 4199 + (process.pid % 300);
