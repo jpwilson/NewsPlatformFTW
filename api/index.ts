@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 // Plain ESM modules with no npm imports; the explicit .js extension is what
 // the Vercel builder needs (see SEO.md, "The October 2026 crawler outage").
 import {
+  LAST_EDITED_IS_TRUSTWORTHY,
   deriveExcerpt,
   extractDek,
   setDek,
@@ -6590,7 +6591,7 @@ app.get("/sitemap.xml", async (req, res) => {
   try {
     const { data: articles } = await supabase
       .from("articles")
-      .select("id, slug, created_at, last_edited")
+      .select("id, slug, created_at, published_at, last_edited")
       .eq("published", true)
       .order("created_at", { ascending: false })
       .limit(5000);
@@ -6621,7 +6622,10 @@ app.get("/sitemap.xml", async (req, res) => {
       );
     }
     for (const a of articles || []) {
-      const lastmod = String(a.last_edited || a.created_at || "").slice(0, 10);
+      // last_edited is bumped by every view (shared/article-media.js,
+      // LAST_EDITED_IS_TRUSTWORTHY), so the publish date is the honest lastmod.
+      const modified = LAST_EDITED_IS_TRUSTWORTHY ? a.last_edited : null;
+      const lastmod = String(modified || a.published_at || a.created_at || "").slice(0, 10);
       const loc = `${SITE_BASE}/articles/${a.id}${a.slug ? `/${xmlEscape(a.slug)}` : ""}`;
       urls.push(
         `<url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}<priority>0.8</priority></url>`

@@ -523,6 +523,19 @@ section("GET /api/articles/:id/related");
   check("missing → 404", missing.status === 404);
 }
 
+/* ------------------------------------------------------------- sitemap */
+
+section("sitemap.xml");
+{
+  const data = seed();
+  data.articles[0].last_edited = "2026-11-11T00:00:00.000Z"; // bumped by a view
+  stub.reset(data);
+  const r = await api.request("GET", "/sitemap.xml");
+  check("200 xml", r.status === 200 && r.text.startsWith("<?xml"));
+  check("article lastmod is the publish date, not last_edited", r.text.includes("/articles/100/2026-01-02-original-title</loc><lastmod>2026-01-02</lastmod>") && !r.text.includes("2026-11-11"), r.text.slice(0, 200));
+  check("drafts not listed", !r.text.includes("/articles/300"));
+}
+
 /* ------------------------------------------------------------ logging */
 
 section("request logs");
