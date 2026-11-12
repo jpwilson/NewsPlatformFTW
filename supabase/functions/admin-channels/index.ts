@@ -227,7 +227,7 @@ Deno.serve(async (req) => {
     console.error('Error in admin-channels function:', error instanceof Error ? error.message : String(error))
     return new Response(
       JSON.stringify({
-        error: `Server error: ${error instanceof Error ? error.message : String(error)}`,
+        error: 'Server error',
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
 
     if (adminError) {
       console.error('Error checking admin table:', adminError.message);
-      return new Response(JSON.stringify({ isAdmin: false, error: 'Database error checking admin status: ' + adminError.message }), {
+      return new Response(JSON.stringify({ isAdmin: false, error: 'Database error checking admin status' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500,
       })
@@ -90,7 +90,7 @@ Deno.serve(async (req) => {
     })
   } catch (error) {
     console.error('Caught unhandled error:', error.message);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     })

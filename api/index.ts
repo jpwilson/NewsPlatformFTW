@@ -398,6 +398,42 @@ function redactBody(body: any) {
 
 // Create Express app
 const app = express();
+app.disable("x-powered-by");
+
+// Debug routes are retired. Answer 404 for any spelling of /api/debug: Express
+// matches routes case-insensitively, and the raw URL may hold encoded or dot
+// segments that the router resolves, so test both req.path and a decoded,
+// normalised copy of the original path.
+const DEBUG_PATH = /^\/api\/+debug(\/|$)/i;
+function normalisedRequestPath(rawUrl: string): string {
+  let p = String(rawUrl || "").split("?")[0].split("#")[0];
+  for (let i = 0; i < 3; i++) {
+    let decoded = p;
+    try {
+      decoded = decodeURIComponent(p);
+    } catch {
+      break;
+    }
+    if (decoded === p) break;
+    p = decoded;
+  }
+  const out: string[] = [];
+  for (const seg of p.replace(/\\/g, "/").split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return "/" + out.join("/");
+}
+app.use((req, res, next) => {
+  if (
+    DEBUG_PATH.test(req.path) ||
+    DEBUG_PATH.test(normalisedRequestPath(req.originalUrl || req.url))
+  ) {
+    return res.status(404).end();
+  }
+  next();
+});
 
 // Debug logs for deployment
 console.log("API Handler initializing (all-in-one version)");
@@ -418,23 +454,22 @@ registerAnalyticsRoutes(app, { supabase, getSupabaseUid, isAdminUser });
 // Add CORS middleware with dynamic origin
 app.use((req, res, next) => {
   const origin = req.headers.origin || "";
-  // Allow specific origins or all in development
+  // Allow the production origins, plus the local Vite dev server outside production
   const allowedOrigins = [
-    "https://newsplatformmvp.vercel.app",
-    "https://newsplatformmvp-git-main-jpwilsons-projects.vercel.app",
+    "https://www.newsplatform.org",
+    "https://newsplatform.org",
   ];
+  if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.push("http://localhost:5001");
+  }
 
-  if (
-    process.env.NODE_ENV === "development" ||
-    allowedOrigins.includes(origin)
-  ) {
+  if (allowedOrigins.includes(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
     res.header(
       "Access-Control-Allow-Methods",
       "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     );
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
-    res.header("Access-Control-Allow-Credentials", "true");
   }
 
   if (req.method === "OPTIONS") {
@@ -495,263 +530,6 @@ app.use((req, res, next) => {
 
 // ===== DIRECT ROUTE IMPLEMENTATIONS =====
 
-// Simple test endpoint to verify serverless functionality
-app.get("/api/debug/test", (req, res) => {
-  console.log("Debug test endpoint called");
-  const requestInfo = {
-    method: req.method,
-    url: req.url,
-    headers: req.headers,
-    timestamp: new Date().toISOString(),
-    env: {
-      node: process.env.NODE_ENV,
-      vercel: process.env.VERCEL === "1" ? "true" : "false",
-      vercelEnv: process.env.VERCEL_ENV,
-      region: process.env.VERCEL_REGION,
-    },
-    query: req.query,
-  };
-
-  return res.json({
-    message: "Serverless function is working correctly",
-    requestInfo,
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// Comprehensive connectivity test endpoint
-app.get("/api/debug/connectivity", async (req, res) => {
-  console.log("Debug connectivity endpoint called");
-
-  interface ConnectivityResults {
-    serverless: {
-      status: string;
-      timestamp: string;
-    };
-    supabase: {
-      status: string;
-      error: string | null;
-      tables: string[];
-    };
-    env: {
-      node: string | undefined;
-      vercel: string;
-      vercelEnv: string | undefined;
-      region: string | undefined;
-      supabaseUrl: string;
-      supabaseAnonKey: string;
-      supabaseServiceKey: string;
-    };
-  }
-
-  const results: ConnectivityResults = {
-    serverless: {
-      status: "ok",
-      timestamp: new Date().toISOString(),
-    },
-    supabase: {
-      status: "unknown",
-      error: null,
-      tables: [],
-    },
-    env: {
-      node: process.env.NODE_ENV,
-      vercel: process.env.VERCEL === "1" ? "true" : "false",
-      vercelEnv: process.env.VERCEL_ENV,
-      region: process.env.VERCEL_REGION,
-      supabaseUrl: process.env.SUPABASE_URL ? "defined" : "undefined",
-      supabaseAnonKey: process.env.SUPABASE_ANON_KEY ? "defined" : "undefined",
-      supabaseServiceKey: process.env.SUPABASE_SERVICE_ROLE_KEY
-        ? "defined"
-        : "undefined",
-    },
-  };
-
-  try {
-    // Test Supabase connection with a simple query
-    const { data: tableData, error: tableError } = await supabaseAuth
-      .from("users")
-      .select("count")
-      .limit(1);
-
-    if (tableError) {
-      results.supabase.status = "error";
-      results.supabase.error = `Error querying users table: ${tableError.message}`;
-    } else {
-      results.supabase.status = "connected";
-
-      // Try to fetch a list of tables to verify access
-      try {
-        const { data: tablesData, error: tablesError } = await supabaseAuth.rpc(
-          "get_tables"
-        );
-
-        if (tablesError) {
-          results.supabase.tables = ["Error fetching tables"];
-        } else if (tablesData) {
-          results.supabase.tables = Array.isArray(tablesData)
-            ? tablesData
-            : ["Data returned but not an array"];
-        }
-      } catch (tableListError: any) {
-        console.error("Error fetching table list:", tableListError);
-        results.supabase.tables = ["Error fetching tables list"];
-      }
-
-      // Attempt a more direct query to list tables
-      try {
-        const { data: schemaData, error: schemaError } = await supabaseAuth
-          .from("pg_tables")
-          .select("tablename")
-          .eq("schemaname", "public")
-          .limit(10);
-
-        if (!schemaError && schemaData) {
-          results.supabase.tables = schemaData.map(
-            (t: any) => t.tablename as string
-          );
-        }
-      } catch (directTableError) {
-        // Silently handle this error as it's just a fallback
-      }
-    }
-  } catch (e: any) {
-    results.supabase.status = "error";
-    results.supabase.error = `Exception testing Supabase: ${e.message}`;
-    console.error("Supabase connectivity test failed:", e);
-  }
-
-  return res.json(results);
-});
-
-// Channel diagnostic test endpoint
-app.get("/api/debug/channels-test", async (req, res) => {
-  console.log("Channel diagnostic test endpoint called");
-
-  interface ChannelDiagnosticResults {
-    timestamp: string;
-    channelsEndpoint: {
-      status: string;
-      error: string | null;
-      data: string | null;
-    };
-    specificChannel: {
-      status: string;
-      error: string | null;
-      data: any | null;
-    };
-    subscriberCounts: Array<{
-      channelId: string;
-      name: string;
-      subscriberCount: string | number;
-      error: string | null;
-    }>;
-  }
-
-  const results: ChannelDiagnosticResults = {
-    timestamp: new Date().toISOString(),
-    channelsEndpoint: {
-      status: "pending",
-      error: null,
-      data: null,
-    },
-    specificChannel: {
-      status: "pending",
-      error: null,
-      data: null,
-    },
-    subscriberCounts: [],
-  };
-
-  try {
-    // First test the /api/channels endpoint directly
-    console.log("Testing channels endpoint...");
-    try {
-      // Get all channels using the same logic as the main endpoint
-      const { data: channels, error } = await supabaseAuth
-        .from("channels")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        results.channelsEndpoint.status = "error";
-        results.channelsEndpoint.error = error.message;
-      } else if (!channels || channels.length === 0) {
-        results.channelsEndpoint.status = "empty";
-        results.channelsEndpoint.data = "No channels found";
-      } else {
-        // Successfully retrieved channels
-        results.channelsEndpoint.status = "success";
-        results.channelsEndpoint.data = `Found ${channels.length} channels`;
-
-        // Try to enrich with subscriber counts
-        for (const channel of channels.slice(0, 3)) {
-          // Limit to first 3 channels
-          try {
-            const { data: subs, error: subError } = await supabaseAuth
-              .from("subscriptions")
-              .select("count")
-              .eq("channel_id", channel.id);
-
-            results.subscriberCounts.push({
-              channelId: channel.id,
-              name: channel.name,
-              subscriberCount: subError ? "error" : subs?.[0]?.count || 0,
-              error: subError ? subError.message : null,
-            });
-          } catch (e: any) {
-            results.subscriberCounts.push({
-              channelId: channel.id,
-              name: channel.name,
-              subscriberCount: "error",
-              error: e.message,
-            });
-          }
-        }
-
-        // Test fetching a specific channel
-        if (channels.length > 0) {
-          const testChannelId = channels[0].id;
-          try {
-            const { data: channel, error: channelError } = await supabaseAuth
-              .from("channels")
-              .select("*")
-              .eq("id", testChannelId)
-              .single();
-
-            if (channelError) {
-              results.specificChannel.status = "error";
-              results.specificChannel.error = channelError.message;
-            } else {
-              results.specificChannel.status = "success";
-              results.specificChannel.data = {
-                id: channel.id,
-                name: channel.name,
-                found: !!channel,
-              };
-            }
-          } catch (e: any) {
-            results.specificChannel.status = "exception";
-            results.specificChannel.error = e.message;
-          }
-        }
-      }
-    } catch (e: any) {
-      results.channelsEndpoint.status = "exception";
-      results.channelsEndpoint.error = e.message;
-    }
-  } catch (e: any) {
-    console.error("Error in channel diagnostic endpoint:", e);
-    return res.status(500).json({
-      error: "Internal server error in diagnostic endpoint",
-      message: e.message,
-      stack: process.env.NODE_ENV === "development" ? e.stack : undefined,
-    });
-  }
-
-  return res.json(results);
-});
-
 // Health check route
 app.get("/api/health", (req, res) => {
   res.json({
@@ -802,59 +580,12 @@ app.get("/api/user", async (req, res) => {
     console.log("Looking up user in database with Supabase UID:", supabaseUid);
     const { data: dbUser, error: dbError } = await supabase
       .from("users")
-      .select("*")
+      .select("id, username, description, created_at")
       .eq("supabase_uid", supabaseUid)
       .single();
 
     if (dbError) {
-      console.error("Error finding user in database:", dbError);
-      if (dbError.code === "PGRST116") {
-        console.log(
-          "No user found in the database with supabase_uid:",
-          supabaseUid
-        );
-      }
-
-      // FALLBACK: Try to get user by username if supabase_uid fails
-      const username =
-        user.email?.split("@")[0] ||
-        user.user_metadata?.name ||
-        user.user_metadata?.full_name;
-      if (username) {
-        console.log("Trying fallback: looking up user by username:", username);
-        const { data: userByUsername, error: usernameError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("username", username)
-          .single();
-
-        if (usernameError) {
-          console.error("Fallback search also failed:", usernameError);
-        } else if (userByUsername) {
-          console.log("Found user by username instead:", userByUsername);
-
-          // Update this user's supabase_uid if it's missing
-          if (!userByUsername.supabase_uid) {
-            console.log("Updating user record with correct Supabase UID");
-            const { error: updateError } = await supabase
-              .from("users")
-              .update({ supabase_uid: supabaseUid })
-              .eq("id", userByUsername.id);
-
-            if (updateError) {
-              console.error(
-                "Failed to update user with Supabase UID:",
-                updateError
-              );
-            }
-          }
-
-          // Return this user
-          return res.json(userByUsername);
-        }
-      }
-
-      return res.sendStatus(401);
+      return res.status(401).json({ error: "No profile for this account" });
     }
 
     if (!dbUser) {
@@ -875,25 +606,36 @@ app.get("/api/user", async (req, res) => {
 // Add Supabase callback endpoint for Google OAuth
 app.post("/api/auth/supabase-callback", async (req, res) => {
   try {
-    const { supabase_uid, email, name } = req.body;
-
-    console.log("Supabase OAuth callback received:", {
-      supabase_uid: supabase_uid ? "✓" : "✗",
-      email: email ? "✓" : "✗",
-      name: name ? "✓" : "✗",
-    });
-
-    if (!supabase_uid) {
-      return res.status(400).json({
-        success: false,
-        error: "Missing Supabase user ID",
-      });
+    // The Supabase id and email come only from the verified access token;
+    // anything in the request body is ignored.
+    const authHeader = req.headers.authorization;
+    const token =
+      authHeader && authHeader.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]
+        : "";
+    if (!token) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
     }
+
+    const {
+      data: { user },
+      error: authError,
+    } = await supabaseAuth.auth.getUser(token);
+    if (authError || !user) {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+
+    const supabase_uid = user.id;
+    const email = user.email || "";
+
+    console.log("Supabase OAuth callback received for a verified user");
+
+    const publicUserColumns = "id, username, description, created_at";
 
     // Try to find existing user with this Supabase ID
     const { data: existingUser, error: findError } = await supabase
       .from("users")
-      .select("*")
+      .select(publicUserColumns)
       .eq("supabase_uid", supabase_uid)
       .single();
 
@@ -913,23 +655,36 @@ app.post("/api/auth/supabase-callback", async (req, res) => {
       });
     }
 
-    // Create a new user
-    const username = email ? email.split("@")[0] : `user_${Date.now()}`;
-    console.log("Creating new user with username:", username);
+    // Create a new user, username derived from the verified email
+    const baseUsername =
+      (email.split("@")[0] || "").replace(/[^a-z0-9_]/gi, "").slice(0, 30) ||
+      `user_${randomBytes(3).toString("hex")}`;
 
-    const { data: newUser, error: createError } = await supabase
-      .from("users")
-      .insert([
-        {
-          username,
-          password: "", // No password needed
-          supabase_uid,
-        },
-      ])
-      .select()
-      .single();
+    let newUser = null;
+    let createError = null;
+    for (let attempt = 0; attempt < 3 && !newUser; attempt++) {
+      const username =
+        attempt === 0
+          ? baseUsername
+          : `${baseUsername.slice(0, 25)}_${randomBytes(2).toString("hex")}`;
+      console.log("Creating new user with username:", username);
 
-    if (createError) {
+      ({ data: newUser, error: createError } = await supabase
+        .from("users")
+        .insert([
+          {
+            username,
+            password: "", // No password needed
+            supabase_uid,
+          },
+        ])
+        .select(publicUserColumns)
+        .single());
+
+      if (createError && createError.code !== "23505") break;
+    }
+
+    if (createError || !newUser) {
       console.error("Error creating user:", createError);
       return res.status(500).json({
         success: false,
@@ -1077,8 +832,22 @@ app.post("/api/channels", async (req, res) => {
       });
     }
 
-    // Extract the numeric user ID from the request body
-    const numericUserId = req.body.userId || 3; // Default to 3 if not provided
+    // The owner is the profile bound to the verified token; any userId in
+    // the request body is ignored.
+    const { data: ownerRow, error: ownerError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("supabase_uid", user.id)
+      .single();
+
+    if (ownerError || !ownerRow) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "No profile for this account",
+      });
+    }
+
+    const numericUserId = ownerRow.id;
     console.log("Using numeric user ID:", numericUserId);
 
     // Check if user has reached the maximum number of channels (10)
@@ -2169,59 +1938,12 @@ app.get("/api/user/channels", async (req, res) => {
     console.log("Looking up user in database with Supabase UID:", supabaseUid);
     const { data: dbUser, error: dbError } = await supabase
       .from("users")
-      .select("*")
+      .select("id, username")
       .eq("supabase_uid", supabaseUid)
       .single();
 
     if (dbError) {
-      console.error("Error finding user in database:", dbError);
-      if (dbError.code === "PGRST116") {
-        console.log(
-          "No user found in the database with supabase_uid:",
-          supabaseUid
-        );
-      }
-
-      // FALLBACK: Try to get user by username if supabase_uid fails
-      const username =
-        userData.user.email?.split("@")[0] ||
-        userData.user.user_metadata?.name ||
-        userData.user.user_metadata?.full_name;
-      if (username) {
-        console.log("Trying fallback: looking up user by username:", username);
-        const { data: userByUsername, error: usernameError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("username", username)
-          .single();
-
-        if (usernameError) {
-          console.error("Fallback search also failed:", usernameError);
-        } else if (userByUsername) {
-          console.log("Found user by username instead:", userByUsername);
-
-          // Update this user's supabase_uid if it's missing
-          if (!userByUsername.supabase_uid) {
-            console.log("Updating user record with correct Supabase UID");
-            const { error: updateError } = await supabase
-              .from("users")
-              .update({ supabase_uid: supabaseUid })
-              .eq("id", userByUsername.id);
-
-            if (updateError) {
-              console.error(
-                "Failed to update user with Supabase UID:",
-                updateError
-              );
-            }
-          }
-
-          // Return this user
-          return res.json(userByUsername);
-        }
-      }
-
-      return res.sendStatus(401);
+      return res.status(401).json({ error: "No profile for this account" });
     }
 
     if (!dbUser) {
@@ -2340,69 +2062,12 @@ app.get("/api/user/subscriptions", async (req, res) => {
     console.log("Looking up user in database with Supabase UID:", supabaseUid);
     const { data: dbUser, error: dbError } = await supabase
       .from("users")
-      .select("*")
+      .select("id, username")
       .eq("supabase_uid", supabaseUid)
       .single();
 
     if (dbError) {
-      console.error("Error finding user in database:", dbError);
-      if (dbError.code === "PGRST116") {
-        console.log(
-          "No user found in the database with supabase_uid:",
-          supabaseUid
-        );
-      }
-
-      // FALLBACK: Try to get user by username if supabase_uid fails
-      const username =
-        userData.user.email?.split("@")[0] ||
-        userData.user.user_metadata?.name ||
-        userData.user.user_metadata?.full_name;
-      if (username) {
-        console.log("Trying fallback: looking up user by username:", username);
-        const { data: userByUsername, error: usernameError } = await supabase
-          .from("users")
-          .select("*")
-          .eq("username", username)
-          .single();
-
-        if (usernameError) {
-          console.error("Fallback search also failed:", usernameError);
-          return res
-            .status(401)
-            .json({ error: "User not found in database", details: dbError });
-        }
-
-        if (userByUsername) {
-          console.log("Found user by username instead:", userByUsername);
-
-          // Update this user's supabase_uid if it's missing
-          if (!userByUsername.supabase_uid) {
-            console.log("Updating user record with correct Supabase UID");
-            const { error: updateError } = await supabase
-              .from("users")
-              .update({ supabase_uid: supabaseUid })
-              .eq("id", userByUsername.id);
-
-            if (updateError) {
-              console.error(
-                "Failed to update user with Supabase UID:",
-                updateError
-              );
-            }
-          }
-
-          // Continue with this user
-          const userId = userByUsername.id;
-          console.log(`Using user ID ${userId} found by username instead`);
-
-          return handleUserSubscriptions(userId, res);
-        }
-      }
-
-      return res
-        .status(401)
-        .json({ error: "User not found in database", details: dbError });
+      return res.status(401).json({ error: "No profile for this account" });
     }
 
     if (!dbUser) {
@@ -2545,492 +2210,6 @@ async function handleUserSubscriptions(userId: number, res: any) {
     });
   }
 }
-
-// Remove the user-specific endpoints and add proper parameterized debug endpoints
-// 1. Debug endpoint for channels with proper query parameters
-app.get("/api/debug/channels", async (req, res) => {
-  try {
-    const userId = req.query.userId
-      ? parseInt(req.query.userId as string)
-      : null;
-    console.log(
-      `Debug endpoint: Fetching channels${
-        userId ? ` for user ID ${userId}` : " (all channels)"
-      }`
-    );
-
-    // Build query
-    let query = supabase.from("channels").select("*");
-
-    // Apply userId filter if provided
-    if (userId) {
-      query = query.eq("user_id", userId);
-    }
-
-    // Execute query
-    const { data: channels, error } = await query;
-
-    if (error) {
-      console.error("Debug endpoint error:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Error fetching channels",
-        error: error.message,
-        count: 0,
-        channels: [],
-      });
-    }
-
-    console.log(
-      `Debug endpoint: Found ${channels.length} channels${
-        userId ? ` for user ID ${userId}` : ""
-      }`
-    );
-
-    // Enrich each channel with subscriber count
-    const enrichedChannels = await Promise.all(
-      (channels || []).map(async (channel) => {
-        // Get subscriber count
-        const { count, error: countError } = await supabase
-          .from("subscriptions")
-          .select("*", { count: "exact", head: true })
-          .eq("channel_id", channel.id);
-
-        if (countError) {
-          console.error(
-            `Error fetching subscriber count for channel ${channel.id}:`,
-            countError
-          );
-        }
-
-        return {
-          ...channel,
-          subscriberCount: count || 0,
-        };
-      })
-    );
-
-    return res.status(200).json({
-      success: true,
-      message: `Channels found${userId ? ` for user ID ${userId}` : ""}`,
-      count: enrichedChannels.length,
-      channels: enrichedChannels,
-    });
-  } catch (error) {
-    console.error("Debug endpoint unexpected error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Unexpected error fetching channels",
-      error: error.message,
-      count: 0,
-      channels: [],
-    });
-  }
-});
-
-// 2. Debug endpoint for subscriptions with proper query parameters
-app.get("/api/debug/subscriptions", async (req, res) => {
-  // Add timestamp to response
-  const timestamp = new Date().toISOString();
-
-  try {
-    // Parse userId if provided
-    const userId = req.query.userId
-      ? parseInt(req.query.userId as string)
-      : null;
-
-    console.log(
-      `Debug endpoint: Fetching subscriptions${
-        userId ? ` for user ID ${userId}` : " (all subscriptions)"
-      }`
-    );
-
-    // Build overall response
-    const response = {
-      success: true,
-      message: "Debug subscriptions endpoint",
-      timestamp,
-      count: 0,
-      subscriptions: [] as any[],
-      diagnostic: null as any,
-    };
-
-    // First check if user exists
-    if (userId) {
-      const { data: user, error: userError } = await supabase
-        .from("users")
-        .select("id, username")
-        .eq("id", userId)
-        .single();
-
-      if (userError) {
-        console.error("Error checking if user exists:", userError);
-        response.diagnostic = { userCheck: "failed", error: userError };
-      } else if (!user) {
-        response.message = `User with ID ${userId} not found`;
-        return res.json(response);
-      }
-    }
-
-    // Build query to get subscriptions
-    let query = supabase
-      .from("subscriptions")
-      .select("id, user_id, channel_id");
-
-    // Apply userId filter if provided
-    if (userId) {
-      query = query.eq("user_id", userId);
-    }
-
-    // Execute query
-    const { data: subscriptions, error } = await query;
-
-    if (error) {
-      console.error("Debug subscriptions endpoint error:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Error fetching subscriptions",
-        timestamp,
-        error: String(error),
-      });
-    }
-
-    if (!subscriptions || subscriptions.length === 0) {
-      response.message = userId
-        ? `No subscriptions found for user ID ${userId}`
-        : "No subscriptions found";
-      return res.json(response);
-    }
-
-    // Get channel data for each subscription
-    const channelIds = subscriptions.map((sub) => sub.channel_id);
-    const { data: channels, error: channelsError } = await supabase
-      .from("channels")
-      .select("*")
-      .in("id", channelIds);
-
-    if (channelsError) {
-      console.error(
-        "Error fetching channels for subscriptions:",
-        channelsError
-      );
-      response.diagnostic = { channelsQuery: "failed", error: channelsError };
-      return res.json(response);
-    }
-
-    // Create a map for quick lookup
-    const channelMap = {};
-    if (channels) {
-      await Promise.all(
-        channels.map(async (channel) => {
-          // Get subscriber count for each channel
-          const { count, error: countError } = await supabase
-            .from("subscriptions")
-            .select("*", { count: "exact", head: true })
-            .eq("channel_id", channel.id);
-
-          channelMap[channel.id] = {
-            ...channel,
-            subscriberCount: countError ? 0 : count || 0,
-          };
-        })
-      );
-    }
-
-    // Format subscriptions with channel data
-    const formattedSubscriptions = subscriptions.map((sub) => {
-      return {
-        id: sub.id,
-        userId: sub.user_id,
-        channelId: sub.channel_id,
-        channel: channelMap[sub.channel_id] || null,
-      };
-    });
-
-    response.count = formattedSubscriptions.length;
-    response.subscriptions = formattedSubscriptions;
-
-    return res.json(response);
-  } catch (error) {
-    console.error("Error in debug subscriptions endpoint:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server error in debug subscriptions endpoint",
-      timestamp,
-      error: String(error),
-    });
-  }
-});
-
-// Add a diagnostic endpoint for checking the entire system
-app.get("/api/debug/system", async (req, res) => {
-  try {
-    console.log("System diagnostic endpoint called");
-
-    interface SystemDebugInfo {
-      environment: string;
-      timestamp: string;
-      supabase: {
-        url: string;
-        serviceKeyPresent: boolean;
-        anonKeyPresent: boolean;
-      };
-      vercel: {
-        isVercel: boolean;
-        environment: string | null;
-        url: string | null;
-        region: string | null;
-      };
-      database: {
-        tables: {
-          status: string;
-          tableNames: string[] | null;
-          error?: string;
-        };
-        counts: {
-          users: { count: number | null; error?: string };
-          channels: { count: number | null; error?: string };
-          subscriptions: { count: number | null; error?: string };
-        };
-        sampleQueries: {
-          userWithId3: { exists: boolean; error?: string };
-          channelsForUser3: { count: number | null; error?: string };
-          subscriptionsForUser3: { count: number | null; error?: string };
-        };
-        schemas: {
-          users: { columns: string[] | null; error?: string };
-          channels: { columns: string[] | null; error?: string };
-          subscriptions: { columns: string[] | null; error?: string };
-        };
-      };
-    }
-
-    const diagnosticInfo: SystemDebugInfo = {
-      environment: process.env.NODE_ENV || "unknown",
-      timestamp: new Date().toISOString(),
-      supabase: {
-        url: supabaseUrl ? supabaseUrl.substring(0, 10) + "..." : "missing",
-        serviceKeyPresent: !!supabaseServiceKey,
-        anonKeyPresent: !!supabaseAnonKey,
-      },
-      vercel: {
-        isVercel: process.env.VERCEL === "1",
-        environment: process.env.VERCEL_ENV || null,
-        url: process.env.VERCEL_URL || null,
-        region: process.env.VERCEL_REGION || null,
-      },
-      database: {
-        tables: {
-          status: "pending",
-          tableNames: null,
-        },
-        counts: {
-          users: { count: null },
-          channels: { count: null },
-          subscriptions: { count: null },
-        },
-        sampleQueries: {
-          userWithId3: { exists: false },
-          channelsForUser3: { count: null },
-          subscriptionsForUser3: { count: null },
-        },
-        schemas: {
-          users: { columns: null },
-          channels: { columns: null },
-          subscriptions: { columns: null },
-        },
-      },
-    };
-
-    // Test database schema access
-    try {
-      const { data: tables, error: tablesError } = await supabase
-        .from("information_schema.tables")
-        .select("table_name")
-        .eq("table_schema", "public");
-
-      if (tablesError) {
-        diagnosticInfo.database.tables.status = "error";
-        diagnosticInfo.database.tables.error = tablesError.message;
-      } else {
-        diagnosticInfo.database.tables.status = "success";
-        diagnosticInfo.database.tables.tableNames =
-          tables?.map((t) => t.table_name) || [];
-      }
-    } catch (error) {
-      diagnosticInfo.database.tables.status = "exception";
-      diagnosticInfo.database.tables.error = String(error);
-    }
-
-    // Check table counts
-    try {
-      const { count: userCount, error: userError } = await supabase
-        .from("users")
-        .select("*", { count: "exact", head: true });
-
-      if (userError) {
-        diagnosticInfo.database.counts.users.error = userError.message;
-      } else {
-        diagnosticInfo.database.counts.users.count = userCount;
-      }
-    } catch (error) {
-      diagnosticInfo.database.counts.users.error = String(error);
-    }
-
-    try {
-      const { count: channelCount, error: channelError } = await supabase
-        .from("channels")
-        .select("*", { count: "exact", head: true });
-
-      if (channelError) {
-        diagnosticInfo.database.counts.channels.error = channelError.message;
-      } else {
-        diagnosticInfo.database.counts.channels.count = channelCount;
-      }
-    } catch (error) {
-      diagnosticInfo.database.counts.channels.error = String(error);
-    }
-
-    try {
-      const { count: subscriptionCount, error: subscriptionError } =
-        await supabase
-          .from("subscriptions")
-          .select("*", { count: "exact", head: true });
-
-      if (subscriptionError) {
-        diagnosticInfo.database.counts.subscriptions.error =
-          subscriptionError.message;
-      } else {
-        diagnosticInfo.database.counts.subscriptions.count = subscriptionCount;
-      }
-    } catch (error) {
-      diagnosticInfo.database.counts.subscriptions.error = String(error);
-    }
-
-    // Check for user with ID 3
-    try {
-      const { data: user3, error: user3Error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", 3)
-        .single();
-
-      if (user3Error) {
-        diagnosticInfo.database.sampleQueries.userWithId3.error =
-          user3Error.message;
-      } else {
-        diagnosticInfo.database.sampleQueries.userWithId3.exists = !!user3;
-      }
-    } catch (error) {
-      diagnosticInfo.database.sampleQueries.userWithId3.error = String(error);
-    }
-
-    // Check for channels with user_id 3
-    try {
-      const { count: channelsUser3Count, error: channelsUser3Error } =
-        await supabase
-          .from("channels")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", 3);
-
-      if (channelsUser3Error) {
-        diagnosticInfo.database.sampleQueries.channelsForUser3.error =
-          channelsUser3Error.message;
-      } else {
-        diagnosticInfo.database.sampleQueries.channelsForUser3.count =
-          channelsUser3Count;
-      }
-    } catch (error) {
-      diagnosticInfo.database.sampleQueries.channelsForUser3.error =
-        String(error);
-    }
-
-    // Check for subscriptions with user_id 3
-    try {
-      const { count: subscriptionsUser3Count, error: subscriptionsUser3Error } =
-        await supabase
-          .from("subscriptions")
-          .select("*", { count: "exact", head: true })
-          .eq("user_id", 3);
-
-      if (subscriptionsUser3Error) {
-        diagnosticInfo.database.sampleQueries.subscriptionsForUser3.error =
-          subscriptionsUser3Error.message;
-      } else {
-        diagnosticInfo.database.sampleQueries.subscriptionsForUser3.count =
-          subscriptionsUser3Count;
-      }
-    } catch (error) {
-      diagnosticInfo.database.sampleQueries.subscriptionsForUser3.error =
-        String(error);
-    }
-
-    // Get schema information
-    try {
-      const { data: usersColumns, error: usersColumnsError } = await supabase
-        .from("information_schema.columns")
-        .select("column_name")
-        .eq("table_name", "users")
-        .eq("table_schema", "public");
-
-      if (usersColumnsError) {
-        diagnosticInfo.database.schemas.users.error = usersColumnsError.message;
-      } else {
-        diagnosticInfo.database.schemas.users.columns =
-          usersColumns?.map((c) => c.column_name) || [];
-      }
-    } catch (error) {
-      diagnosticInfo.database.schemas.users.error = String(error);
-    }
-
-    try {
-      const { data: channelsColumns, error: channelsColumnsError } =
-        await supabase
-          .from("information_schema.columns")
-          .select("column_name")
-          .eq("table_name", "channels")
-          .eq("table_schema", "public");
-
-      if (channelsColumnsError) {
-        diagnosticInfo.database.schemas.channels.error =
-          channelsColumnsError.message;
-      } else {
-        diagnosticInfo.database.schemas.channels.columns =
-          channelsColumns?.map((c) => c.column_name) || [];
-      }
-    } catch (error) {
-      diagnosticInfo.database.schemas.channels.error = String(error);
-    }
-
-    try {
-      const { data: subscriptionsColumns, error: subscriptionsColumnsError } =
-        await supabase
-          .from("information_schema.columns")
-          .select("column_name")
-          .eq("table_name", "subscriptions")
-          .eq("table_schema", "public");
-
-      if (subscriptionsColumnsError) {
-        diagnosticInfo.database.schemas.subscriptions.error =
-          subscriptionsColumnsError.message;
-      } else {
-        diagnosticInfo.database.schemas.subscriptions.columns =
-          subscriptionsColumns?.map((c) => c.column_name) || [];
-      }
-    } catch (error) {
-      diagnosticInfo.database.schemas.subscriptions.error = String(error);
-    }
-
-    return res.status(200).json(diagnosticInfo);
-  } catch (error) {
-    console.error("Error in system diagnostics endpoint:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Error running system diagnostics",
-      error: String(error),
-    });
-  }
-});
 
 // Add single channel endpoint to fix channel not found issue
 app.get("/api/channels/:id", async (req, res) => {
@@ -3937,14 +3116,14 @@ app.post("/api/articles/:id/comments", async (req, res) => {
 
     const userId = dbUser.id;
 
-    // Check if article exists
+    // Check if article exists and is published
     const { data: article, error: articleError } = await supabase
       .from("articles")
-      .select("id")
+      .select("id, published")
       .eq("id", articleId)
       .single();
 
-    if (articleError || !article) {
+    if (articleError || !article || !article.published) {
       console.error(`Article ${articleId} not found:`, articleError);
       return res.status(404).json({ error: "Article not found" });
     }
@@ -3962,6 +3141,12 @@ app.post("/api/articles/:id/comments", async (req, res) => {
       return res.status(400).json({ error: "Comment content is required" });
     }
 
+    if (content.trim().length > 5000) {
+      return res
+        .status(400)
+        .json({ error: "Comment must be at most 5,000 characters" });
+    }
+
     const commentData: {
       article_id: number;
       user_id: number;
@@ -3975,9 +3160,21 @@ app.post("/api/articles/:id/comments", async (req, res) => {
       created_at: new Date().toISOString(),
     };
 
-    // Add parent_id if it's provided
+    // Add parent_id if it's provided; it must be a comment on this article
     if (parent_id) {
-      commentData.parent_id = parseInt(parent_id, 10);
+      const parentId = parseInt(parent_id, 10);
+      const { data: parentComment } = isNaN(parentId)
+        ? { data: null }
+        : await supabase
+            .from("comments")
+            .select("id")
+            .eq("id", parentId)
+            .eq("article_id", articleId)
+            .maybeSingle();
+      if (!parentComment) {
+        return res.status(400).json({ error: "Invalid parent comment" });
+      }
+      commentData.parent_id = parentId;
     }
 
     console.log("Final comment data to insert:", commentData);
@@ -4355,6 +3552,36 @@ app.delete("/api/articles/:id", async (req, res) => {
   }
 });
 
+// Search users by username (admin-only, for the grant UI)
+app.get("/api/users/search", async (req, res) => {
+  try {
+    const uid = await getSupabaseUid(req);
+    if (!uid || !(await isAdminUser(uid))) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const q = (req.query.q as string || "").trim();
+    if (!q) {
+      return res.json([]);
+    }
+
+    const { data: users, error } = await supabase
+      .from("users")
+      .select("id, username")
+      .ilike("username", `%${q}%`)
+      .limit(10);
+
+    if (error) {
+      return res.status(500).json({ error: "Search failed" });
+    }
+
+    return res.json(users || []);
+  } catch (error) {
+    console.error("Error in GET /api/users/search:", error);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 // Get user information by ID
 app.get("/api/users/:id", async (req, res) => {
   try {
@@ -4447,7 +3674,7 @@ app.patch("/api/users/:id", async (req, res) => {
       .from("users")
       .update(updates)
       .eq("id", userId)
-      .select()
+      .select("id, username, description, created_at")
       .single();
 
     if (updateError) {
@@ -4471,10 +3698,10 @@ app.get("/api/channels/:id/subscribers", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
 
     const channelId = parseInt(req.params.id);
+    if (isNaN(channelId)) {
+      return res.status(400).json({ error: "Invalid channel ID" });
+    }
     console.log(`API: Fetching subscribers for channel ID: ${channelId}`);
-
-    // Debug log to check all request headers
-    console.log("Request headers:", JSON.stringify(redactHeaders(req.headers), null, 2));
 
     // Extract the Authorization header (if any)
     const authHeader = req.headers.authorization;
@@ -4518,6 +3745,24 @@ app.get("/api/channels/:id/subscribers", async (req, res) => {
     }
 
     console.log(`API: Found user ID: ${dbUser.id}`);
+
+    // Only the channel owner (or an admin) may list its subscribers
+    const { data: channel, error: channelError } = await supabase
+      .from("channels")
+      .select("user_id")
+      .eq("id", channelId)
+      .single();
+
+    if (channelError || !channel) {
+      return res.status(404).json({ error: "Channel not found" });
+    }
+
+    if (
+      channel.user_id !== dbUser.id &&
+      !(await isAdminUser(userData.user.id))
+    ) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
 
     // Simplified query that just gets subscriptions and user info directly
     try {
@@ -4597,6 +3842,10 @@ app.post("/api/articles/:slug/reactions", async (req, res) => {
       return res.status(401).json({ error: "No authorization header" });
     }
 
+    if (typeof isLike !== "boolean") {
+      return res.status(400).json({ error: "isLike must be a boolean" });
+    }
+
     const token = req.headers.authorization.replace("Bearer ", "");
     const {
       data: { user },
@@ -4608,11 +3857,12 @@ app.post("/api/articles/:slug/reactions", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // First, get the article ID from the slug
+    // First, get the article ID from the slug (published articles only)
     const { data: article, error: articleError } = await supabase
       .from("articles")
       .select("id")
       .eq("slug", articleSlug)
+      .eq("published", true)
       .single();
 
     if (articleError || !article) {
@@ -4889,10 +4139,28 @@ app.get("/api/locations", async (req, res) => {
 });
 
 // Update article images
+// An article image URL must be an https: URL or a site path under /media/.
+function isAllowedImageUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  if (value.startsWith("/media/")) return true;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 app.put("/api/articles/:id/images", async (req, res) => {
   try {
     const articleId = parseInt(req.params.id);
     const { images } = req.body; // Array of { image_url, caption, order }
+
+    if (!Array.isArray(images)) {
+      return res.status(400).json({ message: "images must be an array" });
+    }
+    if (!images.every((img) => isAllowedImageUrl(img?.image_url))) {
+      return res.status(400).json({ message: "Invalid image URL" });
+    }
 
     // Authenticate the user
     const { userId, error: authError } = await authenticateUser(req);
@@ -4983,10 +4251,9 @@ app.post("/api/articles/:id/images", async (req, res) => {
 
     // Insert the image metadata
     const imageData = Array.isArray(req.body) ? req.body : [req.body];
-    console.log(
-      "Preparing to insert image metadata:",
-      JSON.stringify(imageData, null, 2)
-    );
+    if (!imageData.every((img) => isAllowedImageUrl(img?.image_url))) {
+      return res.status(400).json({ message: "Invalid image URL" });
+    }
 
     const { data: insertedImages, error: insertError } = await supabase
       .from("article_images")
@@ -5230,202 +4497,6 @@ app.post("/api/articles/:id/toggle-status", async (req, res) => {
   } catch (error) {
     console.error("Error in toggle article status endpoint:", error);
     return res.status(500).json({ message: "Server error" });
-  }
-});
-
-// Article endpoint
-app.get("/api/articles/:idOrSlug", async (req, res) => {
-  try {
-    console.log("Article endpoint called");
-
-    // Get article ID or slug from URL parameter
-    const idOrSlug = req.params.idOrSlug;
-    console.log("Looking up article:", idOrSlug);
-
-    let article;
-    let fetchError;
-
-    if (/^\d+$/.test(idOrSlug)) {
-      // It's a numeric ID
-      console.log("Fetching article by ID:", idOrSlug);
-      const result = await supabase
-        .from("articles")
-        .select(
-          `
-          *,
-          user:user_id (id, username, supabase_uid),
-          channel:channel_id (id, name, slug, description, profile_image, user_id),
-          images:article_images (id, image_url, caption, "order"),
-          categories:article_categories (
-            category_id, 
-            is_primary,
-            category:category_id (id, name, parent_id)
-          )
-        `
-        )
-        .eq("id", parseInt(idOrSlug))
-        .single();
-      article = result.data;
-      fetchError = result.error;
-    } else {
-      // Try slug lookup
-      console.log("Fetching article by slug:", idOrSlug);
-      const result = await supabase
-        .from("articles")
-        .select(
-          `
-          *,
-          user:user_id (id, username, supabase_uid),
-          channel:channel_id (id, name, slug, description, profile_image, user_id),
-          images:article_images (id, image_url, caption, "order"),
-          categories:article_categories (
-            category_id, 
-            is_primary,
-            category:category_id (id, name, parent_id)
-          )
-        `
-        )
-        .eq("slug", idOrSlug)
-        .single();
-      article = result.data;
-      fetchError = result.error;
-    }
-
-    if (fetchError || !article) {
-      console.error("Error fetching article:", fetchError);
-      return res.status(404).json({ message: "Article not found" });
-    }
-
-    console.log(`Found article: "${article.title}"`);
-
-    // Get reaction counts
-    const { data: likes, error: likesError } = await supabase
-      .from("reactions")
-      .select("id")
-      .eq("article_id", article.id)
-      .eq("is_like", true)
-      .gt("user_id", 0); // Only count real user reactions here
-
-    if (likesError) {
-      console.error("Error fetching likes:", likesError);
-    }
-
-    const { data: dislikes, error: dislikesError } = await supabase
-      .from("reactions")
-      .select("id")
-      .eq("article_id", article.id)
-      .eq("is_like", false)
-      .gt("user_id", 0); // Only count real user reactions here
-
-    if (dislikesError) {
-      console.error("Error fetching dislikes:", dislikesError);
-    }
-
-    // Get comment count - this needs to actually count the comments
-    const { data: comments, error: commentsError } = await supabase
-      .from("comments")
-      .select("id")
-      .eq("article_id", article.id);
-
-    if (commentsError) {
-      console.error("Error fetching comment count:", commentsError);
-    }
-
-    console.log(`DEBUG: Raw comments data:`, comments);
-
-    // Store comment count in article._count - use actual comment array length
-    const commentCount = comments?.length || 0;
-    console.log(`DEBUG: Comment count calculated:`, commentCount);
-
-    article._count = {
-      ...article._count,
-      comments: commentCount,
-    };
-
-    // Also expose comment count in multiple formats for backward compatibility
-    article.comment_count = commentCount;
-    article.commentCount = commentCount;
-
-    console.log(`DEBUG: Article comment counts set:`, {
-      _count: article._count,
-      comment_count: article.comment_count,
-      commentCount: article.commentCount,
-    });
-
-    // Get user's reaction if authenticated
-    let userReaction = null;
-
-    if (req.headers.authorization) {
-      const token = req.headers.authorization.replace("Bearer ", "");
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser(token);
-
-      if (!authError && user) {
-        // Get internal user ID from Supabase Auth ID
-        const { data: dbUser } = await supabase
-          .from("users")
-          .select("id")
-          .eq("supabase_uid", user.id)
-          .single();
-
-        if (dbUser) {
-          const { data: reaction } = await supabase
-            .from("reactions")
-            .select("is_like")
-            .eq("article_id", article.id)
-            .eq("user_id", dbUser.id)
-            .maybeSingle();
-
-          if (reaction) {
-            userReaction = reaction.is_like;
-          }
-        }
-      }
-    }
-
-    // Add reaction data to article
-    const userLikes = likes?.length || 0;
-    const userDislikes = dislikes?.length || 0;
-    const adminLikes = article.admin_like_count || 0;
-    const adminDislikes = article.admin_dislike_count || 0;
-
-    // The frontend expects like_count and dislike_count, not likes and dislikes
-    article.like_count = userLikes + adminLikes;
-    article.dislike_count = userDislikes + adminDislikes;
-    article.userReaction = userReaction;
-
-    console.log(
-      `Article ${article.id} reactions: ${userLikes} user likes + ${adminLikes} admin likes = ${article.like_count} total likes`
-    );
-    console.log(
-      `Article ${article.id} reactions: ${userDislikes} user dislikes + ${adminDislikes} admin dislikes = ${article.dislike_count} total dislikes`
-    );
-    console.log(`Article ${article.id} has ${commentCount} comments`);
-
-    // Keep these for backwards compatibility
-    article.likes = article.like_count;
-    article.dislikes = article.dislike_count;
-
-    // Sort images by order field
-    if (article.images) {
-      article.images.sort((a, b) => (a.order || 0) - (b.order || 0));
-    }
-
-    // Format categories to match expected client structure
-    if (article.categories) {
-      article.categories = article.categories.map((cat) => ({
-        id: cat.category_id,
-        name: cat.category?.name,
-        isPrimary: cat.is_primary,
-      }));
-    }
-
-    res.json(article);
-  } catch (error) {
-    console.error("Error in article endpoint:", error);
-    res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -5728,36 +4799,6 @@ app.delete("/api/v1/api-access-users/:userId", async (req, res) => {
     return res.json({ message: "API access revoked" });
   } catch (error) {
     console.error("Error in DELETE /api/v1/api-access-users:", error);
-    return res.status(500).json({ error: "Server error" });
-  }
-});
-
-// Search users by username (admin-only, for the grant UI)
-app.get("/api/users/search", async (req, res) => {
-  try {
-    const uid = await getSupabaseUid(req);
-    if (!uid || !(await isAdminUser(uid))) {
-      return res.status(403).json({ error: "Admin access required" });
-    }
-
-    const q = (req.query.q as string || "").trim();
-    if (!q) {
-      return res.json([]);
-    }
-
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("id, username")
-      .ilike("username", `%${q}%`)
-      .limit(10);
-
-    if (error) {
-      return res.status(500).json({ error: "Search failed" });
-    }
-
-    return res.json(users || []);
-  } catch (error) {
-    console.error("Error in GET /api/users/search:", error);
     return res.status(500).json({ error: "Server error" });
   }
 });
