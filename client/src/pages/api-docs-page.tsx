@@ -51,6 +51,7 @@ function EndpointSection({
   const methodColors: Record<string, string> = {
     GET: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
     POST: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+    PATCH: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
     DELETE: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
   };
 
@@ -277,13 +278,15 @@ export default function ApiDocsPage() {
   "locationLat": 40.7128,                      // Optional
   "locationLng": -74.0060,                     // Optional
   "published": true,                           // Optional (default: true)
-  "images": [                                  // Optional - external image URLs
-    {
-      "url": "https://example.com/photo.jpg",
-      "caption": "Photo description",
-      "order": 0
-    }
-  ]
+  "excerpt": "One-sentence standfirst.",       // Optional - card and social text
+  "coverImage": {                              // Optional - hero, card and social image
+    "url": "https://example.com/photo.jpg",
+    "caption": "Who, what, where, when.",
+    "credit": "Agency / Photographer"
+  },
+  "gallery": ["https://example.com/2.jpg"]     // Optional - other photos (cover + gallery max 5)
+  // Legacy: "images": [{ "url": "...", "caption": "..." }]  first = cover;
+  // cannot be combined with coverImage / gallery
 }`} />
               </div>
               <div>
@@ -298,14 +301,21 @@ export default function ApiDocsPage() {
   "createdAt": "2026-02-10T...",
   "url": "/articles/456/2026-02-10-article-title",
   "images": [...],
-  "categories": [3, 12]
+  "categories": [3, 12],
+  "coverImage": { "url": "https://newsplatform.org/media/c/3fa9….jpg", "caption": "… Photo: Agency / Photographer" },
+  "gallery": [{ "url": "https://newsplatform.org/media/c/81be….jpg", "caption": "" }],
+  "excerpt": "One-sentence standfirst.",
+  "warnings": [],
+  "previewUrl": null                           // set for drafts: a private preview link
 }`} />
               </div>
               <div className="bg-muted/50 rounded-lg p-3 text-sm space-y-1">
                 <p className="font-medium">Notes:</p>
                 <ul className="list-disc list-inside text-muted-foreground space-y-1">
                   <li>Markdown is converted to HTML that matches the web editor output</li>
-                  <li>External image URLs are downloaded and stored on our servers</li>
+                  <li>External image URLs, in the image fields and in the body, are downloaded and stored on our servers; returned image URLs never expire</li>
+                  <li>The same photo sent as the cover and in the body is stored once and shown once</li>
+                  <li>An image that cannot be downloaded does not fail the request; it is listed in <code>warnings</code></li>
                   <li>Duplicate detection: same title + channel within 24h returns 409</li>
                   <li>Slugs are auto-generated with date prefix and collision handling</li>
                 </ul>
@@ -364,7 +374,7 @@ export default function ApiDocsPage() {
               auth="API Key or Bearer JWT"
             >
               <p className="text-sm text-muted-foreground">
-                Accepts a numeric article ID or slug. Returns full article details including images and categories. Only returns articles you own.
+                Accepts a numeric article ID or slug. Returns full article details, including the HTML body, the excerpt, the cover and the gallery. Articles you do not own answer 404, the same as a missing article.
               </p>
               <div>
                 <h4 className="text-sm font-semibold mb-2">Response (200)</h4>
@@ -379,10 +389,69 @@ export default function ApiDocsPage() {
   "createdAt": "2026-02-10T...",
   "viewCount": 150,
   "url": "/articles/456/2026-02-10-article-title",
+  "content": "<p class=\\"article-dek\\">…</p>…",  // HTML: send back with "contentFormat": "html"
+  "contentFormat": "html",
+  "excerpt": "One-sentence standfirst.",
+  "excerptSource": "dek",                      // or "derived" from the first paragraph
+  "coverImage": { "url": "…/media/…", "caption": "…" },
+  "gallery": [],
   "images": [...],
-  "categories": [...]
+  "categories": [...],
+  "previewUrl": null
 }`} />
               </div>
+            </EndpointSection>
+
+            {/* Update Article */}
+            <EndpointSection
+              method="PATCH"
+              path="/api/v1/content/articles/:id"
+              description="Edit an article"
+              auth="API Key or Bearer JWT"
+            >
+              <p className="text-sm text-muted-foreground">
+                Send only the fields to change. The URL stays the same when the title changes, unless you ask for a new slug.
+              </p>
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Request Body (all optional)</h4>
+                <CodeBlock language="json" code={`{
+  "title": "Sharper headline",
+  "regenerateSlug": false,           // true: new slug from the title (old links keep working)
+  "content": "## Markdown or HTML",
+  "contentFormat": "markdown",       // "markdown" (default), "html" or "auto"
+  "excerpt": "New standfirst.",      // null removes it
+  "channelId": 6,                    // move to another of your channels
+  "categoryIds": [3],
+  "location": "Madrid", "locationLat": 40.4, "locationLng": -3.7,
+  "published": false,                // false = draft, true = published
+  "coverImage": { "url": "https://…", "caption": "…", "credit": "…" },  // null removes
+  "gallery": []                      // replaces every photo except the cover
+}`} />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Response (200)</h4>
+                <p className="text-sm text-muted-foreground">
+                  The same shape as GET, plus <code>previousSlug</code> and <code>warnings</code>. If any new image cannot be downloaded the answer is <code>422</code> with <code>code: "image_failed"</code> and <code>details</code>, and nothing is changed.
+                </p>
+              </div>
+            </EndpointSection>
+
+            {/* Delete Article */}
+            <EndpointSection
+              method="DELETE"
+              path="/api/v1/content/articles/:id"
+              description="Unpublish or delete"
+              auth="API Key or Bearer JWT"
+            >
+              <p className="text-sm text-muted-foreground">
+                By default the article becomes a draft: off the site, reversible with <code>PATCH {"{"}"published": true{"}"}</code>. Add <code>?permanent=true</code> to delete it for good, or <code>?dryRun=true</code> to see what would happen.
+              </p>
+              <CodeBlock language="json" code={`// DELETE /api/v1/content/articles/456
+{ "id": 456, "deleted": false, "unpublished": true, "status": "draft",
+  "restore": "PATCH /api/v1/content/articles/456 {\\"published\\": true}" }
+
+// DELETE /api/v1/content/articles/456?permanent=true
+{ "id": 456, "deleted": true }`} />
             </EndpointSection>
 
             {/* List Channels */}
@@ -442,6 +511,9 @@ export default function ApiDocsPage() {
         {/* Error Codes */}
         <section className="mb-10">
           <h2 className="text-2xl font-semibold mb-4">Error Codes</h2>
+          <p className="text-sm text-muted-foreground mb-3">
+            Every error body is <code>{"{"} "error": "message", "code": "machine_code" {"}"}</code>.
+          </p>
           <div className="border rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-muted">
@@ -451,12 +523,13 @@ export default function ApiDocsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                <tr><td className="p-3 font-mono">400</td><td className="p-3 text-muted-foreground">Bad Request — missing or invalid fields</td></tr>
-                <tr><td className="p-3 font-mono">401</td><td className="p-3 text-muted-foreground">Unauthorized — invalid or missing API key / token</td></tr>
-                <tr><td className="p-3 font-mono">403</td><td className="p-3 text-muted-foreground">Forbidden — you don't own this channel or article</td></tr>
-                <tr><td className="p-3 font-mono">404</td><td className="p-3 text-muted-foreground">Not Found — channel or article doesn't exist</td></tr>
-                <tr><td className="p-3 font-mono">409</td><td className="p-3 text-muted-foreground">Conflict — duplicate article (same title + channel within 24h)</td></tr>
-                <tr><td className="p-3 font-mono">500</td><td className="p-3 text-muted-foreground">Server Error — something went wrong on our end</td></tr>
+                <tr><td className="p-3 font-mono">400</td><td className="p-3 text-muted-foreground"><code>validation_failed</code> — missing or invalid fields</td></tr>
+                <tr><td className="p-3 font-mono">401</td><td className="p-3 text-muted-foreground"><code>unauthorized</code> — invalid or missing API key / token</td></tr>
+                <tr><td className="p-3 font-mono">403</td><td className="p-3 text-muted-foreground"><code>channel_forbidden</code> — you don't own this channel</td></tr>
+                <tr><td className="p-3 font-mono">404</td><td className="p-3 text-muted-foreground"><code>not_found</code> (article missing or not yours) or <code>channel_not_found</code></td></tr>
+                <tr><td className="p-3 font-mono">409</td><td className="p-3 text-muted-foreground"><code>duplicate_title</code> — same title + channel within 24h</td></tr>
+                <tr><td className="p-3 font-mono">422</td><td className="p-3 text-muted-foreground"><code>image_failed</code> — an image could not be downloaded (PATCH; nothing changed)</td></tr>
+                <tr><td className="p-3 font-mono">500</td><td className="p-3 text-muted-foreground"><code>server_error</code> — something went wrong on our end</td></tr>
               </tbody>
             </table>
           </div>
@@ -502,7 +575,7 @@ export default function ApiDocsPage() {
               </div>
               <div>
                 <p className="font-semibold mb-1">Images</p>
-                <p className="text-muted-foreground">Max 5 images per article, 10MB each</p>
+                <p className="text-muted-foreground">Max 5 attached images (cover included), 10MB each; jpeg, png, gif or webp</p>
               </div>
               <div>
                 <p className="font-semibold mb-1">Categories</p>
