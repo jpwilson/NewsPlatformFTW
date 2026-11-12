@@ -156,8 +156,6 @@ Deno.serve(async (req) => {
       const updates = await req.json()
       console.log('Received updates:', JSON.stringify(updates))
 
-      // Log the request headers to check authentication 
-      console.log('Request headers:', Object.fromEntries(req.headers.entries()))
       
       // Validate updates - only allow specific fields that exist
       const allowedUpdates: { [key: string]: number } = {}
@@ -289,7 +287,7 @@ Deno.serve(async (req) => {
         
       } catch (error) {
         console.error(`Error updating article metrics:`, error)
-        return new Response(JSON.stringify({ error: error.message || 'Failed to update article metrics' }), {
+        return new Response(JSON.stringify({ error: 'Failed to update article metrics' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           status: 500,
         })
@@ -305,7 +303,7 @@ Deno.serve(async (req) => {
     }
   } catch (error) {
     console.error('Unhandled error in admin-articles:', error)
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: 'Internal server error' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     })
