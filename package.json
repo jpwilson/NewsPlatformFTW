@@ -23,6 +23,7 @@
     "test:repair": "node scripts/test-repair-article-images.mjs",
     "test:security": "tsx scripts/test-api-security.mjs",
     "test:seo": "node scripts/test-seo-routes.mjs",
+    "gen:shell": "tsx scripts/gen-site-shell.ts",
     "check:live": "node scripts/check-live.mjs",
     "indexnow": "node scripts/indexnow.mjs"
   },

@@ -277,6 +277,7 @@ const ldOf = (html) => [...html.matchAll(/<script type="application\/ld\+json">(
   check("isAccessibleForFree", ld.isAccessibleForFree === true);
   check("BreadcrumbList", crumbs["@type"] === "BreadcrumbList" && crumbs.itemListElement.length === 3);
   check("links to the channel", html.includes('href="https://www.newsplatform.org/channels/1"'));
+  check("links to /latest (every article reachable)", html.includes('href="https://www.newsplatform.org/latest"'));
   check("links to more from the channel, not to itself", html.includes("/articles/8/other-story") && !/<li><a href="[^"]*\/articles\/7\//.test(html));
 }
 {

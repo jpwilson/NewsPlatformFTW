@@ -1,13 +1,17 @@
 /**
  * Prerender for crawlers (search engines + social scrapers).
  * Serves complete, indexable article HTML — full body, OG/Twitter tags, and
- * NewsArticle JSON-LD — to bot user-agents (rewritten here via vercel.json).
+ * NewsArticle JSON-LD — to bot user-agents (rewritten here via vercel.json),
+ * and the same for channel pages (/channels/<id>: name, description, the
+ * latest 50 articles, ItemList JSON-LD).
  * Humans never see this; they get the SPA.
  */
 
 import { createClient } from '@supabase/supabase-js';
 
 import { sanitizeArticleHtml } from './_lib/sanitize-article-html.js';
+import { recordPageEvent } from './_lib/analytics.js';
+import { LIST_COLUMNS, PAGE_SIZE, crawlerName, renderChannelPage, withTimeout } from './_lib/crawler-pages.js';
 import { isSafeUrl } from '../shared/article-html-policy.js';
 import {
   LAST_EDITED_IS_TRUSTWORTHY,
@@ -27,13 +31,13 @@ const supabaseKey =
   process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-function isCrawlerUA(userAgent) {
-  if (!userAgent) return false;
-  // Keep in sync with the user-agent regex in vercel.json.
-  return /(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-SearchBot|Claude-User|PerplexityBot|Perplexity-User|Google-Extended|DuckAssistBot|meta-externalagent|CCBot|Amazonbot|Bytespider|facebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|Applebot|googlebot|bingbot|yandex|baiduspider|duckduckbot|Slurp)/i.test(
-    userAgent
-  );
-}
+/**
+ * Crawler hits go to page_events (analytics module; never throws). Awaited,
+ * because a Vercel function may be frozen once the response is sent, but for
+ * at most 250 ms.
+ */
+const logBotHit = (req, bot, fields) =>
+  bot ? withTimeout(recordPageEvent(supabase, req, { kind: 'bot', bot, ...fields }), 250) : Promise.resolve();
 
 /**
  * Extract article id or slug from the path.
@@ -81,6 +85,37 @@ const noStore = (res) => {
   return res;
 };
 
+/**
+ * A channel page for crawlers. Published articles only: the service key
+ * bypasses RLS, so `.eq('published', true)` is the only guard.
+ */
+async function channelPage(req, res, { key, bot }) {
+  const path = `/channels/${key}`;
+  let query = supabase.from('channels').select('id, name, slug, description, profile_image').limit(1);
+  query = /^\d+$/.test(key) ? query.eq('id', parseInt(key, 10)) : query.eq('slug', key);
+  const { data: channels, error } = await query;
+  const channel = !error && Array.isArray(channels) ? channels[0] : null;
+  if (!channel) {
+    if (error) console.error('Prerender: error fetching channel:', error);
+    await logBotHit(req, bot, { path, article_id: null, status: 404 });
+    return noStore(res).status(404).end('Channel not found');
+  }
+  const { data: articles, count, error: listError } = await supabase
+    .from('articles')
+    .select(LIST_COLUMNS, { count: 'exact' })
+    .eq('channel_id', channel.id)
+    .eq('published', true)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(PAGE_SIZE);
+  if (listError) throw listError;
+  const html = renderChannelPage({ channel, articles: Array.isArray(articles) ? articles : [], total: count ?? undefined });
+  await logBotHit(req, bot, { path, article_id: null, status: 200 });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=3600');
+  return res.status(200).send(html);
+}
+
 export default async function handler(req, res) {
   try {
     // Resolve the requested path
@@ -97,10 +132,26 @@ export default async function handler(req, res) {
     const userAgent = req.headers['user-agent'] || '';
     const isDev = process.env.NODE_ENV !== 'production';
     const isTestMode = req.query && req.query.forcePrerender === 'true';
-    const isCrawler = isCrawlerUA(userAgent);
+    // The crawler list lives in api/_lib/crawler-pages.js (CRAWLER_TOKENS);
+    // check-seo keeps vercel.json's user-agent rewrites in sync with it.
+    const bot = crawlerName(userAgent);
+    const isCrawler = bot !== null;
     const shouldProcess = isDev || isTestMode || isCrawler;
 
-    if (!path.includes('/articles/') || !shouldProcess) {
+    if (!shouldProcess) return noStore(res).status(404).end();
+
+    const channelRef = String(path).match(/^\/?channels\/([^/?#]+)\/?$/);
+    if (channelRef) {
+      let key;
+      try {
+        key = decodeURIComponent(channelRef[1]);
+      } catch {
+        return noStore(res).status(404).end();
+      }
+      return await channelPage(req, res, { key, bot });
+    }
+
+    if (!path.includes('/articles/')) {
       return noStore(res).status(404).end();
     }
 
@@ -126,6 +177,7 @@ export default async function handler(req, res) {
 
     if (error || !rows || rows.length === 0) {
       if (error) console.error('Prerender: error fetching article:', error);
+      await logBotHit(req, bot, { path, article_id: null, status: 404 });
       return noStore(res).status(404).end('Article not found');
     }
     const article = rows[0];
@@ -301,11 +353,12 @@ export default async function handler(req, res) {
       ${moreHtml}
       <p><a href="${articleUrlAttr}">Read on NewsPlatform</a> · ${
         channelUrl ? `<a href="${escapeHtml(channelUrl)}">${escapeHtml(channelName)}</a> · ` : ''
-      }<a href="${SITE}/">More stories</a></p>
+      }<a href="${SITE}/latest">Latest stories</a> · <a href="${SITE}/">More stories</a></p>
     </nav>
   </body>
 </html>`;
 
+    await logBotHit(req, bot, { path, article_id: article.id, status: 200 });
     res.setHeader('Content-Type', 'text/html');
     res.setHeader(
       'Cache-Control',

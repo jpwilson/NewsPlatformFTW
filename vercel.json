@@ -131,6 +131,10 @@
       "destination": "/api/index.ts"
     },
     {
+      "source": "/latest",
+      "destination": "/api/index.ts"
+    },
+    {
       "source": "/articles/:id/:slug?",
       "has": [
         {
@@ -151,6 +155,17 @@
         }
       ],
       "destination": "/api/prerender-article.js?path=/articles/:slug"
+    },
+    {
+      "source": "/channels/:id",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(GPTBot|OAI-SearchBot|ChatGPT-User|ClaudeBot|Claude-SearchBot|Claude-User|PerplexityBot|Perplexity-User|Google-Extended|DuckAssistBot|meta-externalagent|CCBot|Amazonbot|Bytespider|[Ff]acebookexternalhit|Facebot|Twitterbot|WhatsApp|LinkedInBot|Pinterest|Slackbot|TelegramBot|Discordbot|Applebot|[Gg]ooglebot|[Bb]ingbot|[Yy]andex|[Bb]aiduspider|[Dd]uck[Dd]uck[Bb]ot|Slurp).*"
+        }
+      ],
+      "destination": "/api/prerender-article.js?path=/channels/:id"
     },
     {
       "source": "/auth-callback",

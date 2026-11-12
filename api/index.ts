@@ -19,9 +19,14 @@ import { ingestArticleMedia, parseImageFields } from "./_lib/image-ingest.js";
 import { recordPageEvent, registerAnalyticsRoutes } from "./_lib/analytics.js";
 import {
   NEWS_WINDOW_HOURS,
+  LIST_COLUMNS,
+  PAGE_SIZE,
+  crawlerName,
   fetchAllRows,
   newsSitemapXml,
+  renderLatestPage,
   sitemapImageXml,
+  withTimeout,
 } from "./_lib/crawler-pages.js";
 import {
   announceArticleChange,
@@ -5785,6 +5790,57 @@ app.get("/channels/:id/rss.xml", async (req, res) => {
   } catch (e) {
     console.error("Error generating channel RSS:", e);
     return res.status(500).end();
+  }
+});
+
+// ---- Crawl path: /latest, for everyone (channel pages for crawlers are
+// rendered by api/prerender-article.js, like articles) ----
+// Published only, everywhere: the service key bypasses row-level security, so
+// these filters are the only thing keeping drafts out of public HTML.
+
+/** Crawler hits go to page_events; awaited (a frozen function loses them) for at most 250 ms. */
+const logBotHit = (req: any, bot: string | null, fields: any) =>
+  bot ? withTimeout(recordPageEvent(supabase, req, { kind: "bot", bot, ...fields }), 250) : Promise.resolve();
+
+const htmlNotFound = (res: any, message: string) =>
+  res
+    .status(404)
+    .set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Robots-Tag": "noindex" })
+    .send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="robots" content="noindex"><title>Not found — NewsPlatform</title></head><body><h1>Not found</h1><p>${message}</p><p><a href="/latest">Latest stories</a></p></body></html>`);
+
+// Every published article, newest first, 50 a page: real HTML for every
+// visitor, so a crawler can reach any article from one URL.
+app.get("/latest", async (req, res) => {
+  const bot = crawlerName(String(req.headers["user-agent"] || ""));
+  try {
+    const raw = req.query.page;
+    const page = raw === undefined ? 1 : /^[1-9]\d{0,5}$/.test(String(raw)) ? parseInt(String(raw), 10) : NaN;
+    if (!Number.isFinite(page)) {
+      await logBotHit(req, bot, { path: "/latest", article_id: null, status: 404 });
+      return htmlNotFound(res, "There is no such page of stories.");
+    }
+    const from = (page - 1) * PAGE_SIZE;
+    const { data: articles, count, error } = await supabase
+      .from("articles")
+      .select(`${LIST_COLUMNS}, channel:channels ( id, name )`, { count: "exact" })
+      .eq("published", true)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const path = page > 1 ? `/latest?page=${page}` : "/latest";
+    if (page > 1 && (!articles || articles.length === 0)) {
+      await logBotHit(req, bot, { path, article_id: null, status: 404 });
+      return htmlNotFound(res, "There is no such page of stories.");
+    }
+    const html = renderLatestPage({ articles: articles || [], page, total: count ?? (articles || []).length });
+    await logBotHit(req, bot, { path, article_id: null, status: 200 });
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600");
+    return res.status(200).send(html);
+  } catch (e) {
+    console.error("Error rendering /latest:", e);
+    return res.status(500).set("Cache-Control", "no-store").send("Server error");
   }
 });
 

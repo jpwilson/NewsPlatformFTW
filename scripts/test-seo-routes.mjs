@@ -95,6 +95,23 @@ function seed() {
 
 const stub = await startStubSupabase({ tables: seed(), tokens: { [OWNER_TOKEN]: "uid-owner" } });
 const api = await loadApi({ supabaseUrl: stub.url });
+// The crawler prerenderer (articles and channels) reads SUPABASE_URL at import.
+const { default: prerender } = await import("../api/prerender-article.js");
+
+/** Calls api/prerender-article.js the way the vercel.json rewrite does. */
+async function prerenderGet(path, userAgent) {
+  const res = {
+    statusCode: 200, headers: {}, body: "",
+    setHeader(k, v) { this.headers[k.toLowerCase()] = v; return this; },
+    status(c) { this.statusCode = c; return this; },
+    send(b) { this.body = b ?? ""; return this; },
+    end(b) { this.body = b ?? ""; return this; },
+  };
+  await prerender({ url: `/api/prerender-article.js?path=${path}`, query: { path }, headers: { "user-agent": userAgent, host: "www.newsplatform.org" } }, res);
+  return res;
+}
+const GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
+const ldBlocks = (html) => [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => JSON.parse(m[1]));
 
 /* ------------------------------------------------------------- sitemaps */
 
@@ -138,6 +155,110 @@ section("GET /news-sitemap.xml");
   check("publication date in W3C format", /<news:publication_date>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z<\/news:publication_date>/.test(entry), entry);
   check("cover image absolute /media URL", entry.includes(`<image:loc>${SITE}/media/c/cover.jpg</image:loc>`), entry);
   check("filters published=eq.true", stub.log.some((l) => l.table === "articles" && /published=eq\.true/.test(l.query) && /published_at=gte\./.test(l.query)));
+}
+
+/* ------------------------------------------------------------- /latest */
+
+section("GET /latest");
+{
+  const data = seed();
+  // 120 published articles + the seeded ones; drafts sprinkled in.
+  for (let i = 0; i < 120; i++) {
+    const draft = i % 10 === 0;
+    data.articles.push(article(2000 + i, {
+      title: draft ? `Draft number ${i}` : `Archive story ${i}`,
+      slug: draft ? `draft-slug-${i}` : `2025-06-01-archive-${i}`,
+      status: draft ? "draft" : "published",
+      published: !draft,
+      created_at: new Date(Date.UTC(2025, 5, 1) + i * 3600000).toISOString(),
+      published_at: new Date(Date.UTC(2025, 5, 1) + i * 3600000).toISOString(),
+    }));
+  }
+  stub.reset(data);
+  const published = data.articles.filter((a) => a.published).length; // 3 seeded + 108
+  const pages = Math.ceil(published / 50);
+  const all = [];
+  for (let p = 1; p <= pages; p++) {
+    const r = await api.request("GET", p === 1 ? "/latest" : `/latest?page=${p}`, { headers: { "user-agent": "Mozilla/5.0 (a person)" } });
+    const html = r.text;
+    if (p === 1) {
+      check("200 text/html for a person (no user-agent sniffing)", r.status === 200 && /text\/html/.test(r.headers.get("content-type") || ""), r.status);
+      check("cached at the edge", /s-maxage=/.test(r.headers.get("cache-control") || ""));
+      check("canonical /latest", html.includes(`<link rel="canonical" href="${SITE}/latest" />`));
+      check("rel=next, no rel=prev on page 1", html.includes(`<link rel="next" href="${SITE}/latest?page=2" />`) && !html.includes('rel="prev"'));
+      check("one <h1>", (html.match(/<h1[\s>]/g) || []).length === 1);
+      check("the static site header and footer", html.includes('aria-label="Primary"') && html.includes('aria-label="Footer"') && html.includes('href="/latest"'));
+      check("header marks Latest stories as current", /href="\/latest"[^>]*aria-current="page"/.test(html));
+      check("links the stable stylesheet", html.includes('<link rel="stylesheet" href="/site.css" />'));
+      const entry = html.match(/<li class="np-item">[\s\S]*?<\/li>/)?.[0] || "";
+      check("entry: title link, channel link, date, excerpt", entry.includes(`href="${SITE}/articles/1/2026-01-01-story-1"`) && entry.includes("Fresh &lt;news&gt;") && entry.includes(`href="${SITE}/channels/10"`) && entry.includes("Desk &amp; Co") && /<time datetime="[^"]+">\d{1,2} \w{3} \d{4}<\/time>/.test(entry) && entry.includes("Body of story 1, long enough"), entry);
+      const ld = ldBlocks(html)[0];
+      check("CollectionPage + ItemList JSON-LD", ld["@type"] === "CollectionPage" && ld.mainEntity["@type"] === "ItemList" && ld.mainEntity.itemListElement.length === 50 && ld.mainEntity.numberOfItems === published, ld.mainEntity?.numberOfItems);
+    }
+    if (p === 2) {
+      check("page 2: canonical, prev and next", html.includes(`<link rel="canonical" href="${SITE}/latest?page=2" />`) && html.includes(`<link rel="prev" href="${SITE}/latest" />`) && html.includes(`<link rel="next" href="${SITE}/latest?page=3" />`));
+      check("page 2: numbered list continues at 51", html.includes('<ol class="np-list" start="51">'));
+    }
+    if (p === pages) check("last page: no rel=next", !html.includes('rel="next"') && html.includes('rel="prev"'));
+    all.push(...[...html.matchAll(/<h2><a href="[^"]*\/articles\/(\d+)\//g)].map((m) => Number(m[1])));
+  }
+  const expected = data.articles.filter((a) => a.published).map((a) => a.id).sort((a, b) => a - b);
+  check(`every published article reachable across ${pages} pages, once`, JSON.stringify([...all].sort((a, b) => a - b)) === JSON.stringify(expected), { got: all.length, want: expected.length });
+  check("newest first", all[0] === 1 && all[1] === 2, all.slice(0, 3));
+  let r = await api.request("GET", "/latest?page=1");
+  const page1 = r.text;
+  check("drafts never appear", !page1.includes("Draft number") && !page1.includes("draft-slug") && !page1.includes("Secret draft"));
+  check("filters published=eq.true", stub.log.some((l) => l.table === "articles" && /published=eq\.true/.test(l.query) && /limit=50/.test(l.query)));
+  r = await api.request("GET", `/latest?page=${pages + 1}`);
+  check("past the last page → 404 noindex, not cached", r.status === 404 && /no-store/.test(r.headers.get("cache-control") || "") && /noindex/.test(r.headers.get("x-robots-tag") || ""), r.status);
+  for (const bad of ["0", "-1", "abc", "1.5"]) {
+    r = await api.request("GET", `/latest?page=${bad}`);
+    if (r.status !== 404) check(`?page=${bad} → 404`, false, r.status);
+  }
+  check("invalid page numbers → 404", true);
+  stub.reset({ ...seed(), articles: [] });
+  r = await api.request("GET", "/latest");
+  check("no articles yet: page 1 still 200", r.status === 200 && r.text.includes("No stories have been published yet"));
+}
+
+/* ------------------------------------------------- channel crawler page */
+
+section("channel pages for crawlers (api/prerender-article.js)");
+{
+  const data = seed();
+  for (let i = 0; i < 60; i++) data.articles.push(article(3000 + i, { created_at: new Date(Date.UTC(2025, 0, 1) + i * 3600000).toISOString() }));
+  data.articles.push(article(3999, { title: "Channel draft", slug: "channel-draft", status: "draft", published: false, created_at: "2027-01-01T00:00:00.000Z" }));
+  data.articles.push(article(4000, { title: "Other channel story", channel_id: 20 }));
+  stub.reset(data);
+  stub.log.length = 0;
+  let r = await prerenderGet("/channels/10", GOOGLEBOT);
+  const html = r.body;
+  check("200 text/html for Googlebot", r.statusCode === 200 && /text\/html/.test(r.headers["content-type"] || ""), r.statusCode);
+  check("canonical", html.includes(`<link rel="canonical" href="${SITE}/channels/10" />`));
+  check("channel name in <title> and <h1>, escaped", html.includes("<title>Desk &amp; Co — NewsPlatform</title>") && html.includes("<h1>Desk &amp; Co</h1>"));
+  check("description as text (tags stripped, not live)", html.includes("Local reporting daily.") && !html.includes("<b>daily</b>"));
+  const items = [...html.matchAll(/<li class="np-item">/g)].length;
+  check("latest 50 articles as links", items === 50, items);
+  check("drafts never appear", !html.includes("Channel draft") && !html.includes("channel-draft") && !html.includes("Secret draft"));
+  check("only this channel's articles", !html.includes("Other channel story"));
+  const ld = ldBlocks(html)[0];
+  check("ItemList JSON-LD (50 items, total count)", ld.mainEntity?.["@type"] === "ItemList" && ld.mainEntity.itemListElement.length === 50 && ld.mainEntity.numberOfItems === 63 && ld.mainEntity.itemListElement[0].url.startsWith(`${SITE}/articles/`), ld.mainEntity?.numberOfItems);
+  check("links /latest and the channel RSS", html.includes(`href="${SITE}/latest"`) && html.includes(`href="${SITE}/channels/10/rss.xml"`));
+  check("query filters published=eq.true", stub.log.some((l) => l.table === "articles" && /published=eq\.true/.test(l.query) && /channel_id=eq\.10/.test(l.query)));
+  r = await prerenderGet("/channels/desk", GOOGLEBOT);
+  check("by slug too", r.statusCode === 200 && r.body.includes("<h1>Desk &amp; Co</h1>"));
+  r = await prerenderGet("/channels/20", GOOGLEBOT);
+  check("a channel with no description gets a generated one", r.statusCode === 200 && r.body.includes('content="Latest articles from Empty Desk on NewsPlatform."'));
+  r = await prerenderGet("/channels/999", GOOGLEBOT);
+  check("missing channel → 404, not cached", r.statusCode === 404 && /no-store/.test(r.headers["cache-control"] || ""), r.statusCode);
+  process.env.NODE_ENV = "production";
+  r = await prerenderGet("/channels/10", "Mozilla/5.0 (a person)");
+  check("a person in production → 404 (vercel.json gives people the SPA)", r.statusCode === 404);
+  r = await prerenderGet("/articles/1/2026-01-01-story-1", GOOGLEBOT);
+  check("article crawler page links /latest", r.statusCode === 200 && r.body.includes(`href="${SITE}/latest"`));
+  r = await prerenderGet("/articles/4/secret-draft", GOOGLEBOT);
+  check("article draft still 404", r.statusCode === 404);
+  process.env.NODE_ENV = "test";
 }
 
 /* ------------------------------------------------------------- IndexNow */

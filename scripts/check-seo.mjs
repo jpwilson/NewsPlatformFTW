@@ -18,11 +18,12 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { SPA_ROUTES } from "../shared/spa-routes.js";
 import { INDEXNOW_KEY } from "../api/_lib/indexnow.js";
+import { CRAWLER_TOKENS } from "../api/_lib/crawler-pages.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, "..", "dist", "public");
@@ -42,7 +43,7 @@ const PAGES = [
 ];
 
 /** Public URLs served by api/index.ts through a vercel.json rewrite. */
-const API_PAGES = ["/sitemap.xml", "/news-sitemap.xml", "/rss.xml"];
+const API_PAGES = ["/sitemap.xml", "/news-sitemap.xml", "/rss.xml", "/latest"];
 
 let failures = 0;
 const titles = new Map();
@@ -183,7 +184,15 @@ checkFile("llms.txt", [
   ["looks like HTML, not text", (b) => !b.trimStart().startsWith("<")],
   ["too short", (b) => b.length > 500],
   ["does not link the key pages", (b) => b.includes(`${SITE}/faq`)],
+  ["does not link /latest (the crawlable archive)", (b) => b.includes(`${SITE}/latest`)],
   ["still calls the product an aggregator", (b) => !/is an independent news aggregator/.test(b)],
+]);
+
+checkFile("site.css", [
+  ["is not the built stylesheet (api/_lib/site-shell.js pages link it)", (b) => {
+    const href = read("app.html")?.match(/<link[^>]+rel="stylesheet"[^>]+href="\/(assets\/[^"]+\.css)"/)?.[1];
+    return !!href && read(href) === b;
+  }],
 ]);
 
 checkFile("llms-full.txt", [
@@ -238,9 +247,37 @@ for (const source of API_PAGES) {
   const i = vercel.rewrites.findIndex((r) => r.source === source && r.destination === "/api/index.ts" && !r.has);
   if (i === -1 || i > catchAllIndex) fail("vercel.json", `${source} is not rewritten to /api/index.ts before the catch-all`);
 }
+// Crawler user-agent rewrites (articles and channels): one regex, the same
+// tokens as CRAWLER_TOKENS in api/_lib/crawler-pages.js, which the
+// prerenderer uses to decide it is talking to a crawler.
+const uaRewrites = vercel.rewrites.filter((r) => (r.has || []).some((h) => h.type === "header" && h.key === "user-agent"));
+const uaValues = new Set(uaRewrites.map((r) => r.has.find((h) => h.key === "user-agent").value));
+if (uaValues.size !== 1) fail("vercel.json", `the crawler user-agent rewrites use ${uaValues.size} different regexes; they must be identical`);
+const [uaRegex] = uaValues;
+const vercelTokens = (uaRegex || "").replace(/^\.\*\(/, "").replace(/\)\.\*$/, "").split("|")
+  .map((t) => t.replace(/\[([A-Za-z])([A-Za-z])\]/g, (m, a, b) => (a.toLowerCase() === b.toLowerCase() ? a.toLowerCase() : m)).toLowerCase());
+const jsTokens = CRAWLER_TOKENS.map((t) => t.toLowerCase());
+const onlyVercel = vercelTokens.filter((t) => !jsTokens.includes(t));
+const onlyJs = jsTokens.filter((t) => !vercelTokens.includes(t));
+if (onlyVercel.length || onlyJs.length)
+  fail("vercel.json", `crawler lists differ from CRAWLER_TOKENS (api/_lib/crawler-pages.js): only in vercel.json [${onlyVercel}], only in the JS [${onlyJs}]`);
+for (const [source, prefix] of [["/articles/:id/:slug?", "/articles/"], ["/articles/:slug", "/articles/"], ["/channels/:id", "/channels/"]]) {
+  const bot = vercel.rewrites.findIndex((r) => r.source === source && r.has && r.destination.startsWith(`/api/prerender-article.js?path=${prefix}`));
+  const spa = vercel.rewrites.findIndex((r) => !r.has && r.destination === "/app.html" && (r.source === source || r.source === source.replace("?", "") || (source === "/articles/:slug" && r.source === "/articles/:id")));
+  if (bot === -1) fail("vercel.json", `no crawler rewrite for ${source} to api/prerender-article.js`);
+  else if (spa !== -1 && bot > spa) fail("vercel.json", `the crawler rewrite for ${source} comes after the SPA rewrite, so it never fires`);
+}
 if (vercel.trailingSlash !== false)
   fail("vercel.json", 'trailingSlash must be false (canonicals are slashless)');
 if (!failures) ok("vercel.json routing matches shared/spa-routes.js");
+
+// The /latest and channel crawler pages wear the marketing pages' header and
+// footer, through a generated module.
+const tsx = path.resolve(__dirname, "..", "node_modules", ".bin", "tsx");
+const shellCheck = spawnSync(tsx, [path.join(__dirname, "gen-site-shell.ts"), "--check"], { encoding: "utf8" });
+if (shellCheck.status !== 0) fail("api/_lib/site-shell.js", (shellCheck.stderr || shellCheck.stdout || "check failed").trim());
+else ok("api/_lib/site-shell.js matches client/src/content/shell.ts");
+if (!read("index.html")?.includes('href="/latest"')) fail("footer", "the static footer does not link /latest");
 
 console.log("\nHTTP responses (scripts/serve-dist.mjs):");
 

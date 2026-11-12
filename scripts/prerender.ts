@@ -9,7 +9,8 @@
  * the same markup and takes over.
  *
  * Also emits: app.html (the plain SPA shell the catch-all rewrite serves),
- * /llms.txt and /llms-full.txt, /robots.txt and /sitemap-pages.xml.
+ * site.css (the built stylesheet under a stable name), /llms.txt and
+ * /llms-full.txt, /robots.txt and /sitemap-pages.xml.
  *
  *   npx tsx scripts/prerender.ts
  */
@@ -153,6 +154,9 @@ function buildLlmsTxt(): string {
   }
   lines.push(`- [Channel directory](${SITE_URL}/channels): every channel on the platform.`);
   lines.push(
+    `- [Latest stories](${SITE_URL}/latest): every published article, newest first, 50 to a page, as plain HTML links.`
+  );
+  lines.push(
     `- [Content API documentation](${SITE_URL}/api): public read-only JSON endpoint for recent articles, plus an authenticated write API.`
   );
   lines.push(`- [Advertise](${SITE_URL}/advertise): sponsorship placements and published rates.`);
@@ -217,6 +221,13 @@ function main() {
   // that is not a prerendered file (channels, articles, profile, admin…).
   writeFile("app.html", template);
 
+  // A stable-named copy of the built stylesheet, for the HTML the serverless
+  // functions render (/latest, channel pages for crawlers): they cannot know
+  // the hashed asset name. See api/_lib/site-shell.js.
+  const cssHref = template.match(/<link[^>]+rel="stylesheet"[^>]+href="(\/assets\/[^"]+\.css)"/)?.[1];
+  if (!cssHref) throw new Error("prerender: no built stylesheet link in index.html");
+  fs.copyFileSync(path.join(OUT, cssHref), path.join(OUT, "site.css"));
+
   const report: { url: string; words: number; bytes: number }[] = [];
 
   for (const page of MARKETING_PAGES) {
@@ -234,7 +245,7 @@ function main() {
   for (const r of report) {
     console.log(`  ${r.url.padEnd(20)} ${String(r.words).padStart(5)} words  ${r.bytes} bytes`);
   }
-  console.log("  + app.html, llms.txt, llms-full.txt, sitemap-pages.xml\n");
+  console.log("  + app.html, site.css, llms.txt, llms-full.txt, sitemap-pages.xml\n");
 }
 
 main();
