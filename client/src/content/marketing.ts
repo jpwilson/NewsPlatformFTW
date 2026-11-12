@@ -68,6 +68,7 @@ export const FOOTER_LINKS: { label: string; path: string }[] = [
   { label: "vs Ghost", path: "/compare/ghost" },
   { label: "Alternatives", path: "/alternatives" },
   { label: "Channels", path: "/channels" },
+  { label: "Latest stories", path: "/latest" },
   { label: "Content API", path: "/api" },
   { label: "Advertise", path: "/advertise" },
   { label: "Privacy", path: "/privacy" },

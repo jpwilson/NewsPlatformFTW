@@ -4,7 +4,8 @@ How NewsPlatform is made readable by Google, Bing and the AI answer engines
 (ChatGPT, Claude, Gemini, Perplexity, Copilot, Grok), what to do to keep it
 that way, and the owner-only steps that still need doing.
 
-Last updated: 12 November 2026.
+Last updated: 12 November 2026 (crawl paths, news sitemap, IndexNow pings,
+monitoring).
 
 ---
 
@@ -83,9 +84,10 @@ fails the build if `vercel.json` drifts from that list. `trailingSlash` is
 | Request | Served by |
 |---|---|
 | `/`, `/about`, `/faq`, `/compare/*`, `/alternatives`, … | static prerendered HTML (filesystem) |
-| `/robots.txt`, `/llms.txt`, `/llms-full.txt`, `/<indexnow-key>.txt` | static files from `client/public` |
-| `/sitemap.xml`, `/rss.xml`, `/api/*` | `api/index.ts` via rewrite |
-| `/articles/<id>/<slug>` from a bot UA | `api/prerender-article.js` via rewrite |
+| `/robots.txt`, `/llms.txt`, `/llms-full.txt`, `/<indexnow-key>.txt`, `/site.css` | static files (`client/public`, or written by `scripts/prerender.ts`) |
+| `/sitemap.xml`, `/news-sitemap.xml`, `/rss.xml`, `/channels/<id>/rss.xml`, `/latest`, `/api/*` | `api/index.ts` via rewrite |
+| `/articles/<id>/<slug>` and `/channels/<id>` from a bot UA | `api/prerender-article.js` via rewrite (`?path=`) |
+| `/media/<path>` | `api/media.js` (permanent image URLs) |
 | app routes (`/profile`, `/admin`, `/channels/<id>`, `/articles/<id>/<slug>`, … — see `shared/spa-routes.js`) | `app.html` (SPA shell) |
 | everything else | `api/not-found.js` — a real **404** with `noindex`, not the SPA shell with a 200 |
 
@@ -101,8 +103,13 @@ with `NewsArticle` JSON-LD to bot user-agents, matched by the regex in
 only had lowercase `googlebot`/`bingbot`, which do not match the real
 `Googlebot/2.1` and `bingbot/2.0` strings in a case-sensitive regex.
 
-**Keep the two lists in sync**: the `has.value` regexes in `vercel.json` and
-`isCrawlerUA()` in `api/prerender-article.js`.
+**One crawler list, two places**: `CRAWLER_TOKENS` in
+`api/_lib/crawler-pages.js` (the prerenderer asks `crawlerName()` whether it
+is talking to a crawler) and the `has.value` regex of every user-agent
+rewrite in `vercel.json` (articles and channels). `npm run check:seo` fails if
+the rewrites do not all carry the identical regex, if its tokens differ from
+`CRAWLER_TOKENS` (case aside), or if a crawler rewrite sits after the SPA
+rewrite for the same path (it would never fire). Add a crawler in both places.
 
 Two things the prerenderer must keep doing, both covered by
 `scripts/test-prerender-article.mjs` (`npm run test:prerender`):
@@ -116,6 +123,54 @@ Two things the prerenderer must keep doing, both covered by
   SPA and the crawler HTML render the same thing. `<iframe>` is limited to
   YouTube/Vimeo hosts, and JSON-LD is serialised with `<`, `>` and `&`
   escaped so a headline cannot terminate the `<script>` element.
+
+### Crawl paths: `/latest` and channel pages
+
+A crawler that lands on one article must be able to reach every other one by
+following plain links. Two server-rendered pages do that; both list published
+articles only (the service key bypasses row-level security, so the
+`published = true` filter is the only guard; `npm run test:seo` checks it):
+
+- **`/latest`** (`api/index.ts`, `renderLatestPage` in
+  `api/_lib/crawler-pages.js`): every published article, newest first, 50 a
+  page (`/latest?page=2`, …) with `rel="prev"`/`rel="next"`, a canonical per
+  page, `CollectionPage` + `ItemList` JSON-LD. Each entry is a link with the
+  title, channel, date and an excerpt. **The same HTML for every visitor**, so
+  no user-agent sniffing. Pages past the end are a 404 with `noindex`.
+  Linked from the footer and header (`FOOTER_LINKS`), `llms.txt` and every
+  article crawler page.
+- **`/channels/<id>`** for crawlers (`api/prerender-article.js`,
+  `renderChannelPage`): the channel name, description, latest 50 articles as
+  links, `ItemList` JSON-LD, canonical and RSS link. People get the SPA, as
+  for articles. It is served by the article prerender function on purpose: it
+  uses the same `?path=` rewrite that is proven in production.
+
+Both pages wear the marketing pages' static header and footer.
+`scripts/gen-site-shell.ts` turns `client/src/content/shell.ts` into plain
+strings in `api/_lib/site-shell.js` (the functions cannot import TypeScript),
+and `scripts/prerender.ts` writes the built stylesheet to `/site.css` under a
+stable name (the functions cannot know the hashed one). **After changing
+`FOOTER_LINKS` or `shell.ts`, run `npm run gen:shell`**; `check:seo` fails
+until you do. The list itself is styled by a small inline stylesheet
+(`np-*` classes), because Tailwind keeps only class names it finds under
+`client/src`.
+
+Crawler hits on article, channel and `/latest` pages are logged through
+`recordPageEvent(…, { kind: "bot", bot, path, article_id, status })`
+(`api/_lib/analytics.js`), awaited for at most 250 ms.
+
+### Sitemaps and feeds
+
+| URL | Contents |
+|---|---|
+| `/sitemap.xml` | Home, marketing pages, every channel and every published article. Read from the database in pages of 1,000 (one large query is silently cut at Supabase's row cap). Each article carries `lastmod` = its publish date and its cover as `image:image` (absolute `/media/` URL). |
+| `/news-sitemap.xml` | Google News: published articles from the last 48 hours (at most 1,000), with `news:publication` (NewsPlatform, `en`), `news:publication_date`, `news:title` and the cover as `image:image`. Empty (but valid) when nothing was published in 48 hours. |
+| `/rss.xml`, `/channels/<id>/rss.xml` | The latest 50 articles: `description` is the excerpt (standfirst or first paragraph), `content:encoded` the full body through the server sanitiser with absolute `/media/` photo URLs, `enclosure` the cover, plus `atom:link rel="self"`. |
+
+`robots.txt` lists both sitemaps and, in every group, `Allow: /api/ai/`
+directly before `Disallow: /api/`, so the public AI endpoint advertised in
+`llms.txt` and `docs/newsplatform-mcp.json` is crawlable while the rest of the
+JSON API is not. `check:seo` asserts both.
 
 ---
 
@@ -133,6 +188,7 @@ Two things the prerenderer must keep doing, both covered by
 | `/compare/medium` | NewsPlatform vs Medium. |
 | `/compare/ghost` | NewsPlatform vs Ghost. |
 | `/alternatives` | Best platforms for independent journalists — honest round-up. |
+| `/latest` | Every published article, newest first, 50 a page (server-rendered for everyone). |
 
 Every page carries: unique title and meta description, one `<h1>`, an
 absolute self-referencing canonical on `https://www.newsplatform.org`,
@@ -158,16 +214,23 @@ npm run check        # tsc
 npm run build        # vite build + prerender + esbuild
 npm run check:seo    # asserts the built HTML is actually crawlable
 npm run test:prerender  # article prerender: published-only + sanitising
+npm run test:seo     # sitemaps, news sitemap, /latest, channel pages, RSS, IndexNow (offline)
 npm run check:live   # AFTER a deploy: do crawlers really get the article pages?
 ```
 
-`npm run check:live` is the only check that talks to the deployed site. It
-takes the newest article URLs from the live sitemap and requests each as
-Googlebot, GPTBot and Twitterbot, failing unless every one returns a full
-page with `NewsArticle` JSON-LD, an `og:image` and a canonical link. Pass a
-URL to test another deployment: `node scripts/check-live.mjs https://<preview>`.
-Run it after every deploy that touches `api/`, `vercel.json` or
-`package.json` — see "The October 2026 crawler outage" below for why.
+`npm run check:live` is the only check that talks to the deployed site (plain
+GET requests). It takes the newest article URLs from the live sitemap and
+requests each as Googlebot, GPTBot and Twitterbot, failing unless every one
+returns a full page with `NewsArticle` JSON-LD, an `og:image` and a canonical
+link. It then fetches each article's `og:image` (must answer 200 with an
+`image/*` type and must not be a signed, expiring Supabase URL), and checks
+that `/sitemap.xml`, `/rss.xml`, `/news-sitemap.xml` and `/latest` answer 200
+with the right content type and that a channel page served to Googlebot has
+`ItemList` data and a canonical. Pass a URL to test another deployment:
+`node scripts/check-live.mjs https://<preview>` (its `/media/` photos are then
+fetched from that deployment). Run it after every deploy that touches `api/`,
+`vercel.json` or `package.json` — see "The October 2026 crawler outage"
+below for why. It also runs on a schedule (see "Monitoring").
 
 `scripts/check-seo.mjs` reads `dist/public` and fails if any page is missing a
 unique title or description, has zero or multiple canonicals, has anything
@@ -209,7 +272,9 @@ one that was already there — leave it alone.
    `https://www.newsplatform.org/` and the *HTML tag* method: paste the
    `<meta name="google-site-verification" content="…">` line into
    `client/index.html` next to the existing one, deploy, then verify.
-4. Submit `https://www.newsplatform.org/sitemap.xml`.
+4. Submit `https://www.newsplatform.org/sitemap.xml` **and**
+   `https://www.newsplatform.org/news-sitemap.xml` (Sitemaps → Add a new
+   sitemap, one at a time).
 5. Check **Settings → Search generative AI** is left on (default), and watch
    the *Generative AI* performance report.
 
@@ -218,7 +283,7 @@ one that was already there — leave it alone.
 1. <https://www.bing.com/webmasters> → **Add site**.
 2. The fastest path is **Import from Google Search Console** once GSC is
    verified. Otherwise use the XML file or meta-tag method.
-3. Submit the same sitemap URL.
+3. Submit the same two sitemap URLs.
 4. Bing's index feeds Copilot and DuckDuckGo and is one of ChatGPT's search
    partners, so this is not optional.
 
@@ -246,9 +311,23 @@ node scripts/indexnow.mjs --sitemap     # also pull every URL from the live site
 ```
 
 It pings `https://api.indexnow.org/indexnow`, which fans out to Bing, Yandex,
-Seznam and Naver. **It has not been run against the live API from this
-branch.** Run it after a deploy that changes page content; a 200 or 202 is
-success (202 means the key has not been validated yet).
+Seznam and Naver. **It has never been run.** Run it after a deploy that
+changes page content; a 200 or 202 is success (202 means the key has not been
+validated yet).
+
+### Automatic pings
+
+Articles ping IndexNow by themselves (`api/_lib/indexnow.js`,
+`pingIndexNow`): when one is published, edited while published, unpublished
+or deleted, through the editor or the Content API
+(`announceArticleChange` in `api/_lib/article-service.js`). The ping lists
+the article URL (old and new when the slug changed), its channel page and
+`/latest`. It runs only when `VERCEL_ENV` is `production` (previews, local
+runs and tests never ping), waits at most 2 seconds and never fails the
+request. The key is the constant `INDEXNOW_KEY`; `check:seo` fails if it does
+not match the key file, so rotate both together. Changing only an article's
+photos through the editor does not ping (the editor's save also edits the
+article, which does).
 
 To rotate the key: generate a new 32-hex value, rename the file in
 `client/public`, deploy, then re-run. `scripts/indexnow.mjs` finds the key by
@@ -265,7 +344,9 @@ globbing for `<32-hex>.txt`, or takes `INDEXNOW_KEY` from the environment.
    Add it to `FOOTER_LINKS` so it is linked from every page.
 2. Add a route in `client/src/App.tsx`:
    `<Route path="/new-page" component={marketingRoute("/new-page")} />`.
-3. Add it to `PAGES` in `scripts/check-seo.mjs`.
+3. Add it to `PAGES` in `scripts/check-seo.mjs`. Adding it to `FOOTER_LINKS`
+   also changes the header and footer of `/latest` and the channel pages:
+   run `npm run gen:shell`.
 4. Add it to the sitemap URL lists in `api/index.ts` and `server/routes.ts`
    (both generate `/sitemap.xml`; the serverless one is what production uses).
 5. `npm run build && npm run check:seo`, then `node scripts/indexnow.mjs`
@@ -308,7 +389,52 @@ What is in place now:
   if any comes back as live markup. If the allowlist ever gains `svg`,
   `math`, `textarea`, `xmp`, `noscript` or `meta`, upgrade first.
 - `npm run check:live` (above) tests the deployed site, which is the only
-  place this class of failure shows up.
+  place this class of failure shows up, and `.github/workflows/site-health.yml`
+  runs it every six hours (see "Monitoring").
+- `api/index.ts` loads the sanitiser lazily (it sanitises article HTML on
+  write and for RSS): if `sanitize-html` ever fails to load again, article
+  writes and the feeds fail, not the whole API.
+
+---
+
+## Monitoring
+
+`.github/workflows/site-health.yml` runs `node scripts/check-live.mjs` against
+production every six hours (at 23 minutes past 00, 06, 12 and 18 UTC) and on
+demand (Actions → Site health → Run workflow). It needs no secrets and no
+Vercel or Supabase settings. A failed run makes GitHub email whoever last
+changed the workflow's schedule, so the owner should make that change (or
+start it once by hand from their account), and keep *Settings →
+Notifications → Actions → failed workflows* switched on. GitHub pauses
+scheduled workflows in a repository with no activity for 60 days; the
+Actions tab shows a banner to re-enable it.
+
+`check-live.mjs --baseline` (or `CHECK_BASELINE=1`) skips the checks for what
+the SEO branch added (`/news-sitemap.xml`, `/latest`, channel crawler pages,
+and the "og:image is not a signed URL" rule). It exists only to test the
+script against a deployment from before that branch. **Once the branch is
+deployed to production, do not use it** (the scheduled workflow never does,
+and `check:seo` fails if it is added there); it can be deleted from the
+script at any time after that deploy.
+
+---
+
+## After merging the SEO branch (owner steps)
+
+1. Deploy, then run `node scripts/check-live.mjs` (no flag) and expect every
+   check to pass.
+2. Google Search Console and Bing Webmaster Tools: submit
+   `https://www.newsplatform.org/news-sitemap.xml` next to the existing
+   `/sitemap.xml` (steps above). The news sitemap helps Google find new
+   articles fast; whether they appear in Google News is Google's decision
+   (its content policies apply). The
+   [Publisher Center](https://publishercenter.google.com/) is optional.
+3. Run IndexNow once for the whole site: `npm run build && node
+   scripts/indexnow.mjs --sitemap` (a 200 or 202 is success). From then on,
+   articles ping by themselves.
+4. Open Actions → Site health → Run workflow once, from the owner's account,
+   and check the run is green. That also makes the owner the person GitHub
+   emails when it fails.
 
 ---
 
@@ -329,8 +455,6 @@ What is in place now:
   client-rendered. They are in the sitemap and Googlebot renders JS, but
   non-JS AI fetchers see only the shell. `/advertise` is the one worth
   prerendering next — it has real published prices.
-- **Channel pages** (`/channels/<id>`) have no prerender path. Articles do;
-  channels do not.
 - **`npm run build` bundles 2.2 MB of JS** for every route including the
   marketing pages. The prerendered text is visible without it, so crawlers
   are unaffected, but LCP for humans would benefit from code-splitting the

@@ -1,162 +1,106 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { ArticleChart } from "@/components/article-chart";
 import { sanitizeArticleHtml } from "@/lib/sanitize-article-html";
-
-interface LightboxImage {
-  src: string;
-  caption: string;
-}
 
 /**
  * Renders rich article HTML (produced by the markdown pipeline — see
  * docs/article-format.md) and progressively enhances it:
  *  - hydrates <div data-chart> placeholders into live recharts charts
- *  - opens a full-screen lightbox (with prev/next + keyboard arrows) when any
- *    content figure/gallery image is clicked
+ *    (the chart code is only downloaded when the article has a chart)
+ *  - makes every content image a button that opens the page's photo viewer
+ *    through `onImageActivate` (the viewer itself lives in components/lightbox)
  * Legacy plain-HTML articles render unchanged.
  */
 export function RichArticleContent({
   html,
   className,
+  onImageActivate,
 }: {
   html: string;
   className?: string;
+  /** Called with the activated <img> and its position among the body's images. */
+  onImageActivate?: (img: HTMLImageElement, indexInBody: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [lightbox, setLightbox] = useState<{
-    images: LightboxImage[];
-    index: number;
-  } | null>(null);
 
   // Article bodies are author-supplied, so they go through the same allowlist
   // the crawler prerenderer uses (shared/article-html-policy.js).
   const safeHtml = useMemo(() => sanitizeArticleHtml(html), [html]);
 
-  // Hydrate chart placeholders
+  // Hydrate chart placeholders (recharts is loaded on demand).
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    const placeholders = Array.from(container.querySelectorAll<HTMLElement>("[data-chart]"));
+    if (!placeholders.length) return;
+    let cancelled = false;
     const roots: Root[] = [];
-    container.querySelectorAll("[data-chart]").forEach((el) => {
-      const raw = el.getAttribute("data-chart");
-      if (!raw) return;
-      try {
-        const spec = JSON.parse(raw);
-        const root = createRoot(el as HTMLElement);
-        root.render(<ArticleChart spec={spec} />);
-        roots.push(root);
-      } catch {
-        /* invalid spec — leave the empty div */
-      }
+    import("@/components/article-chart").then(({ ArticleChart }) => {
+      if (cancelled) return;
+      placeholders.forEach((el) => {
+        const raw = el.getAttribute("data-chart");
+        if (!raw) return;
+        try {
+          const spec = JSON.parse(raw);
+          const root = createRoot(el);
+          root.render(<ArticleChart spec={spec} />);
+          roots.push(root);
+        } catch {
+          /* invalid spec — leave the empty div */
+        }
+      });
     });
     return () => {
+      cancelled = true;
       // Deferred unmount avoids React warning about sync unmount during render
       setTimeout(() => roots.forEach((r) => r.unmount()), 0);
     };
   }, [safeHtml]);
 
-  // Lightbox: event delegation over all content images
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.tagName !== "IMG" || !containerRef.current) return;
-    const imgs = Array.from(
-      containerRef.current.querySelectorAll<HTMLImageElement>(
-        ".article-figure img, .prose img, img"
-      )
-    ).filter((img, i, arr) => arr.indexOf(img) === i);
-    const index = imgs.indexOf(target as HTMLImageElement);
-    if (index < 0) return;
-    e.preventDefault();
-    setLightbox({
-      images: imgs.map((img) => ({
-        src: img.src,
-        caption: img.getAttribute("alt") || "",
-      })),
-      index,
-    });
-  }, []);
-
-  const step = useCallback(
-    (delta: number) => {
-      setLightbox((lb) =>
-        lb
-          ? {
-              ...lb,
-              index: (lb.index + delta + lb.images.length) % lb.images.length,
-            }
-          : lb
-      );
-    },
+  const bodyImages = useCallback(
+    () =>
+      containerRef.current
+        ? Array.from(containerRef.current.querySelectorAll<HTMLImageElement>("img"))
+        : [],
     []
   );
 
-  const current = lightbox?.images[lightbox.index];
+  // Images become keyboard- and screen-reader-operable buttons.
+  useEffect(() => {
+    if (!onImageActivate) return;
+    bodyImages().forEach((img) => {
+      img.setAttribute("role", "button");
+      img.setAttribute("tabindex", "0");
+      const alt = img.getAttribute("alt")?.trim();
+      img.setAttribute(
+        "aria-label",
+        alt ? `Open photo viewer: ${alt.length > 120 ? alt.slice(0, 117) + "…" : alt}` : "Open photo viewer"
+      );
+    });
+  }, [safeHtml, onImageActivate, bodyImages]);
+
+  const activate = useCallback(
+    (target: EventTarget | null, e: React.SyntheticEvent) => {
+      if (!onImageActivate || !(target instanceof HTMLImageElement)) return;
+      const imgs = bodyImages();
+      const index = imgs.indexOf(target);
+      if (index < 0) return;
+      e.preventDefault();
+      onImageActivate(target, index);
+    },
+    [onImageActivate, bodyImages]
+  );
 
   return (
-    <>
-      <div
-        ref={containerRef}
-        className={className}
-        onClick={handleClick}
-        dangerouslySetInnerHTML={{ __html: safeHtml }}
-      />
-
-      <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
-        <DialogContent
-          className="max-w-6xl border-none bg-black/95 p-2 shadow-2xl outline-none sm:p-4"
-          onKeyDown={(e) => {
-            if (e.key === "ArrowRight") step(1);
-            if (e.key === "ArrowLeft") step(-1);
-          }}
-        >
-          {lightbox && current && (
-            <div className="relative flex flex-col items-center">
-              <img
-                src={current.src}
-                alt={current.caption}
-                className="max-h-[78vh] w-auto max-w-full rounded-md object-contain"
-              />
-              {(current.caption || lightbox.images.length > 1) && (
-                <div className="mt-3 flex w-full items-center justify-between gap-4 px-2 text-sm text-white/80">
-                  <span className="line-clamp-2">{current.caption}</span>
-                  {lightbox.images.length > 1 && (
-                    <span className="shrink-0 tabular-nums text-white/60">
-                      {lightbox.index + 1} / {lightbox.images.length}
-                    </span>
-                  )}
-                </div>
-              )}
-              {lightbox.images.length > 1 && (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Previous image"
-                    className="absolute left-1 top-1/2 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70 hover:text-white"
-                    onClick={() => step(-1)}
-                  >
-                    <ChevronLeft className="h-6 w-6" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Next image"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-black/50 text-white hover:bg-black/70 hover:text-white"
-                    onClick={() => step(1)}
-                  >
-                    <ChevronRight className="h-6 w-6" />
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
+    <div
+      ref={containerRef}
+      className={className}
+      onClick={(e) => activate(e.target, e)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") activate(e.target, e);
+      }}
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
+    />
   );
 }
 

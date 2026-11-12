@@ -11,26 +11,45 @@ import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
 import HomePage from "@/pages/home-page";
 import ArticlePage from "@/pages/article-page";
-import CreateArticle from "@/pages/create-article";
-import CreateChannel from "@/pages/create-channel";
 import ChannelPage from "@/pages/channel-page";
 import ChannelsPage from "@/pages/channels-page";
 import AuthCallback from "./pages/auth-callback";
 import ProfilePage from "./pages/profile-page";
-import EditArticle from "@/pages/edit-article";
-import ManageSubscribersPage from "@/pages/manage-subscribers";
-import AdminPage from "@/pages/admin-page";
-import ApiKeysPage from "@/pages/api-keys-page";
-import ApiDocsPage from "@/pages/api-docs-page";
 import PrivacyPage from "@/pages/privacy-page";
 import TermsPage from "@/pages/terms-page";
 import AdvertisePage from "@/pages/advertise-page";
 import { marketingRoute } from "@/pages/marketing-page";
 import { Analytics } from "@vercel/analytics/react";
 import { HelmetProvider } from "react-helmet-async";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { PostHogProvider, usePostHog } from "@/lib/posthog";
 import { useAuth } from "@/hooks/use-auth";
+
+/** A route component that loads its page on demand (ProtectedRoute expects a plain component). */
+function lazyPage(load: () => Promise<{ default: () => JSX.Element }>) {
+  const Page = lazy(load);
+  return function LazyPage() {
+    return <Page />;
+  };
+}
+
+// Writer and admin screens (TipTap editor, tables, docs) load on demand, so readers
+// do not download them with every article.
+const CreateArticle = lazyPage(() => import("@/pages/create-article"));
+const CreateChannel = lazyPage(() => import("@/pages/create-channel"));
+const EditArticle = lazyPage(() => import("@/pages/edit-article"));
+const ManageSubscribersPage = lazyPage(() => import("@/pages/manage-subscribers"));
+const AdminPage = lazyPage(() => import("@/pages/admin-page"));
+const ApiKeysPage = lazyPage(() => import("@/pages/api-keys-page"));
+const ApiDocsPage = lazyPage(() => import("@/pages/api-docs-page"));
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center" aria-busy="true">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+    </div>
+  );
+}
 
 // Check if we're running in production (Vercel) or development
 const isProduction = process.env.NODE_ENV === "production";
@@ -96,6 +115,7 @@ function Router() {
   return (
     <>
       <PageViewTracker />
+      <Suspense fallback={<RouteFallback />}>
       <Switch>
         <Route path="/" component={HomePage} />
         <ProtectedRoute
@@ -145,6 +165,7 @@ function Router() {
         </Route>
         <Route component={NotFound} />
       </Switch>
+      </Suspense>
     </>
   );
 }

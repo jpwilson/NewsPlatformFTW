@@ -1,0 +1,39 @@
+# Do crawlers still get real pages? Runs scripts/check-live.mjs against
+# https://www.newsplatform.org every six hours and on demand.
+#
+# Why: from 24 October to November 2026 every article answered Google, Bing,
+# the AI answer engines and the social scrapers with HTTP 500, because one
+# dependency could not load in Vercel's function runtime. People saw nothing
+# wrong, so nothing noticed for three weeks (SEO.md, "The October 2026 crawler
+# outage").
+#
+# A failed run makes GitHub email whoever last changed the schedule below
+# (and anyone watching the repository's Actions). No secrets: the script only
+# makes plain GET requests to the public site.
+
+name: Site health
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-health
+  cancel-in-progress: false
+
+jobs:
+  check-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The script has no dependencies, so there is nothing to install.
+      - name: Crawlers get full article pages, feeds and crawl pages
+        run: node scripts/check-live.mjs https://www.newsplatform.org

@@ -1,4 +1,5 @@
 import { Helmet } from "react-helmet-async";
+import { SITE_URL } from "@/content/marketing";
 
 interface MetaHeadProps {
   title: string;
@@ -6,7 +7,14 @@ interface MetaHeadProps {
   imageUrl?: string;
   url: string;
   type?: string;
+  /** Canonical path or absolute URL; defaults to `url` on the production host. */
+  canonical?: string;
+  /** Structured data (e.g. NewsArticle), emitted as application/ld+json. */
+  jsonLd?: Record<string, unknown>;
 }
+
+const absolute = (pathOrUrl: string) =>
+  /^https?:\/\//.test(pathOrUrl) ? pathOrUrl : `${SITE_URL}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
 
 export function MetaHead({
   title,
@@ -14,20 +22,19 @@ export function MetaHead({
   imageUrl,
   url,
   type = "article",
+  canonical,
+  jsonLd,
 }: MetaHeadProps) {
-  // Get domain for absolute URLs
-  const domain = typeof window !== "undefined" ? window.location.origin : "";
-  const fullUrl = `${domain}${url}`;
-  const fullImageUrl =
-    imageUrl && !imageUrl.startsWith("http")
-      ? `${domain}${imageUrl}`
-      : imageUrl;
+  // Shared links and search engines should always point at the production host.
+  const fullUrl = absolute(url);
+  const fullImageUrl = imageUrl ? absolute(imageUrl) : undefined;
 
   return (
     <Helmet>
       {/* Basic Meta Tags */}
       <title>{title}</title>
       <meta name="description" content={description} />
+      <link rel="canonical" href={absolute(canonical || url)} />
 
       {/* Open Graph Tags */}
       <meta property="og:title" content={title} />
@@ -45,6 +52,8 @@ export function MetaHead({
       <meta name="twitter:title" content={title} />
       <meta name="twitter:description" content={description} />
       {fullImageUrl && <meta name="twitter:image" content={fullImageUrl} />}
+
+      {jsonLd && <script type="application/ld+json">{JSON.stringify(jsonLd)}</script>}
     </Helmet>
   );
 }

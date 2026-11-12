@@ -19,6 +19,12 @@ export default defineConfig(async ({ mode }) => {
       ? [(await import("@replit/vite-plugin-cartographer")).cartographer()]
       : [];
 
+  // Where the dev server sends /api and /media (see `server.proxy` below).
+  const apiTarget = process.env.NP_API_TARGET || "http://localhost:3000";
+  const apiIsRemote = !/^https?:\/\/(localhost|127\.0\.0\.1)/.test(apiTarget);
+  const mediaOrigin =
+    process.env.VITE_SUPABASE_URL || "https://mwrhaqghxatfwzsjjfrv.supabase.co";
+
   return {
     plugins: [
       react(),
@@ -134,20 +140,24 @@ export default defineConfig(async ({ mode }) => {
             );
           },
         },
-        "/api": {
-          target: "http://localhost:3000",
+        // Permanent image URLs (/media/<path>) are served by api/media.js in
+        // production; in dev, go straight to the public bucket.
+        "/media": {
+          target: `${mediaOrigin}/storage/v1/object/public/article-images`,
           changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/media/, ""),
+        },
+        "/api": {
+          target: apiTarget,
+          changeOrigin: true,
+          // `npm run dev:client` points this at the live site so the front end
+          // can be worked on without any keys. That is strictly read-only:
+          // anything other than a GET is refused here and never leaves the machine.
+          bypass: (req: any) =>
+            apiIsRemote && !["GET", "HEAD", "OPTIONS"].includes(req.method)
+              ? false
+              : undefined,
           configure: (proxy: any, _options: any) => {
-            proxy.on("proxyReq", (proxyReq: any, req: any, _res: any) =>
-              console.log(
-                `[Vite Proxy -> localhost:3000] Forwarding: ${req.method} ${req.url}`
-              )
-            );
-            proxy.on("proxyRes", (proxyRes: any, req: any, _res: any) =>
-              console.log(
-                `[Vite Proxy -> localhost:3000] Response: ${proxyRes.statusCode} for ${req.url}`
-              )
-            );
             proxy.on("error", (err: any, _req: any, _res: any) =>
               console.error("[Vite Proxy Error - /api]:", err)
             );

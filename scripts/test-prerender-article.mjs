@@ -21,11 +21,16 @@ import path from "node:path";
 
 let lastQuery = "";
 let rows = [];
+let moreRows = [];
 
 const supabase = http.createServer((req, res) => {
-  lastQuery = req.url;
+  // The "more from this channel" query selects only card columns.
+  const isMore = decodeURIComponent(req.url).includes("select=id,slug,title,created_at");
+  // Only article reads count here: the handler also logs the crawler hit to
+  // page_events afterwards, which must not hide the query under test.
+  if (!isMore && req.url.startsWith("/rest/v1/articles")) lastQuery = req.url;
   res.writeHead(200, { "content-type": "application/json" });
-  res.end(JSON.stringify(rows));
+  res.end(JSON.stringify(isMore ? moreRows : rows));
 });
 await new Promise((r) => supabase.listen(0, r));
 const port = supabase.address().port;
@@ -214,6 +219,80 @@ const leaked = hostile.filter((html) => {
   return /<script/i.test(out) || /<[a-z][^>]*\son\w+\s*=/i.test(out) || /<(svg|math|textarea|xmp|noscript|option)\b/i.test(out);
 });
 check("raw-text element payloads stay inert", leaked.length === 0, leaked.join(" | "));
+
+// 6. Images: cover rule, duplicates, permanent URLs (shared/article-media.js).
+const SB = "https://mwrhaqghxatfwzsjjfrv.supabase.co";
+const signed = (p) => `${SB}/storage/v1/object/sign/article-images/${p}?token=fixture-token`;
+const meta = (html, attr, name) => {
+  const m = html.match(new RegExp(`<meta ${attr}="${name}" content="([^"]*)"`));
+  return m ? m[1] : null;
+};
+const ldOf = (html) => [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => JSON.parse(m[1]));
+
+{
+  const a814 = JSON.parse(fs.readFileSync(new URL("./fixtures/article-814.json", import.meta.url), "utf8"));
+  rows = [{ ...published, id: 814, slug: a814.slug, title: a814.title, content: a814.content, images: a814.images.map((im, i) => ({ id: 10 + i, image_url: im.imageUrl, caption: im.caption, order: i })) }];
+  moreRows = [];
+  res = await get(`/articles/814/${a814.slug}`);
+  const html = res.body;
+  const MARCH = "26S-Manifestaci%C3%B3n%20por%20la%20vivienda--01.jpg";
+  check("814: renders", res.statusCode === 200);
+  check("814: the Madrid march photo appears once in the page body", html.split("<body>")[1].split(MARCH).length - 1 === 1, html.split("<body>")[1].split(MARCH).length - 1);
+  check("814: hero figure carries the caption", /<figure class="hero"><img[^>]*26S-Manifestaci[^>]*><figcaption>Marchers at a housing demonstration/.test(html));
+  check("814: credit split out", html.includes('<small class="credit">Nemo / Wikimedia Commons (CC BY-SA 4.0)</small>'));
+  check("814: other figures stay in the body", html.includes("Huelga%20general") && html.includes("Unai%20Sordo"));
+  check("814: og:image is the attached cover as a permanent URL", meta(html, "property", "og:image") === "https://www.newsplatform.org/media/api_814_1794486229127_0.jpg", meta(html, "property", "og:image"));
+  check("no signed URL or token anywhere", !html.includes("token=") && !html.includes("/object/sign/"));
+}
+{
+  rows = [
+    {
+      ...published,
+      channel: { id: 1, name: "Desk One", slug: "desk-one" },
+      last_edited: "2026-11-01T00:00:00Z",
+      content: `<p class="article-dek">The standfirst.</p><p>Lede paragraph of the story.</p><figure class="article-figure"><img src="/media/c/cover.jpg" alt="Cover alt"><figcaption>Body copy of the cover</figcaption></figure><p>More.</p>`,
+      images: [
+        { id: 2, image_url: signed("c/second.jpg"), caption: "Second photo", order: 1 },
+        { id: 1, image_url: signed("c/cover.jpg"), caption: "Cover caption. Photo: Agency", order: 0 },
+      ],
+    },
+  ];
+  moreRows = [
+    { id: 7, slug: "2026-10-20-a-real-story", title: "A real story" },
+    { id: 8, slug: "other-story", title: "Other story" },
+  ];
+  res = await get("/articles/7/2026-10-20-a-real-story");
+  const html = res.body;
+  check("cover = lowest (order, id) even when rows arrive unordered", meta(html, "property", "og:image") === "https://www.newsplatform.org/media/c/cover.jpg", meta(html, "property", "og:image"));
+  check("og:image:alt is the photo's alt text", meta(html, "property", "og:image:alt") === "Cover alt", meta(html, "property", "og:image:alt"));
+  check("twitter:image matches", meta(html, "name", "twitter:image") === meta(html, "property", "og:image"));
+  check("max-image-preview:large", meta(html, "name", "robots") === "max-image-preview:large");
+  const bodyPart = html.split("<body>")[1];
+  check("body copy of the cover removed (shown once, as hero)", !html.includes("Body copy of the cover") && bodyPart.split("c/cover.jpg").length - 1 === 1, bodyPart.split("c/cover.jpg").length - 1);
+  check("hero caption is the cover's own caption", /<figure class="hero">[^]*?<figcaption>Cover caption\. <small class="credit">Agency<\/small><\/figcaption>/.test(bodyPart));
+  check("non-cover attachment in a Photos section after the body", /<section class="photos"><h2>Photos<\/h2><figure><img src="https:\/\/www\.newsplatform\.org\/media\/c\/second\.jpg"/.test(html));
+  check("description from the standfirst", meta(html, "name", "description") === "The standfirst.");
+  const [ld, crumbs] = ldOf(html);
+  check("JSON-LD image: up to three permanent URLs", Array.isArray(ld.image) && ld.image.length === 2 && ld.image.every((u) => u.startsWith("https://www.newsplatform.org/media/")), ld.image);
+  check("dateModified = datePublished (last_edited not trusted)", ld.dateModified === ld.datePublished && !html.includes("2026-11-01"), ld.dateModified);
+  check("author has the channel URL", ld.author.url === "https://www.newsplatform.org/channels/1");
+  check("isAccessibleForFree", ld.isAccessibleForFree === true);
+  check("BreadcrumbList", crumbs["@type"] === "BreadcrumbList" && crumbs.itemListElement.length === 3);
+  check("links to the channel", html.includes('href="https://www.newsplatform.org/channels/1"'));
+  check("links to /latest (every article reachable)", html.includes('href="https://www.newsplatform.org/latest"'));
+  check("links to more from the channel, not to itself", html.includes("/articles/8/other-story") && !/<li><a href="[^"]*\/articles\/7\//.test(html));
+}
+{
+  rows = [{ ...published, content: "<p>Plain legacy body with no images at all.</p>", images: [] }];
+  moreRows = [];
+  res = await get("/articles/7/2026-10-20-a-real-story");
+  check("no images: logo fallback on www", meta(res.body, "property", "og:image") === "https://www.newsplatform.org/logo-stacked.png", meta(res.body, "property", "og:image"));
+  check("no images: summary card, no hero", meta(res.body, "name", "twitter:card") === "summary" && !res.body.includes('class="hero"'));
+  check("no images: body unchanged", res.body.includes("<p>Plain legacy body with no images at all.</p>"));
+  rows = [{ ...published, content: '<p>Body.</p><figure><img src="https://ext.example/body.jpg" alt="B"></figure>', images: [] }];
+  res = await get("/articles/7/2026-10-20-a-real-story");
+  check("no attachment: og:image falls back to the first body image", meta(res.body, "property", "og:image") === "https://ext.example/body.jpg", meta(res.body, "property", "og:image"));
+}
 
 supabase.close();
 console.log("");

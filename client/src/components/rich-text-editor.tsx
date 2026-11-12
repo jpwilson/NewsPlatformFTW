@@ -27,7 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/lib/supabase";
+import { uploadUserImage } from "@/lib/storage-upload";
 import {
   Bold,
   Italic,
@@ -66,22 +66,8 @@ import {
 /* ------------------------- Supabase image upload ------------------------- */
 
 async function uploadEditorImage(file: File): Promise<string> {
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-  const filename = `editor_${Date.now()}_${Math.random()
-    .toString(36)
-    .slice(2, 8)}.${ext}`;
-  const { data: uploadData, error } = await supabase.storage
-    .from("article-images")
-    .upload(filename, file);
-  if (error || !uploadData) throw error || new Error("Upload failed");
-  const { data: urlData } = await supabase.storage
-    .from("article-images")
-    .createSignedUrl(uploadData.path, 31536000); // 1 year
-  if (urlData?.signedUrl) return urlData.signedUrl;
-  const {
-    data: { publicUrl },
-  } = supabase.storage.from("article-images").getPublicUrl(uploadData.path);
-  return publicUrl;
+  // Into the user's own folder (<uid>/<timestamp>_<name>); returns the public URL.
+  return uploadUserImage(file, file.name);
 }
 
 /* ----------------------- Table with reader-parity HTML ---------------------- */
