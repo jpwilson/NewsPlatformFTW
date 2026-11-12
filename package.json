@@ -18,6 +18,7 @@
     "test:prerender": "node scripts/test-prerender-article.mjs",
     "test:media": "node scripts/test-article-media.mjs",
     "test:media-fn": "node scripts/test-media.mjs",
+    "test:api": "node scripts/test-api-routes.mjs",
     "check:live": "node scripts/check-live.mjs",
     "indexnow": "node scripts/indexnow.mjs"
   },

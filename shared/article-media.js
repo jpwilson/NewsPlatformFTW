@@ -63,10 +63,13 @@ function isOurSiteHost(host) {
   );
 }
 
-/** Supabase hosts (the hosted service). Our bucket name alone is not enough. */
+/**
+ * Supabase hosts: the hosted service, or a local Supabase (CLI, tests).
+ * Our bucket name alone is not enough to call a URL ours.
+ */
 function isSupabaseHost(host) {
   const h = String(host || "").toLowerCase().replace(/:\d+$/, "");
-  return /^[a-z0-9-]+\.supabase\.(co|in)$/.test(h);
+  return /^[a-z0-9-]+\.supabase\.(co|in)$/.test(h) || h === "localhost" || h === "127.0.0.1";
 }
 
 const STORAGE_PATH_RE = new RegExp(
@@ -150,7 +153,7 @@ const PATH_CHARS = "(?:[^\\s\"'<>?#\\\\&()]|\\\\/)+"; // stops at quotes, `\"`, 
 const QUERY = "(?:\\?(?:[A-Za-z0-9._~=&;%+\\-]|\\\\u0026)*)?";
 
 const SUPABASE_IN_TEXT = new RegExp(
-  "https?:" + SL + SL + "([A-Za-z0-9-]+\\.supabase\\.(?:co|in))" + SL +
+  "https?:" + SL + SL + "([A-Za-z0-9-]+\\.supabase\\.(?:co|in)|localhost(?::\\d+)?|127\\.0\\.0\\.1(?::\\d+)?)" + SL +
     "storage" + SL + "v1" + SL +
     "(?:object" + SL + "(?:sign|public|authenticated)|render" + SL + "image" + SL + "(?:public|sign|authenticated))" +
     SL + BUCKET + SL + "(" + PATH_CHARS + ")" + QUERY,
