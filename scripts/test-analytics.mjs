@@ -298,6 +298,11 @@ section("recordPageEvent: stored row and timing");
   const throwing = { from: () => { throw new Error("boom"); } };
   check("a throwing client never throws", (await A.recordPageEvent(throwing, req, { kind: "view" })) === false);
   check("no client at all is fine", (await A.recordPageEvent(null, req, {})) === false);
+  const n0 = stub.table("page_events").length;
+  const dnt = await A.recordPageEvent(sb, { headers: { ...req.headers, dnt: "1" }, body: {} }, { kind: "view", path: "/" });
+  const gpc = await A.recordPageEvent(sb, { headers: { ...req.headers, "sec-gpc": "1" }, body: {} }, { kind: "view", path: "/" });
+  const flag = await A.recordPageEvent(sb, { headers: req.headers, body: { dnt: true } }, { kind: "view", path: "/" });
+  check("Do Not Track, GPC and the client's dnt flag: nothing written", !dnt && !gpc && !flag && stub.table("page_events").length === n0);
 }
 
 section("beacon validation");

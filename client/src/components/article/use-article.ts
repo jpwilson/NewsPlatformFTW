@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { usePostHog } from "@/lib/posthog";
+import { startReadTracking, trafficContext } from "@/lib/track";
 import type { ArticleWithSnakeCase } from "./article-types";
 import type { RelatedArticles, RelatedCard } from "./related-types";
 
@@ -69,7 +70,13 @@ export function useRecordView(article: ArticleWithSnakeCase | null | undefined) 
       category: article.category,
     });
 
-    apiRequest("POST", `/api/articles/${article.slug}/view`, {})
+    // Where the reader came from (once per landing) feeds the Analytics tab;
+    // empty when the reader opted out (Do Not Track / GPC).
+    const ctx = trafficContext();
+    const body = ctx
+      ? { ...ctx, path: window.location.pathname, channelId: article.channel_id || article.channelId || null }
+      : { dnt: true };
+    apiRequest("POST", `/api/articles/${article.slug}/view`, body)
       .then((r) => r.json())
       .then((data) => {
         if (typeof data.view_count === "number") setViewCount(data.view_count);
@@ -85,6 +92,13 @@ export function useRecordView(article: ArticleWithSnakeCase | null | undefined) 
         /* a failed view count must never disturb the reader */
       });
   }, [article, trackEvent]);
+
+  // Read-through (engaged time, scroll depth): one beacon per article visit.
+  const articleId = article?.id;
+  useEffect(() => {
+    if (!articleId) return;
+    return startReadTracking(articleId, window.location.pathname);
+  }, [articleId]);
 
   return viewCount;
 }

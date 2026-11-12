@@ -65,6 +65,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ImageCropModal } from "@/components/image-crop-modal";
 import { usePostHog } from "@/lib/posthog";
+import { usePageView } from "@/lib/track";
 
 type SortField =
   | "title"
@@ -90,6 +91,7 @@ type ExtendedChannel = Channel & {
 
 export default function ChannelPage() {
   const { id } = useParams<{ id: string }>();
+  usePageView(id, { channelId: /^\d+$/.test(id || "") ? Number(id) : null });
   const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();

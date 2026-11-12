@@ -104,3 +104,4 @@ export declare function botFromUserAgent(ua: unknown): string | null;
 export declare function deviceFromUserAgent(ua: unknown): string;
 export declare function browserFromUserAgent(ua: unknown): string;
 export declare function _resetAnalyticsState(): void;
+export declare function optedOut(req: any): boolean;

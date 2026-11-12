@@ -252,6 +252,12 @@ export function buildEventRow(req, fields = {}) {
 
 /* ------------------------------------------------------------ recording */
 
+/** Do Not Track / Global Privacy Control (headers), or the client's own flag. */
+export function optedOut(req) {
+  if (header(req, "dnt") === "1" || header(req, "sec-gpc") === "1") return true;
+  return !!(req?.body && typeof req.body === "object" && req.body.dnt === true);
+}
+
 /**
  * Write one page_events row. Resolves within ~250 ms, never rejects.
  * fields: { kind: "view"|"read"|"bot", articleId?, channelId?, userId?, path?,
@@ -262,7 +268,7 @@ export function buildEventRow(req, fields = {}) {
  */
 export async function recordPageEvent(sb, req, fields = {}) {
   try {
-    if (!sb || tableOff()) return false;
+    if (!sb || tableOff() || optedOut(req)) return false;
     const row = buildEventRow(req, fields || {});
     const write = Promise.resolve(sb.from("page_events").insert(row)).then(
       (r) => {
