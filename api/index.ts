@@ -807,8 +807,22 @@ app.post("/api/channels", async (req, res) => {
       });
     }
 
-    // Extract the numeric user ID from the request body
-    const numericUserId = req.body.userId || 3; // Default to 3 if not provided
+    // The owner is the profile bound to the verified token; any userId in
+    // the request body is ignored.
+    const { data: ownerRow, error: ownerError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("supabase_uid", user.id)
+      .single();
+
+    if (ownerError || !ownerRow) {
+      return res.status(401).json({
+        error: "Unauthorized",
+        message: "No profile for this account",
+      });
+    }
+
+    const numericUserId = ownerRow.id;
     console.log("Using numeric user ID:", numericUserId);
 
     // Check if user has reached the maximum number of channels (10)
