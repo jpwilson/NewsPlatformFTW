@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * Pointer-driven zoom and pan for the photo viewer's current slide.
  *
- * Gestures handled on `viewportRef` (the carousel viewport):
+ * Gestures handled on `viewport` (the carousel viewport element; passed as a value, not a ref,
+ * because Radix mounts portal content one render late and the listeners must attach then):
  * - pinch (two pointers) and ctrl/cmd + wheel (also trackpad pinch): zoom around the fingers / cursor
  * - double tap / double click: toggle between 1x and `maxScale` at that point
  * - one-pointer drag while zoomed: pan, clamped so the photo never leaves the stage
@@ -22,7 +23,7 @@ export interface ZoomState {
 }
 
 interface Options {
-  viewportRef: RefObject<HTMLElement>;
+  viewport: HTMLElement | null;
   /** The current slide's <img> (its box is the visible photo at 1x). */
   getImage: () => HTMLElement | null;
   enabled: boolean;
@@ -42,7 +43,7 @@ type Point = { x: number; y: number };
 type Mode = "idle" | "pending" | "pan" | "pinch" | "swipe" | "ignore";
 
 export function useZoomPan({
-  viewportRef,
+  viewport,
   getImage,
   enabled,
   maxScale = 2.5,
@@ -53,6 +54,8 @@ export function useZoomPan({
   const [state, setState] = useState<ZoomState>(IDENTITY);
   const [gesturing, setGesturing] = useState(false);
   const stateRef = useRef<ZoomState>(IDENTITY);
+  const viewportRef = useRef<HTMLElement | null>(viewport);
+  viewportRef.current = viewport;
 
   // Latest callbacks without re-binding listeners.
   const cb = useRef({ getImage, onTap, onSwipeMove, onSwipeEnd });
@@ -78,7 +81,7 @@ export function useZoomPan({
         y: Math.min(maxY, Math.max(-maxY, s.y)),
       };
     },
-    [viewportRef, maxScale]
+    [maxScale]
   );
 
   /** Point relative to the viewport centre (the transform origin). */
@@ -89,7 +92,7 @@ export function useZoomPan({
       const r = vp.getBoundingClientRect();
       return { x: p.x - (r.left + r.width / 2), y: p.y - (r.top + r.height / 2) };
     },
-    [viewportRef]
+    []
   );
 
   /** Zoom to `scale`, keeping the photo point under `at` (client coords) fixed. */
@@ -126,7 +129,7 @@ export function useZoomPan({
   );
 
   useEffect(() => {
-    const vp = viewportRef.current;
+    const vp = viewport;
     if (!enabled || !vp) return;
 
     const pointers = new Map<number, Point>();
@@ -282,7 +285,7 @@ export function useZoomPan({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [enabled, viewportRef, clamp, commit, fromCentre, maxScale, toggleZoom, zoomTo]);
+  }, [enabled, viewport, clamp, commit, fromCentre, maxScale, toggleZoom, zoomTo]);
 
   return {
     state,

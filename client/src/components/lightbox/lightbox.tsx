@@ -44,10 +44,10 @@ export default function Lightbox({
     watchDrag: () => multi && !zoomedRef.current,
   });
 
-  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [viewport, setViewportEl] = useState<HTMLDivElement | null>(null);
   const setViewport = useCallback(
     (el: HTMLDivElement | null) => {
-      viewportRef.current = el;
+      setViewportEl(el);
       emblaRef(el);
     },
     [emblaRef]
@@ -63,7 +63,7 @@ export default function Lightbox({
   const [captionOpen, setCaptionOpen] = useState(false);
 
   const zoom = useZoomPan({
-    viewportRef,
+    viewport,
     getImage: () => imageRefs.current[index] ?? null,
     enabled: true,
     onTap: ({ onImage }) => {
