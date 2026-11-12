@@ -222,7 +222,7 @@ check("raw-text element payloads stay inert", leaked.length === 0, leaked.join("
 
 // 6. Images: cover rule, duplicates, permanent URLs (shared/article-media.js).
 const SB = "https://mwrhaqghxatfwzsjjfrv.supabase.co";
-const signed = (p) => `${SB}/storage/v1/object/sign/article-images/${p}?token=eyJhbGciOiJIUzI1NiJ9.e30.sig`;
+const signed = (p) => `${SB}/storage/v1/object/sign/article-images/${p}?token=fixture-token`;
 const meta = (html, attr, name) => {
   const m = html.match(new RegExp(`<meta ${attr}="${name}" content="([^"]*)"`));
   return m ? m[1] : null;

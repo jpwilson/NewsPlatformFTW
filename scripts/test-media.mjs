@@ -189,7 +189,7 @@ console.log("\nJSON image URL rewrite (api/_lib/json-image-rewrite.js):");
   const { default: express } = await import("express");
   const { installJsonImageRewrite } = await import("../api/_lib/json-image-rewrite.js");
   const SB = "https://mwrhaqghxatfwzsjjfrv.supabase.co";
-  const signedUrl = `${SB}/storage/v1/object/sign/article-images/api_1_2_0.jpg?token=eyJ.x.y`;
+  const signedUrl = `${SB}/storage/v1/object/sign/article-images/api_1_2_0.jpg?token=fixture-token`;
   const api = express();
   installJsonImageRewrite(api);
   const payload = () => ({
