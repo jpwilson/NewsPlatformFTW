@@ -160,6 +160,7 @@ function buildLlmsTxt(): string {
   lines.push("## Feeds");
   lines.push("");
   lines.push(`- Sitemap: ${SITE_URL}/sitemap.xml`);
+  lines.push(`- News sitemap (articles from the last 48 hours): ${SITE_URL}/news-sitemap.xml`);
   lines.push(`- RSS (whole site): ${SITE_URL}/rss.xml`);
   lines.push(`- RSS (per channel): ${SITE_URL}/channels/<id>/rss.xml`);
   lines.push(`- Full text of these pages: ${SITE_URL}/llms-full.txt`);

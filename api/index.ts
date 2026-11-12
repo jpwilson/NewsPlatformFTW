@@ -18,6 +18,12 @@ import { installJsonImageRewrite } from "./_lib/json-image-rewrite.js";
 import { ingestArticleMedia, parseImageFields } from "./_lib/image-ingest.js";
 import { recordPageEvent, registerAnalyticsRoutes } from "./_lib/analytics.js";
 import {
+  NEWS_WINDOW_HOURS,
+  fetchAllRows,
+  newsSitemapXml,
+  sitemapImageXml,
+} from "./_lib/crawler-pages.js";
+import {
   deleteArticle,
   findArticle,
   isValidPreviewToken,
@@ -5630,13 +5636,19 @@ function rssFeedXml(title: string, link: string, description: string, items: str
 
 app.get("/sitemap.xml", async (req, res) => {
   try {
-    const { data: articles } = await supabase
-      .from("articles")
-      .select("id, slug, created_at, published_at, last_edited")
-      .eq("published", true)
-      .order("created_at", { ascending: false })
-      .limit(5000);
-    const { data: channels } = await supabase.from("channels").select("id");
+    // Read in pages: one big `limit` is silently cut at Supabase's row cap.
+    // Published only: the service key bypasses row-level security.
+    const articles = await fetchAllRows(() =>
+      supabase
+        .from("articles")
+        .select("id, slug, created_at, published_at, last_edited, images:article_images ( id, image_url, order )")
+        .eq("published", true)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+    );
+    const channels = await fetchAllRows(() =>
+      supabase.from("channels").select("id").order("id", { ascending: true })
+    );
 
     const urls: string[] = [
       `<url><loc>${SITE_BASE}/</loc><changefreq>hourly</changefreq><priority>1.0</priority></url>`,
@@ -5669,16 +5681,37 @@ app.get("/sitemap.xml", async (req, res) => {
       const lastmod = String(modified || a.published_at || a.created_at || "").slice(0, 10);
       const loc = `${SITE_BASE}/articles/${a.id}${a.slug ? `/${xmlEscape(a.slug)}` : ""}`;
       urls.push(
-        `<url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}<priority>0.8</priority></url>`
+        `<url><loc>${loc}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}<priority>0.8</priority>${sitemapImageXml(a.images)}</url>`
       );
     }
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>`;
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${urls.join("")}</urlset>`;
     res.setHeader("Content-Type", "application/xml");
     res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
     return res.status(200).send(xml);
   } catch (e) {
     console.error("Error generating sitemap:", e);
+    return res.status(500).end();
+  }
+});
+
+// Google News sitemap: published articles from the last 48 hours.
+app.get("/news-sitemap.xml", async (req, res) => {
+  try {
+    const since = new Date(Date.now() - NEWS_WINDOW_HOURS * 3600 * 1000).toISOString();
+    const { data: articles, error } = await supabase
+      .from("articles")
+      .select("id, slug, title, created_at, published_at, images:article_images ( id, image_url, order )")
+      .eq("published", true)
+      .gte("published_at", since)
+      .order("published_at", { ascending: false })
+      .limit(1000); // Google News reads at most 1,000 URLs per sitemap
+    if (error) throw error;
+    res.setHeader("Content-Type", "application/xml");
+    res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=3600");
+    return res.status(200).send(newsSitemapXml(articles || []));
+  } catch (e) {
+    console.error("Error generating news sitemap:", e);
     return res.status(500).end();
   }
 });
