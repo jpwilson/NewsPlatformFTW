@@ -428,23 +428,22 @@ app.use(express.urlencoded({ extended: false }));
 // Add CORS middleware with dynamic origin
 app.use((req, res, next) => {
   const origin = req.headers.origin || "";
-  // Allow specific origins or all in development
+  // Allow the production origins, plus the local Vite dev server outside production
   const allowedOrigins = [
-    "https://newsplatformmvp.vercel.app",
-    "https://newsplatformmvp-git-main-jpwilsons-projects.vercel.app",
+    "https://www.newsplatform.org",
+    "https://newsplatform.org",
   ];
+  if (process.env.NODE_ENV !== "production") {
+    allowedOrigins.push("http://localhost:5001");
+  }
 
-  if (
-    process.env.NODE_ENV === "development" ||
-    allowedOrigins.includes(origin)
-  ) {
+  if (allowedOrigins.includes(origin)) {
     res.header("Access-Control-Allow-Origin", origin);
     res.header(
       "Access-Control-Allow-Methods",
       "GET, POST, PUT, DELETE, OPTIONS"
     );
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key");
-    res.header("Access-Control-Allow-Credentials", "true");
   }
 
   if (req.method === "OPTIONS") {
