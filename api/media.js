@@ -7,7 +7,8 @@
  *
  * It imports nothing (no npm, no shared modules) so it cannot fail to load the
  * way the prerenderer did in October 2026 (see SEO.md). Only raster images are
- * served (checked by content type AND magic bytes); never SVG or HTML.
+ * served, and what counts is the file's first bytes, never its label or name:
+ * SVG and HTML are refused whatever they claim to be.
  */
 
 const BUCKET = "article-images";
@@ -141,36 +142,36 @@ export default async function handler(req, res) {
       return send(res, 404, textHeaders("public, max-age=60"), "Not found");
     }
 
+    // The bytes decide what a file is, not the type it was uploaded with: older
+    // uploads carry whatever the browser claimed (or nothing useful), and a
+    // photo must not vanish over a wrong label. A file too large to inspect is
+    // only passed on when storage itself calls it a raster image.
     const declared = (upstream.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-    if (!TYPES.has(declared)) {
+    const unsupported = () => send(res, 415, textHeaders("public, max-age=60"), "Unsupported media type");
+    const tooLarge = async () => {
       try {
         await upstream.body?.cancel();
       } catch {}
-      return send(res, 415, textHeaders("public, max-age=60"), "Unsupported media type");
-    }
-
-    const redirectHeaders = {
-      Location: upstreamUrl,
-      "Cache-Control": "public, max-age=86400",
-      "Access-Control-Allow-Origin": "*",
+      if (!TYPES.has(declared)) return unsupported();
+      return send(
+        res,
+        302,
+        { Location: upstreamUrl, "Cache-Control": "public, max-age=86400", "Access-Control-Allow-Origin": "*" },
+        ""
+      );
     };
+
     const length = Number(upstream.headers.get("content-length"));
-    if (Number.isFinite(length) && length > MAX_INLINE) {
-      try {
-        await upstream.body?.cancel();
-      } catch {}
-      return send(res, 302, redirectHeaders, "");
-    }
+    if (Number.isFinite(length) && length > MAX_INLINE) return tooLarge();
 
     const bytes = await readCapped(upstream, MAX_INLINE);
-    if (!bytes) return send(res, 302, redirectHeaders, "");
+    if (!bytes) return tooLarge();
 
-    if (sniffImageType(bytes) !== declared) {
-      return send(res, 415, textHeaders("public, max-age=60"), "Unsupported media type");
-    }
+    const actual = sniffImageType(bytes);
+    if (!actual) return unsupported();
 
     const headers = {
-      "Content-Type": declared,
+      "Content-Type": actual,
       "Content-Length": String(bytes.length),
       "Cache-Control": "public, max-age=31536000, s-maxage=31536000, immutable",
       "X-Content-Type-Options": "nosniff",

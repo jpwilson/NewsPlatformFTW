@@ -25,6 +25,9 @@ const OBJECTS = {
   "evil.svg": { type: "image/svg+xml", body: SVG },
   "fake.jpg": { type: "image/jpeg", body: HTML }, // claims jpeg, is HTML
   "page.html": { type: "text/html", body: HTML },
+  "mislabelled.jpg": { type: "image/jpeg", body: PNG }, // uploaded as jpeg, is a png
+  "no-type.jpg": { type: "application/octet-stream", body: JPEG }, // uploaded with no useful type
+  "big-unknown.bin": { type: "application/octet-stream", body: Buffer.concat([JPEG, Buffer.alloc(4_100_000)]) },
   "big.jpg": { type: "image/jpeg", body: Buffer.concat([JPEG, Buffer.alloc(4_100_000)]) },
   "big-chunked.jpg": { type: "image/jpeg", body: Buffer.concat([JPEG, Buffer.alloc(4_100_000)]), chunked: true },
 };
@@ -147,6 +150,15 @@ check("HTML → 415", r.status === 415);
 r = await get("/media/fake.jpg");
 check("HTML claiming to be jpeg (magic bytes) → 415", r.status === 415, String(r.status));
 check("415 body is not the upstream body", !(await r.text()).includes("<script>"));
+
+// The bytes decide: a photo stored under the wrong label is still served,
+// with the type its bytes prove.
+r = await get("/media/mislabelled.jpg");
+check("png stored as jpeg → 200 image/png", r.status === 200 && r.headers.get("content-type") === "image/png", `${r.status} ${r.headers.get("content-type")}`);
+r = await get("/media/no-type.jpg");
+check("jpeg stored without a type → 200 image/jpeg", r.status === 200 && r.headers.get("content-type") === "image/jpeg", `${r.status} ${r.headers.get("content-type")}`);
+r = await get("/media/big-unknown.bin");
+check("too large to inspect and not labelled an image → 415, no redirect", r.status === 415 && !r.headers.get("location"), String(r.status));
 
 // Oversize: redirect to the public URL.
 r = await get("/media/big.jpg");
