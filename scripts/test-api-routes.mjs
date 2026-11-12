@@ -492,6 +492,11 @@ section("drafts, preview token, views");
   check("same visitor (first x-forwarded-for entry) not counted twice", r.json?.counted === false && stub.table("article_views").length === 1, r.json);
   r = await api.request("POST", "/api/articles/2026-01-02-original-title/view", { headers: { "x-real-ip": "198.51.100.7", "user-agent": "Other/2.0" } });
   check("x-real-ip used when there is no x-forwarded-for", r.json?.counted === true && stub.table("article_views").length === 2);
+  check("count incremented in the database (increment_article_view RPC), not read-then-write", stub.log.filter((l) => l.rpc === "increment_article_view").length === 2 && row("articles", 100).view_count === 7 && !stub.log.some((l) => l.method === "PATCH" && l.table === "articles" && l.body && "view_count" in l.body), row("articles", 100).view_count);
+  stub.state.missingRpc = ["increment_article_view"];
+  r = await api.request("POST", "/api/articles/2026-01-02-original-title/view", { headers: { "x-real-ip": "198.51.100.8", "user-agent": "Third/3.0" } });
+  check("without the RPC the view is still counted (fallback update)", r.json?.counted === true && row("articles", 100).view_count === 8, row("articles", 100).view_count);
+  stub.state.missingRpc = null;
 }
 
 section("GET /api/articles/:id/related");
@@ -534,6 +539,111 @@ section("sitemap.xml");
   check("200 xml", r.status === 200 && r.text.startsWith("<?xml"));
   check("article lastmod is the publish date, not last_edited", r.text.includes("/articles/100/2026-01-02-original-title</loc><lastmod>2026-01-02</lastmod>") && !r.text.includes("2026-11-11"), r.text.slice(0, 200));
   check("drafts not listed", !r.text.includes("/articles/300"));
+}
+
+/* ------------------------------------------- sanitise on write (F-17) */
+
+section("article HTML is sanitised on write");
+{
+  stub.reset(seed());
+  const HOSTILE = '<p>Safe text.</p><script>alert(1)</script><img src=x onerror=alert(2)><a href="javascript:alert(3)">j</a><iframe src="https://evil.example/x"></iframe>';
+  const clean = (html) => !/<script/i.test(html) && !/onerror/i.test(html) && !/javascript:/i.test(html) && !html.includes("evil.example");
+  let r = await api.request("POST", "/api/articles", { headers: owner, body: { title: "Session hostile", content: HOSTILE, channelId: 10 } });
+  check("session POST stores sanitised HTML", r.status === 201 && clean(row("articles", r.json?.id)?.content || "<script>") && row("articles", r.json.id).content.includes("Safe text."), row("articles", r.json?.id)?.content);
+  r = await api.request("PATCH", "/api/articles/100", { headers: owner, body: { content: HOSTILE } });
+  check("session PATCH stores sanitised HTML", r.status === 200 && clean(row("articles", 100).content) && row("articles", 100).content.includes("Safe text."), row("articles", 100).content);
+  r = await api.request("POST", "/api/v1/content/articles", { headers: key(OWNER_KEY), body: { title: "API html hostile", content: HOSTILE, contentFormat: "html", channelId: 10 } });
+  check("v1 POST (html) stores sanitised HTML", r.status === 201 && clean(row("articles", r.json?.id)?.content || "<script>"), row("articles", r.json?.id)?.content);
+  r = await api.request("POST", "/api/v1/content/articles", { headers: key(OWNER_KEY), body: { title: "API md hostile", content: "Intro [click](javascript:alert(1)) here.\n\n<script>alert(2)</script>\n\n![x](javascript:alert(3))", channelId: 10 } });
+  check("v1 POST (markdown) stores sanitised HTML", r.status === 201 && clean(row("articles", r.json?.id)?.content || "<script>") && row("articles", r.json.id).content.includes("click"), row("articles", r.json?.id)?.content);
+  r = await api.request("PATCH", "/api/v1/content/articles/100", { headers: key(OWNER_KEY), body: { content: HOSTILE, contentFormat: "html" } });
+  check("v1 PATCH stores sanitised HTML", r.status === 200 && clean(row("articles", 100).content), row("articles", 100).content);
+
+  // Everything the rich format produces survives (docs/article-format.md).
+  const RICH = [
+    "Intro paragraph with **bold**, *italic*, `code` and a [link](https://example.com/a).",
+    "> [!SUMMARY]\n> - First fact.\n> - Second fact.",
+    "> [!KEY] What you need to know\n> - Background.",
+    '> [!QUOTE]\n> "A quotable line."\n> — Someone, Somewhere',
+    "> [!STAT]\n> 68%\n> of adults could not tell.",
+    "| Country | Threshold | In force |\n|---------|----------:|:--------:|\n| France  | 50%       | Mar 2026 |",
+    `![A caption. Photo: Agency](${IMG}/one.jpg)`,
+    `![Gallery one](${IMG}/two.jpg)\n![Gallery two](${IMG}/three.png)`,
+    "https://www.youtube.com/watch?v=abcdef12345",
+    "https://vimeo.com/123456",
+    '```chart\n{"type":"bar","data":[{"label":"A","value":1}]}\n```',
+    "## A section\n\n1. one\n2. two\n\n- a\n- b\n\n---\n\nEnd.",
+  ].join("\n\n");
+  r = await api.request("POST", "/api/v1/content/articles", { headers: key(OWNER_KEY), body: { title: "Rich round trip", content: RICH, channelId: 10 } });
+  const stored = row("articles", r.json?.id)?.content || "";
+  const MARKERS = [
+    '<aside class="callout callout-summary" data-callout="summary">', '<div class="callout-title">In brief</div>',
+    '<aside class="callout callout-key" data-callout="key">', '<figure class="pull-quote"><blockquote>', "<figcaption>Someone, Somewhere</figcaption>",
+    '<aside class="callout callout-stat"><div class="stat-figure">68%</div><div class="stat-caption">',
+    '<div class="table-wrap"><table class="article-table">', '<th style="text-align:right">', '<td style="text-align:center">',
+    '<figure class="article-figure"><img src="', "<figcaption>A caption. Photo: Agency</figcaption>",
+    '<div class="article-gallery" data-count="2">', '<div class="video-embed"><iframe src="https://www.youtube-nocookie.com/embed/abcdef12345"',
+    'src="https://player.vimeo.com/video/123456"', '<div class="article-chart" data-chart="', "<code>code</code>",
+    '<a href="https://example.com/a">link</a>', "<h2>A section</h2>", "<ol><li>one</li>", "<ul><li>a</li>", "<hr />",
+  ];
+  const missing = MARKERS.filter((m) => !stored.includes(m));
+  check("the rich format survives sanitising on write", r.status === 201 && missing.length === 0, { missing, stored: stored.slice(0, 300) });
+  check("the chart spec stays parseable", (() => {
+    const m = stored.match(/data-chart="([^"]*)"/);
+    try { return JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&")).type === "bar"; } catch { return false; }
+  })());
+
+  // The editor's own HTML (client/src/components/editor-extensions.tsx and
+  // the TipTap table) keeps every element and attribute its parseHTML needs.
+  const EDITOR = '<p>Intro <strong>b</strong> <em>i</em> <u>u</u> <s>s</s> <a target="_blank" rel="noopener noreferrer nofollow" class="text-primary underline" href="https://example.com/x">link</a></p>' +
+    '<h2>Heading</h2><ul><li><p>one</p></li></ul><ol><li><p>two</p></li></ol><blockquote><p>q</p></blockquote><pre><code>let x = 1;</code></pre><hr>' +
+    '<figure class="article-figure"><img src="/media/c/a.jpg" alt="Alt"><figcaption>Cap. Photo: X</figcaption></figure>' +
+    '<div class="article-gallery" data-gallery=""><figure class="article-figure"><img src="/media/c/b.jpg" alt=""></figure><figure class="article-figure"><img src="/media/c/c.jpg" alt=""></figure></div>' +
+    '<div class="video-embed"><iframe src="https://www.youtube-nocookie.com/embed/abc123" title="Embedded video" allowfullscreen="true"></iframe></div>' +
+    '<div class="article-chart" data-chart="{&quot;type&quot;:&quot;line&quot;}"></div>' +
+    '<aside class="callout callout-key" data-callout="key"><div class="callout-title">Key points</div><div class="callout-body"><ul><li><p>x</p></li></ul></div></aside>' +
+    '<figure class="pull-quote"><blockquote>Quote</blockquote><figcaption>Someone</figcaption></figure>' +
+    '<aside class="callout callout-stat"><div class="stat-figure">68%</div><div class="stat-caption">of adults</div></aside>' +
+    '<div class="table-wrap"><table class="article-table" style="min-width: 50px"><colgroup><col style="min-width: 25px"><col style="min-width: 25px"></colgroup><tbody><tr><th colspan="1" rowspan="1"><p>H</p></th><th colspan="1" rowspan="1"><p>H2</p></th></tr><tr><td colspan="1" rowspan="1"><p>a</p></td><td colspan="1" rowspan="1"><p>b</p></td></tr></tbody></table></div>';
+  stub.reset(seed());
+  r = await api.request("PATCH", "/api/articles/100", { headers: owner, body: { content: EDITOR } });
+  const saved = row("articles", 100).content;
+  const EDITOR_MARKERS = [
+    "<strong>b</strong>", "<em>i</em>", "<u>u</u>", "<s>s</s>", 'href="https://example.com/x"', 'class="text-primary underline"', "<h2>Heading</h2>",
+    "<ul><li><p>one</p></li></ul>", "<blockquote><p>q</p></blockquote>", "<pre><code>let x = 1;</code></pre>",
+    `<figure class="article-figure"><img src="${PUBLIC("c/a.jpg")}" alt="Alt" /><figcaption>Cap. Photo: X</figcaption></figure>`,
+    '<div class="article-gallery">', '<div class="video-embed"><iframe src="https://www.youtube-nocookie.com/embed/abc123"',
+    'data-chart="{&quot;type&quot;:&quot;line&quot;}"', '<aside class="callout callout-key" data-callout="key">', '<figure class="pull-quote"><blockquote>Quote</blockquote>',
+    '<aside class="callout callout-stat">', '<div class="table-wrap"><table class="article-table">', '<th colspan="1" rowspan="1">', "<td colspan=\"1\" rowspan=\"1\"><p>a</p></td>",
+  ];
+  const lost = EDITOR_MARKERS.filter((m) => !saved.includes(m));
+  check("the editor's HTML survives (custom nodes parse back)", r.status === 200 && lost.length === 0, { lost, saved });
+  await api.request("PATCH", "/api/articles/100", { headers: owner, body: { content: saved.replace(/https?:\/\/127\.0\.0\.1:\d+\/storage\/v1\/object\/public\/article-images\//g, "/media/") } });
+  check("re-saving is stable (sanitising twice changes nothing)", row("articles", 100).content === saved, row("articles", 100).content);
+
+  // The AI endpoint strips tags before cutting to 300 characters.
+  stub.table("articles").push({ id: 150, title: "Legacy raw", slug: "legacy-raw", channel_id: 10, user_id: 1, status: "published", published: true, created_at: "2026-02-01T00:00:00.000Z", published_at: "2026-02-01T00:00:00.000Z",
+    content: `<p>${"a".repeat(290)}</p><img src=x onerror=alert(1)><p>tail</p>` });
+  r = await api.request("GET", "/api/ai/latest-stories?limit=5");
+  const ex = r.json?.data?.find((a) => a.id === 150)?.excerpt || "<";
+  check("AI excerpt: no partial tag after truncation", r.status === 200 && !ex.includes("<") && !/onerror/.test(ex) && ex.length <= 303, ex.slice(-40));
+}
+
+/* ------------------------------------------- edge caching of lists (F-10) */
+
+section("cache headers on the public list reads");
+{
+  stub.reset(seed());
+  for (const path of ["/api/articles", "/api/channels"]) {
+    let r = await api.request("GET", path);
+    check(`${path} anonymous → shared for 60 s, Vary: Authorization`, r.status === 200 && r.headers.get("cache-control") === "public, s-maxage=60, stale-while-revalidate=300" && /authorization/i.test(r.headers.get("vary") || ""), [r.status, r.headers.get("cache-control"), r.headers.get("vary")]);
+    r = await api.request("GET", path, { headers: owner });
+    check(`${path} signed in → private, no-store`, r.status === 200 && r.headers.get("cache-control") === "private, no-store", r.headers.get("cache-control"));
+  }
+  stub.state.failNext = { table: "articles", method: "GET" };
+  const r = await api.request("GET", "/api/articles");
+  check("an error response is never shared", r.status === 500 && !/public/.test(r.headers.get("cache-control") || ""), r.headers.get("cache-control"));
+  stub.state.failNext = null;
 }
 
 /* ------------------------------------------------------------ logging */

@@ -15,7 +15,6 @@ import {
   storeMediaUrls,
   toStoredUrl,
 } from "../shared/article-media.js";
-import { sanitizeArticleHtml } from "./_lib/sanitize-article-html.js";
 import { installJsonImageRewrite } from "./_lib/json-image-rewrite.js";
 import { ingestArticleMedia, parseImageFields } from "./_lib/image-ingest.js";
 import { recordPageEvent, registerAnalyticsRoutes } from "./_lib/analytics.js";
@@ -329,6 +328,39 @@ function markdownToHtml(markdown: string): string {
   return output.join("\n");
 }
 
+/**
+ * The server article sanitiser (shared/article-html-policy.js allowlist),
+ * loaded on first use. It depends on sanitize-html, the package whose ESM-only
+ * dependency took the crawler pages down in October 2026 (SEO.md); loading it
+ * lazily means that if it ever fails to load, only the routes that need it
+ * (article writes, RSS) fail, not every API route. A failed load is retried
+ * on the next call.
+ */
+let sanitizerLoad: Promise<(html: string) => string> | null = null;
+function loadSanitizer(): Promise<(html: string) => string> {
+  if (!sanitizerLoad) {
+    sanitizerLoad = import("./_lib/sanitize-article-html.js")
+      .then((m: any) => m.sanitizeArticleHtml)
+      .catch((err: any) => {
+        sanitizerLoad = null;
+        console.error("Article sanitiser failed to load:", err);
+        throw new Error("Failed to create article: the HTML sanitiser is unavailable");
+      });
+  }
+  return sanitizerLoad;
+}
+
+/**
+ * Article HTML as stored: sanitised on write (same allowlist every renderer
+ * applies), so a consumer that trusts `content` (the AI endpoint, feeds, a
+ * future app) never receives script, event handlers or javascript: links.
+ * Everything the rich format and the editor produce is on the allowlist.
+ */
+async function cleanArticleHtml(html: string): Promise<string> {
+  const sanitize = await loadSanitizer();
+  return sanitize(String(html ?? ""));
+}
+
 function normalizeContent(content: string, format?: string): string {
   if (format === "html") return content;
   if (format === "markdown") return markdownToHtml(content);
@@ -544,6 +576,21 @@ app.use((req, res, next) => {
 });
 
 // ===== DIRECT ROUTE IMPLEMENTATIONS =====
+
+/**
+ * Edge caching for the expensive public list reads (GET /api/articles,
+ * GET /api/channels), on success only. Anonymous: shared for 60 s. Signed in:
+ * never shared, because the body carries the reader's own reactions.
+ * `Vary: Authorization` keeps the CDN from answering a signed-in request with
+ * the anonymous copy.
+ */
+function listCacheHeaders(req, res) {
+  res.setHeader("Vary", "Authorization");
+  res.setHeader(
+    "Cache-Control",
+    req.headers.authorization ? "private, no-store" : "public, s-maxage=60, stale-while-revalidate=300"
+  );
+}
 
 // Health check route
 app.get("/api/health", (req, res) => {
@@ -796,6 +843,7 @@ app.get("/api/channels", async (req, res) => {
       })
     );
 
+    listCacheHeaders(req, res);
     res.json(enrichedChannels || []);
   } catch (error) {
     console.error("Error fetching channels:", error);
@@ -1186,6 +1234,7 @@ app.get("/api/articles", async (req, res) => {
     console.log(
       `Returning ${articles?.length || 0} articles with images and channel data`
     );
+    listCacheHeaders(req, res);
     res.json(articles || []);
   } catch (error) {
     console.error("Error in /api/articles endpoint:", error);
@@ -1301,7 +1350,7 @@ app.post("/api/articles", async (req, res) => {
     // Prepare the article object
     const articleData: any = {
       title: title.trim(),
-      content: storeUrls(content),
+      content: storeUrls(await cleanArticleHtml(content)),
       channel_id: channelIdNumber,
       user_id: userId,
       category: category || "",
@@ -3365,22 +3414,23 @@ app.post("/api/articles/:slug/view", async (req, res) => {
         throw viewError;
       }
 
-      // Increment the current view count by 1, ALWAYS preserving the current count
-      // This ensures admin-set counts are respected
+      // +1 in the database (view_count = coalesce(view_count, 0) + 1), so
+      // concurrent views are not lost to a read-then-write race. Admin-set
+      // counts are kept: the increment starts from whatever is stored.
       updatedViewCount = currentCount + 1;
-      console.log(
-        `Incrementing view count from ${currentCount} to ${updatedViewCount}`
-      );
-
-      // Update the article's view count
-      const { error: updateError } = await supabase
-        .from("articles")
-        .update({ view_count: updatedViewCount })
-        .eq("id", articleId);
-
-      if (updateError) {
-        console.error("Error updating view count:", updateError);
-        throw updateError;
+      const { error: rpcError } = await supabase.rpc("increment_article_view", { article_id: articleId });
+      if (rpcError) {
+        // The function is in the schema dump (SECURITY INVOKER, fine under
+        // the service role); if it is ever missing, count the old way.
+        console.error("increment_article_view failed, falling back:", rpcError);
+        const { error: updateError } = await supabase
+          .from("articles")
+          .update({ view_count: updatedViewCount })
+          .eq("id", articleId);
+        if (updateError) {
+          console.error("Error updating view count:", updateError);
+          throw updateError;
+        }
       }
 
       shouldInvalidateFeeds = true;
@@ -3464,7 +3514,7 @@ app.patch("/api/articles/:id", async (req, res) => {
     // The slug (and so the URL) changes only when the title actually changes:
     // the inline editor sends the title on every save.
     if (title !== undefined) updates.title = title;
-    if (content !== undefined) updates.content = storeUrls(content);
+    if (content !== undefined) updates.content = storeUrls(await cleanArticleHtml(content));
     if (category !== undefined) updates.category = category;
 
     // Handle location fields with the new structure
@@ -4372,6 +4422,8 @@ app.get("/api/market/stocks", async (req, res) => {
     }
 
     console.log(`[Stock API] Returning ${results.length} stocks out of ${symbols.length} requested`);
+    // No per-user data: always shareable at the edge (cuts the 7 Yahoo calls).
+    res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
     res.json(results);
   } catch (error) {
     console.error("[Stock API] Error fetching stock data:", error);
@@ -4854,7 +4906,7 @@ async function createSingleArticle(
   }
 
   // Convert content to HTML (our /media URLs stored as public bucket URLs)
-  let htmlContent = storeUrls(normalizeContent(content, contentFormat));
+  let htmlContent = storeUrls(await cleanArticleHtml(normalizeContent(content, contentFormat)));
   if (typeof excerpt === "string" && excerpt.trim()) htmlContent = setDek(htmlContent, excerpt);
 
   // Verify channel ownership
@@ -5260,7 +5312,7 @@ app.patch("/api/v1/content/articles/:id", async (req, res) => {
     let html: string | undefined;
     if (body.content !== undefined) {
       const format = body.contentFormat === "auto" ? undefined : body.contentFormat || "markdown";
-      html = storeUrls(normalizeContent(body.content, format));
+      html = storeUrls(await cleanArticleHtml(normalizeContent(body.content, format)));
       const oldDek = extractDek(article.content || "").dek;
       if (body.excerpt === undefined && oldDek && !extractDek(html).dek) html = setDek(html, oldDek);
     }
@@ -5646,12 +5698,12 @@ function imageTypeFromUrl(url: string): string {
  * page), our photos as permanent absolute /media URLs, relative links made
  * absolute (feed readers have no base URL), safe inside CDATA.
  */
-function rssBodyHtml(content: any): string {
-  const safe = rewriteStorageUrls(sanitizeArticleHtml(String(content || "")), SITE_BASE);
+function rssBodyHtml(content: any, sanitize: (html: string) => string): string {
+  const safe = rewriteStorageUrls(sanitize(String(content || "")), SITE_BASE);
   return safe.replace(/(\s(?:src|href)=")\/(?!\/)/g, `$1${SITE_BASE}/`).replace(/]]>/g, "]]]]><![CDATA[>");
 }
 
-function rssItemXml(a: any): string {
+function rssItemXml(a: any, sanitize: (html: string) => string): string {
   const link = `${SITE_BASE}/articles/${a.id}${a.slug ? `/${a.slug}` : ""}`;
   const desc = deriveExcerpt(String(a.content || ""), 300);
   const pub = a.published_at || a.created_at;
@@ -5660,7 +5712,7 @@ function rssItemXml(a: any): string {
     pub ? `<pubDate>${new Date(pub).toUTCString()}</pubDate>` : ""
   }${a.category ? `<category>${xmlEscape(a.category)}</category>` : ""}<description>${xmlEscape(desc)}</description>${
     cover ? `<enclosure url="${xmlEscape(cover)}" type="${imageTypeFromUrl(cover)}" length="0"/>` : ""
-  }<content:encoded><![CDATA[${rssBodyHtml(a.content)}]]></content:encoded></item>`;
+  }<content:encoded><![CDATA[${rssBodyHtml(a.content, sanitize)}]]></content:encoded></item>`;
 }
 
 function rssFeedXml(title: string, link: string, description: string, items: string, selfUrl: string): string {
@@ -5761,7 +5813,8 @@ app.get("/rss.xml", async (req, res) => {
       .eq("published", true)
       .order("created_at", { ascending: false })
       .limit(50);
-    const items = (articles || []).map(rssItemXml).join("");
+    const sanitize = await loadSanitizer();
+    const items = (articles || []).map((a) => rssItemXml(a, sanitize)).join("");
     const xml = rssFeedXml(
       "NewsPlatform",
       SITE_BASE,
@@ -5799,7 +5852,8 @@ app.get("/channels/:id/rss.xml", async (req, res) => {
       .order("created_at", { ascending: false })
       .limit(50);
 
-    const items = (articles || []).map(rssItemXml).join("");
+    const sanitize = await loadSanitizer();
+    const items = (articles || []).map((a) => rssItemXml(a, sanitize)).join("");
     const xml = rssFeedXml(
       `${channel.name} — NewsPlatform`,
       `${SITE_BASE}/channels/${channel.id}`,
@@ -5921,7 +5975,9 @@ app.get("/api/ai/latest-stories", async (req, res) => {
           title: article.title,
           slug: article.slug,
           url: `https://www.newsplatform.org/articles/${article.id}${article.slug ? `/${article.slug}` : ""}`,
-          excerpt: article.content ? article.content.substring(0, 300).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() + '...' : '',
+          // Strip tags first, then cut: cutting first could leave half a tag
+          // such as `<img src=x onerror=` in the text.
+          excerpt: article.content ? article.content.replace(/<[^>]*>/g, ' ').replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 300) + '...' : '',
           category: article.category,
           location: article.location,
           published_at: article.published_at || article.created_at,

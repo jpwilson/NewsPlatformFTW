@@ -1,7 +1,8 @@
 /**
  * An in-memory stand-in for the parts of Supabase the API uses, for offline
  * tests: PostgREST (select with embeds, filters, order, limit, single, count,
- * insert, update, delete), Auth (GET /auth/v1/user) and Storage uploads.
+ * insert, update, delete), database functions (RPC below), Auth
+ * (GET /auth/v1/user) and Storage uploads.
  *
  * It is deliberately small. It knows the foreign keys of the tables the
  * article routes touch (see FK below) and emulates the sync_article_status
@@ -62,6 +63,18 @@ function parseSelect(sel) {
     return col === "*" ? { kind: "star" } : { kind: "col", alias: unquote(c[1] || col), col };
   });
 }
+
+/**
+ * Database functions (POST /rest/v1/rpc/<name>), as defined in
+ * supabase/migrations/20250403213550_remote_schema.sql. Return null = void.
+ */
+const RPC = {
+  increment_article_view: ({ article_id }, table) => {
+    const row = table("articles").find((r) => same(r.id, article_id));
+    if (row) row.view_count = (row.view_count || 0) + 1;
+    return null;
+  },
+};
 
 /* --------------------------------------------------------------- filters */
 
@@ -158,7 +171,8 @@ export async function startStubSupabase({ tables = {}, tokens = {}, objects = {}
   const seq = {};
   const log = [];
   const storage = { uploads: [], removed: [], objects: { ...objects } };
-  const state = { db, log, storage, tokens, failNext: null };
+  // missingRpc: names of database functions to answer 404 for (tests fallbacks).
+  const state = { db, log, storage, tokens, failNext: null, missingRpc: null };
 
   const table = (name) => (db[name] ||= []);
   const reset = (data) => {
@@ -306,6 +320,17 @@ export async function startStubSupabase({ tables = {}, tokens = {}, objects = {}
       const raw = Buffer.concat(chunks);
       const u = new URL(req.url, "http://stub");
       try {
+        if (u.pathname.startsWith("/rest/v1/rpc/")) {
+          // Database functions the API calls (see RPC below).
+          const name = u.pathname.slice("/rest/v1/rpc/".length);
+          const args = raw.length ? JSON.parse(raw.toString("utf8")) : {};
+          log.push({ method: req.method, rpc: name, body: args });
+          const fn = RPC[name];
+          if (!fn || state.missingRpc?.includes(name)) {
+            return send(res, 404, { code: "PGRST202", message: `Could not find the function public.${name}`, details: null, hint: null });
+          }
+          return send(res, 200, fn(args, table));
+        }
         if (u.pathname.startsWith("/rest/v1/")) {
           const name = u.pathname.slice("/rest/v1/".length);
           const body = raw.length ? JSON.parse(raw.toString("utf8")) : undefined;
