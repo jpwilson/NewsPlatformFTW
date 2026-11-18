@@ -49,7 +49,7 @@ const EXTRA_SITEMAP_PATHS = ["/channels", "/api", "/advertise", "/privacy", "/te
 
 function headTagsFor(page: MarketingPage): string {
   const url = `${SITE_URL}${page.path === "/" ? "/" : page.path}`;
-  const image = `${SITE_URL}/logo-stacked.png`;
+  const image = `${SITE_URL}/og-share.jpg`;
   // data-rh marks these as react-helmet-async-managed so the app replaces them
   // on mount rather than leaving a second copy behind.
   return [
@@ -62,10 +62,14 @@ function headTagsFor(page: MarketingPage): string {
     `<meta data-rh="true" property="og:description" content="${esc(page.description)}" />`,
     `<meta data-rh="true" property="og:url" content="${url}" />`,
     `<meta data-rh="true" property="og:image" content="${image}" />`,
+    `<meta data-rh="true" property="og:image:width" content="1200" />`,
+    `<meta data-rh="true" property="og:image:height" content="630" />`,
+    `<meta data-rh="true" property="og:image:alt" content="NewsPlatform: real NewsPlatform article pages on glowing glass panels, showing stories on Nvidia earnings, the Dow sell-off, Trump, Xi and Putin in Shenzhen, and Russian drone strikes on Ukraine" />`,
     `<meta data-rh="true" name="twitter:card" content="summary_large_image" />`,
     `<meta data-rh="true" name="twitter:title" content="${esc(page.title)}" />`,
     `<meta data-rh="true" name="twitter:description" content="${esc(page.description)}" />`,
     `<meta data-rh="true" name="twitter:image" content="${image}" />`,
+    `<meta data-rh="true" name="twitter:image:alt" content="NewsPlatform: real NewsPlatform article pages on glowing glass panels, showing stories on Nvidia earnings, the Dow sell-off, Trump, Xi and Putin in Shenzhen, and Russian drone strikes on Ukraine" />`,
     `<script data-rh="true" type="application/ld+json">${jsonLdScript(
       pageJsonLd(page)
     )}</script>`,
