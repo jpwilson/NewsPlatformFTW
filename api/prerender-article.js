@@ -147,7 +147,7 @@ export default async function handler(req, res) {
     const imageUrls = (Array.isArray(article.images) ? article.images : [])
       .map((img) => toAbsolute(img && (img.image_url || img.imageUrl)))
       .filter((u) => u && /^https?:\/\//i.test(u));
-    const primaryImage = imageUrls[0] || 'https://newsplatform.org/logo-stacked.png';
+    const primaryImage = imageUrls[0] || 'https://www.newsplatform.org/og-share.jpg';
 
     const articleUrl = `${siteUrl}/articles/${encodeURIComponent(article.id)}${
       article.slug ? `/${encodeURIComponent(article.slug)}` : ''
@@ -212,7 +212,7 @@ export default async function handler(req, res) {
     ${article.category ? `<meta property="article:section" content="${escapeHtml(article.category)}" />` : ''}
 
     <!-- Twitter -->
-    <meta name="twitter:card" content="${imageUrls.length ? 'summary_large_image' : 'summary'}" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${title}" />
     <meta name="twitter:description" content="${escapedDescription}" />
     <meta name="twitter:image" content="${safeUrlAttr(primaryImage)}" />
