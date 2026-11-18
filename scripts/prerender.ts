@@ -64,12 +64,12 @@ function headTagsFor(page: MarketingPage): string {
     `<meta data-rh="true" property="og:image" content="${image}" />`,
     `<meta data-rh="true" property="og:image:width" content="1200" />`,
     `<meta data-rh="true" property="og:image:height" content="630" />`,
-    `<meta data-rh="true" property="og:image:alt" content="NewsPlatform: today's top stories from channels you trust" />`,
+    `<meta data-rh="true" property="og:image:alt" content="NewsPlatform: the stories that shook the world this month, from the Kerch Bridge strike to the US midterms" />`,
     `<meta data-rh="true" name="twitter:card" content="summary_large_image" />`,
     `<meta data-rh="true" name="twitter:title" content="${esc(page.title)}" />`,
     `<meta data-rh="true" name="twitter:description" content="${esc(page.description)}" />`,
     `<meta data-rh="true" name="twitter:image" content="${image}" />`,
-    `<meta data-rh="true" name="twitter:image:alt" content="NewsPlatform: today's top stories from channels you trust" />`,
+    `<meta data-rh="true" name="twitter:image:alt" content="NewsPlatform: the stories that shook the world this month, from the Kerch Bridge strike to the US midterms" />`,
     `<script data-rh="true" type="application/ld+json">${jsonLdScript(
       pageJsonLd(page)
     )}</script>`,

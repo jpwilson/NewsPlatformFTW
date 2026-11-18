@@ -30,13 +30,13 @@ export function SeoHead({ page }: { page: MarketingPage }) {
       <meta property="og:image" content={image} />
       <meta property="og:image:width" content="1200" />
       <meta property="og:image:height" content="630" />
-      <meta property="og:image:alt" content="NewsPlatform: today's top stories from channels you trust" />
+      <meta property="og:image:alt" content="NewsPlatform: the stories that shook the world this month, from the Kerch Bridge strike to the US midterms" />
 
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:title" content={page.title} />
       <meta name="twitter:description" content={page.description} />
       <meta name="twitter:image" content={image} />
-      <meta name="twitter:image:alt" content="NewsPlatform: today's top stories from channels you trust" />
+      <meta name="twitter:image:alt" content="NewsPlatform: the stories that shook the world this month, from the Kerch Bridge strike to the US midterms" />
 
       <script type="application/ld+json">{JSON.stringify(pageJsonLd(page))}</script>
     </Helmet>
